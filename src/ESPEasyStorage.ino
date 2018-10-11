@@ -77,7 +77,7 @@ String BuildFixes()
     Settings.UseRTOSMultitasking = false;
     Settings.Pin_Reset = -1;
     Settings.SyslogFacility = DEFAULT_SYSLOG_FACILITY;
-    Settings.MQTTUseUnitNameAsClientId = DEFAULT_MQTT_USE_UNITNANE_AS_CLIENTID;
+    Settings.MQTTUseUnitNameAsClientId = DEFAULT_MQTT_USE_UNITNAME_AS_CLIENTID;
     Settings.StructSize = sizeof(Settings);
   }
 
@@ -113,7 +113,7 @@ void fileSystemCheck()
     {
       ResetFactory();
     }
-    f.close();
+    if (f) f.close();
   }
   else
   {
@@ -518,13 +518,15 @@ String InitFile(const char* fname, int datasize)
   FLASH_GUARD();
 
   fs::File f = SPIFFS.open(fname, "w");
-  SPIFFS_CHECK(f, fname);
+  if (f) {
+    SPIFFS_CHECK(f, fname);
 
-  for (int x = 0; x < datasize ; x++)
-  {
-    SPIFFS_CHECK(f.write(0), fname);
+    for (int x = 0; x < datasize ; x++)
+    {
+      SPIFFS_CHECK(f.write(0), fname);
+    }
+    f.close();
   }
-  f.close();
 
   //OK
   return String();
@@ -535,6 +537,15 @@ String InitFile(const char* fname, int datasize)
   \*********************************************************************************************/
 String SaveToFile(char* fname, int index, byte* memAddress, int datasize)
 {
+#ifndef ESP32
+  if (allocatedOnStack(memAddress)) {
+    String log = F("SaveToFile: ");
+    log += fname;
+    log += F(" ERROR, Data allocated on stack");
+    addLog(LOG_LEVEL_ERROR, log);
+//    return log;  // FIXME TD-er: Should this be considered a breaking error?
+  }
+#endif
   if (index < 0) {
     String log = F("SaveToFile: ");
     log += fname;
@@ -547,19 +558,27 @@ String SaveToFile(char* fname, int index, byte* memAddress, int datasize)
   FLASH_GUARD();
 
   fs::File f = SPIFFS.open(fname, "r+");
-  SPIFFS_CHECK(f, fname);
+  if (f) {
+    SPIFFS_CHECK(f, fname);
 
-  SPIFFS_CHECK(f.seek(index, fs::SeekSet), fname);
-  byte *pointerToByteToSave = memAddress;
-  for (int x = 0; x < datasize ; x++)
-  {
-    SPIFFS_CHECK(f.write(*pointerToByteToSave), fname);
-    pointerToByteToSave++;
+    SPIFFS_CHECK(f.seek(index, fs::SeekSet), fname);
+    byte *pointerToByteToSave = memAddress;
+    for (int x = 0; x < datasize ; x++)
+    {
+      SPIFFS_CHECK(f.write(*pointerToByteToSave), fname);
+      pointerToByteToSave++;
+    }
+    f.close();
+    String log = F("FILE : Saved ");
+    log=log+fname;
+    addLog(LOG_LEVEL_INFO, log);
+  } else {
+    String log = F("SaveToFile: ");
+    log += fname;
+    log += F(" ERROR, Cannot save to file");
+    addLog(LOG_LEVEL_ERROR, log);
+    return log;
   }
-  f.close();
-  String log = F("FILE : Saved ");
-  log=log+fname;
-  addLog(LOG_LEVEL_INFO, log);
 
   //OK
   return String();
@@ -582,14 +601,22 @@ String ClearInFile(char* fname, int index, int datasize)
   FLASH_GUARD();
 
   fs::File f = SPIFFS.open(fname, "r+");
-  SPIFFS_CHECK(f, fname);
+  if (f) {
+    SPIFFS_CHECK(f, fname);
 
-  SPIFFS_CHECK(f.seek(index, fs::SeekSet), fname);
-  for (int x = 0; x < datasize ; x++)
-  {
-    SPIFFS_CHECK(f.write(0), fname);
+    SPIFFS_CHECK(f.seek(index, fs::SeekSet), fname);
+    for (int x = 0; x < datasize ; x++)
+    {
+      SPIFFS_CHECK(f.write(0), fname);
+    }
+    f.close();
+  } else {
+    String log = F("ClearInFile: ");
+    log += fname;
+    log += F(" ERROR, Cannot save to file");
+    addLog(LOG_LEVEL_ERROR, log);
+    return log;
   }
-  f.close();
 
   //OK
   return String();

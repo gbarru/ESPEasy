@@ -68,6 +68,9 @@
 #if defined(ESP32)
   #define USE_RTOS_MULTITASKING
 #endif
+#ifdef M5STACK_ESP
+//  #include <M5Stack.h>
+#endif
 
 #define DEFAULT_USE_RULES                       false   // (true|false) Enable Rules?
 
@@ -76,7 +79,7 @@
 #define DEFAULT_MQTT_LWT_TOPIC                  ""      // Default lwt topic
 #define DEFAULT_MQTT_LWT_CONNECT_MESSAGE        "Connected" // Default lwt message
 #define DEFAULT_MQTT_LWT_DISCONNECT_MESSAGE     "Connection Lost" // Default lwt message
-#define DEFAULT_MQTT_USE_UNITNANE_AS_CLIENTID   0
+#define DEFAULT_MQTT_USE_UNITNAME_AS_CLIENTID   0
 
 #define DEFAULT_USE_NTP                         false   // (true|false) Use NTP Server
 #define DEFAULT_NTP_HOST                        ""              // NTP Server Hostname
@@ -188,6 +191,8 @@
 
 #define MAX_FLASHWRITES_PER_DAY           100 // per 24 hour window
 #define INPUT_COMMAND_SIZE                240 // Affects maximum command length in rules and other commands
+// FIXME TD-er: INPUT_COMMAND_SIZE is also used in commands where simply a check for valid parameter is needed
+// and some may need less memory. (which is stack allocated)
 
 #define NODE_TYPE_ID_ESP_EASY_STD           1
 #define NODE_TYPE_ID_ESP_EASYM_STD         17
@@ -223,6 +228,9 @@
 // N.B. Retries without a connection to wifi do not count as retry.
 #define CONTROLLER_DELAY_QUEUE_RETRY_MAX   10
 #define CONTROLLER_DELAY_QUEUE_RETRY_DFLT  10
+// Timeout of the client in msec.
+#define CONTROLLER_CLIENTTIMEOUT_MAX 1000
+#define CONTROLLER_CLIENTTIMEOUT_DFLT 300
 
 
 #define PLUGIN_INIT_ALL                     1
@@ -297,7 +305,11 @@
 #if defined(PLUGIN_BUILD_TESTING) || defined(PLUGIN_BUILD_DEV)
   #define DEVICES_MAX                      75
 #else
-  #define DEVICES_MAX                      50
+  #ifdef ESP32
+    #define DEVICES_MAX                      75
+  #else
+    #define DEVICES_MAX                      50
+  #endif
 #endif
 
 #if defined(ESP8266)
@@ -407,6 +419,9 @@ void addToLog(byte loglevel, const String& string);
 void addToLog(byte logLevel, const __FlashStringHelper* flashString);
 void statusLED(boolean traffic);
 void backgroundtasks();
+uint32_t getCurrentFreeStack();
+uint32_t getFreeStackWatermark();
+bool canYield();
 
 bool getBitFromUL(uint32_t number, byte bitnr);
 void setBitToUL(uint32_t& number, byte bitnr, bool value);
@@ -680,17 +695,30 @@ struct SettingsStruct
     if (VariousBits1 > (1 << 30)) VariousBits1 = 0;
   }
 
+  void clearNetworkSettings() {
+    for (byte i = 0; i < 4; ++i) {
+      IP[i] = 0;
+      Gateway[i] = 0;
+      Subnet[i] = 0;
+      DNS[i] = 0;
+    }
+  }
+
   void clearAll() {
     PID = 0;
     Version = 0;
     Build = 0;
     IP_Octet = 0;
     Unit = 0;
+    Name[0] = 0;
+    NTPHost[0] = 0;
     Delay = 0;
     Pin_i2c_sda = -1;
     Pin_i2c_scl = -1;
     Pin_status_led = -1;
     Pin_sd_cs = -1;
+    for (byte i = 0; i < 17; ++i) { PinBootStates[i] = 0; }
+    for (byte i = 0; i < 4; ++i) {  Syslog_IP[i] = 0; }
     UDPPort = 0;
     SyslogLevel = 0;
     SerialLogLevel = 0;
@@ -715,12 +743,13 @@ struct SettingsStruct
     Pin_status_led_Inversed = false;
     deepSleepOnFail = false;
     UseValueLogger = false;
+    ArduinoOTAEnable = false;
     DST_Start = 0;
     DST_End = 0;
     UseRTOSMultitasking = false;
     Pin_Reset = -1;
     SyslogFacility = DEFAULT_SYSLOG_FACILITY;
-    StructSize = 0;
+    StructSize = sizeof(SettingsStruct);
     MQTTUseUnitNameAsClientId = 0;
     Latitude = 0.0;
     Longitude = 0.0;
@@ -737,6 +766,7 @@ struct SettingsStruct
     for (byte task = 0; task < TASKS_MAX; ++task) {
       clearTask(task);
     }
+    clearNetworkSettings();
   }
 
   void clearTask(byte task) {
@@ -859,7 +889,10 @@ struct SettingsStruct
 //  uint8_t       ProgmemMd5[16]; // crc of the binary that last saved the struct to file.
 //  uint8_t       md5[16];
 } Settings;
-
+/*
+SettingsStruct* SettingsStruct_ptr = new SettingsStruct;
+SettingsStruct& Settings = *SettingsStruct_ptr;
+*/
 
 /*********************************************************************************************\
  * ControllerSettingsStruct
@@ -867,7 +900,7 @@ struct SettingsStruct
 struct ControllerSettingsStruct
 {
   ControllerSettingsStruct() : UseDNS(false), Port(0),
-      MinimalTimeBetweenMessages(100), MaxQueueDepth(10), MaxRetry(10), DeleteOldest(false) {
+      MinimalTimeBetweenMessages(100), MaxQueueDepth(10), MaxRetry(10), DeleteOldest(false), ClientTimeout(100) {
     for (byte i = 0; i < 4; ++i) {
       IP[i] = 0;
     }
@@ -891,13 +924,16 @@ struct ControllerSettingsStruct
   unsigned int  MaxQueueDepth;
   unsigned int  MaxRetry;
   boolean       DeleteOldest; // Action to perform when buffer full, delete oldest, or ignore newest.
+  unsigned int  ClientTimeout;
 
   void validate() {
     if (Port > 65535) Port = 0;
-    if (MinimalTimeBetweenMessages < 1) MinimalTimeBetweenMessages = 100;
-    if (MinimalTimeBetweenMessages > 3600000) MinimalTimeBetweenMessages = 100;
-    if (MaxQueueDepth > 25) MaxQueueDepth = 10;
-    if (MaxRetry > 10) MaxRetry = 10;
+    if (MinimalTimeBetweenMessages < 1  ||  MinimalTimeBetweenMessages > CONTROLLER_DELAY_QUEUE_DELAY_MAX)
+      MinimalTimeBetweenMessages = CONTROLLER_DELAY_QUEUE_DELAY_DFLT;
+    if (MaxQueueDepth > CONTROLLER_DELAY_QUEUE_DEPTH_MAX) MaxQueueDepth = CONTROLLER_DELAY_QUEUE_DEPTH_DFLT;
+    if (MaxRetry > CONTROLLER_DELAY_QUEUE_RETRY_MAX) MaxRetry = CONTROLLER_DELAY_QUEUE_RETRY_MAX;
+    if (ClientTimeout < 10 || ClientTimeout > CONTROLLER_CLIENTTIMEOUT_MAX)
+      ClientTimeout = CONTROLLER_CLIENTTIMEOUT_DFLT;
   }
 
   IPAddress getIP() const {
@@ -921,6 +957,7 @@ struct ControllerSettingsStruct
     if (!WiFiConnected(10)) {
       return false; // Not connected, so no use in wasting time to connect to a host.
     }
+    delay(1); // Make sure the Watchdog will not trigger a reset.
     if (quick && ipSet()) return true;
     if (UseDNS) {
       if (!updateIPcache()) {
@@ -1160,18 +1197,19 @@ struct EventStruct
 #define LOG_STRUCT_MESSAGE_SIZE 128
 #ifdef ESP32
   #define LOG_STRUCT_MESSAGE_LINES 30
+  #define LOG_BUFFER_EXPIRE         30000  // Time after which a buffered log item is considered expired.
 #else
   #if defined(PLUGIN_BUILD_TESTING) || defined(PLUGIN_BUILD_DEV)
     #define LOG_STRUCT_MESSAGE_LINES 10
   #else
     #define LOG_STRUCT_MESSAGE_LINES 15
   #endif
+  #define LOG_BUFFER_EXPIRE         5000  // Time after which a buffered log item is considered expired.
 #endif
 
 struct LogStruct {
-    LogStruct() : write_idx(0), read_idx(0) {
+    LogStruct() : write_idx(0), read_idx(0), lastReadTimeStamp(0) {
       for (int i = 0; i < LOG_STRUCT_MESSAGE_LINES; ++i) {
-        Message[i].reserve(LOG_STRUCT_MESSAGE_SIZE);
         timeStamp[i] = 0;
         log_level[i] = 0;
       }
@@ -1189,6 +1227,7 @@ struct LogStruct {
       if (linelength > LOG_STRUCT_MESSAGE_SIZE-1)
         linelength = LOG_STRUCT_MESSAGE_SIZE-1;
       Message[write_idx] = "";
+      Message[write_idx].reserve(linelength);
       for (unsigned i = 0; i < linelength; ++i) {
         Message[write_idx] += *(line + i);
       }
@@ -1197,6 +1236,7 @@ struct LogStruct {
     // Read the next item and append it to the given string.
     // Returns whether new lines are available.
     bool get(String& output, const String& lineEnd) {
+      lastReadTimeStamp = millis();
       if (!isEmpty()) {
         read_idx = (read_idx + 1) % LOG_STRUCT_MESSAGE_LINES;
         output += formatLine(read_idx, lineEnd);
@@ -1205,6 +1245,7 @@ struct LogStruct {
     }
 
     String get_logjson_formatted(bool& logLinesAvailable, unsigned long& timestamp) {
+      lastReadTimeStamp = millis();
       logLinesAvailable = false;
       if (isEmpty()) {
         return "";
@@ -1218,29 +1259,13 @@ struct LogStruct {
       return output;
     }
 
-    bool get(String& output, const String& lineEnd, int line) {
-      int tmpread((write_idx + 1+line) % LOG_STRUCT_MESSAGE_LINES);
-      if (timeStamp[tmpread] != 0) {
-        output += formatLine(tmpread, lineEnd);
-      }
-      return !isEmpty();
-    }
-
-    bool getAll(String& output, const String& lineEnd) {
-      int tmpread((write_idx + 1) % LOG_STRUCT_MESSAGE_LINES);
-      bool someAdded = false;
-      while (tmpread != write_idx) {
-        if (timeStamp[tmpread] != 0) {
-          output += formatLine(tmpread, lineEnd);
-          someAdded = true;
-        }
-        tmpread = (tmpread + 1)% LOG_STRUCT_MESSAGE_LINES;
-      }
-      return someAdded;
-    }
-
     bool isEmpty() {
       return (write_idx == read_idx);
+    }
+
+    bool logActiveRead() {
+      clearExpiredEntries();
+      return timePassedSince(lastReadTimeStamp) < LOG_BUFFER_EXPIRE;
     }
 
   private:
@@ -1266,10 +1291,27 @@ struct LogStruct {
       return output;
     }
 
+    void clearExpiredEntries() {
+      if (isEmpty()) {
+        return;
+      }
+      if (timePassedSince(lastReadTimeStamp) > LOG_BUFFER_EXPIRE) {
+        // Clear the entire log.
+        // If web log is the only log active, it will not be checked again until it is read.
+        for (read_idx = 0; read_idx < LOG_STRUCT_MESSAGE_LINES; ++read_idx) {
+          Message[read_idx] = String(); // Free also the reserved memory.
+          timeStamp[read_idx] = 0;
+          log_level[read_idx] = 0;
+        }
+        read_idx = 0;
+        write_idx = 0;
+      }
+    }
 
     int write_idx;
     int read_idx;
     unsigned long timeStamp[LOG_STRUCT_MESSAGE_LINES];
+    unsigned long lastReadTimeStamp;
     byte log_level[LOG_STRUCT_MESSAGE_LINES];
     String Message[LOG_STRUCT_MESSAGE_LINES];
 
@@ -1395,6 +1437,7 @@ std::map<unsigned long, systemTimerStruct> systemTimers;
 \*********************************************************************************************/
 struct pinStatesStruct
 {
+  pinStatesStruct() : plugin(0), index(0), mode(0), value(0) {}
   byte plugin;
   byte index;
   byte mode;
@@ -1441,6 +1484,8 @@ float UserVar[VARS_PER_TASK * TASKS_MAX];
 \*********************************************************************************************/
 struct rulesTimerStatus
 {
+  rulesTimerStatus() : timestamp(0), interval(0), paused(false) {}
+
   unsigned long timestamp;
   unsigned int interval; //interval in milliseconds
   boolean paused;
@@ -1448,14 +1493,15 @@ struct rulesTimerStatus
 
 msecTimerHandlerStruct msecTimerHandler;
 
-unsigned long timermqtt_interval;
-unsigned long lastSend;
-unsigned long lastWeb;
+unsigned long timermqtt_interval = 250;
+unsigned long lastSend = 0;
+unsigned long lastWeb = 0;
 byte cmd_within_mainloop = 0;
-unsigned long connectionFailures;
+unsigned long connectionFailures = 0;
 unsigned long wdcounter = 0;
 unsigned long timerAPoff = 0;
 unsigned long timerAwakeFromDeepSleep = 0;
+unsigned long last_system_event_run = 0;
 
 #if FEATURE_ADC_VCC
 float vcc = -1.0;
@@ -1602,15 +1648,18 @@ String eventBuffer = "";
 
 uint32_t lowestRAM = 0;
 String lowestRAMfunction = "";
+uint32_t lowestFreeStack = 0;
+String lowestFreeStackfunction = "";
+
 
 bool shouldReboot=false;
 bool firstLoop=true;
 
 boolean activeRuleSets[RULESETS_MAX];
 
-boolean       UseRTOSMultitasking;
+boolean UseRTOSMultitasking = false;
 
-void (*MainLoopCall_ptr)(void);
+// void (*MainLoopCall_ptr)(void); //FIXME TD-er: No idea what this does.
 
 /*********************************************************************************************\
  * TimingStats

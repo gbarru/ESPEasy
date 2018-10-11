@@ -106,9 +106,14 @@ int firstEnabledBlynkController() {
 \*********************************************************************************************/
 void setup()
 {
+#ifdef ESP8266_DISABLE_EXTRA4K
+  disable_extra4k_at_link_time();
+#endif
   WiFi.persistent(false); // Do not use SDK storage of SSID/WPA parameters
   WiFi.setAutoReconnect(false);
   setWifiMode(WIFI_OFF);
+  lowestFreeStack = getFreeStackWatermark();
+  lowestRAM = FreeMem();
 
   Plugin_id.resize(PLUGIN_MAX);
   Task_id_to_Plugin_id.resize(TASKS_MAX);
@@ -118,8 +123,6 @@ void setup()
     for(byte x = 0; x < 16; x++)
       ledChannelPin[x] = -1;
   #endif
-
-  lowestRAM = FreeMem();
 
   Serial.begin(115200);
   // Serial.print("\n\n\nBOOOTTT\n\n\n");
@@ -315,9 +318,17 @@ void setup()
     if(UseRTOSMultitasking){
       log = F("RTOS : Launching tasks");
       addLog(LOG_LEVEL_INFO, log);
-      xTaskCreatePinnedToCore(RTOS_TaskServers, "RTOS_TaskServers", 8192, NULL, 1, NULL, 1);
+      xTaskCreatePinnedToCore(RTOS_TaskServers, "RTOS_TaskServers", 16384, NULL, 1, NULL, 1);
       xTaskCreatePinnedToCore(RTOS_TaskSerial, "RTOS_TaskSerial", 8192, NULL, 1, NULL, 1);
       xTaskCreatePinnedToCore(RTOS_Task10ps, "RTOS_Task10ps", 8192, NULL, 1, NULL, 1);
+      xTaskCreatePinnedToCore(
+                    RTOS_HandleSchedule,   /* Function to implement the task */
+                    "RTOS_HandleSchedule", /* Name of the task */
+                    16384,      /* Stack size in words */
+                    NULL,       /* Task input parameter */
+                    1,          /* Priority of the task */
+                    NULL,       /* Task handle. */
+                    1);         /* Core where the task should run */
     }
   #endif
 
@@ -364,6 +375,14 @@ void RTOS_Task10ps( void * parameter )
     run10TimesPerSecond();
  }
 }
+
+void RTOS_HandleSchedule( void * parameter )
+{
+ while (true){
+    handle_schedule();
+ }
+}
+
 #endif
 
 int firstEnabledMQTTController() {
@@ -446,8 +465,11 @@ int getLoopCountPerSec() {
 \*********************************************************************************************/
 void loop()
 {
+  /*
+  //FIXME TD-er: No idea what this does.
   if(MainLoopCall_ptr)
       MainLoopCall_ptr();
+  */
 
   updateLoopStats();
 
@@ -494,7 +516,10 @@ void loop()
   //normal mode, run each task when its time
   else
   {
-    handle_schedule();
+    if (!UseRTOSMultitasking) {
+      // On ESP32 the schedule is executed on the 2nd core.
+      handle_schedule();
+    }
   }
 
   backgroundtasks();

@@ -875,6 +875,13 @@ void handle_root() {
     TXBuffer += F(" - ");
     TXBuffer += String(lowestRAMfunction);
     TXBuffer += F(")");
+    html_TR_TD(); TXBuffer += F("Free Stack:<TD>");
+    TXBuffer += String(getCurrentFreeStack());
+    TXBuffer += F(" (");
+    TXBuffer += String(lowestFreeStack);
+    TXBuffer += F(" - ");
+    TXBuffer += String(lowestFreeStackfunction);
+    TXBuffer += F(")");
 
     html_TR_TD(); TXBuffer += F("IP:<TD>");
     TXBuffer += formatIP(ip);
@@ -1176,6 +1183,7 @@ void handle_controllers() {
   const int maxqueuedepth = getFormItemInt(F("maxqueuedepth"), 10);
   const int maxretry = getFormItemInt(F("maxretry"), 10);
   String deleteoldest = WebServer.arg(F("deleteoldest"));
+  const int clienttimeout = getFormItemInt(F("clienttimeout"), CONTROLLER_CLIENTTIMEOUT_DFLT);
 
 
   //submitted data
@@ -1194,7 +1202,8 @@ void handle_controllers() {
         //reset (some) default-settings
         byte ProtocolIndex = getProtocolIndex(Settings.Protocol[controllerindex]);
         ControllerSettings.Port = Protocol[ProtocolIndex].defaultPort;
-        ControllerSettings.MinimalTimeBetweenMessages = 100;
+        ControllerSettings.MinimalTimeBetweenMessages = CONTROLLER_DELAY_QUEUE_DELAY_DFLT;
+        ControllerSettings.ClientTimeout = CONTROLLER_CLIENTTIMEOUT_DFLT;
 //        ControllerSettings.MaxQueueDepth = 0;
         if (Protocol[ProtocolIndex].usesTemplate)
           CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_TEMPLATE, &TempEvent, dummyString);
@@ -1259,6 +1268,7 @@ void handle_controllers() {
         ControllerSettings.MaxQueueDepth = maxqueuedepth;
         ControllerSettings.MaxRetry = maxretry;
         ControllerSettings.DeleteOldest = deleteoldest.toInt();
+        ControllerSettings.ClientTimeout = clienttimeout;
 
 
         CPlugin_ptr[ProtocolIndex](CPLUGIN_INIT, &TempEvent, dummyString);
@@ -1366,6 +1376,8 @@ void handle_controllers() {
         addFormNumericBox( F("Max Queue Depth"), F("maxqueuedepth"), ControllerSettings.MaxQueueDepth, 1, CONTROLLER_DELAY_QUEUE_DEPTH_MAX);
         addFormNumericBox( F("Max Retries"), F("maxretry"), ControllerSettings.MaxRetry, 1, CONTROLLER_DELAY_QUEUE_RETRY_MAX);
         addFormSelector(F("Full Queue Action"), F("deleteoldest"), 2, options_delete_oldest, NULL, NULL, choice_delete_oldest, true);
+        addFormNumericBox( F("Client Timeout"), F("clienttimeout"), ControllerSettings.ClientTimeout, 10, CONTROLLER_CLIENTTIMEOUT_MAX);
+        addUnit(F("ms"));
 
 
         if (Protocol[ProtocolIndex].usesAccount)
@@ -1923,7 +1935,7 @@ void handle_devices() {
       if (taskdevicenumber != 0) // set default values if a new device has been selected
       {
         //NOTE: do not enable task by default. allow user to enter sensible valus first and let him enable it when ready.
-        if (ExtraTaskSettings.TaskDeviceValueNames[0][0] == 0) // if field set empty, reload defaults
+        if (ExtraTaskSettings.TaskIndex != taskIndex) // if field set empty, reload defaults
           PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummyString); //the plugin should populate ExtraTaskSettings with its default values.
       } else {
         SaveTaskSettings(taskIndex);
@@ -1988,7 +2000,7 @@ void handle_devices() {
       // }
 
       TempEvent.TaskIndex = taskIndex;
-      if (ExtraTaskSettings.TaskDeviceValueNames[0][0] == 0) // if field set empty, reload defaults
+      if (ExtraTaskSettings.TaskIndex != TempEvent.TaskIndex) // if field set empty, reload defaults
         PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummyString);
 
       //allow the plugin to save plugin-specific form settings.
@@ -3177,6 +3189,7 @@ void handle_log_JSON() {
   stream_last_json_object_value(F("logTimeSpan"), String(logTimeSpan));
   TXBuffer += F("}\n");
   TXBuffer.endStream();
+  updateLogLevelCache();
 }
 
 //********************************************************************************
@@ -3653,6 +3666,7 @@ void handle_control() {
   }
   else if (command.equalsIgnoreCase(F("taskrun")) ||
            command.equalsIgnoreCase(F("taskvalueset")) ||
+           command.equalsIgnoreCase(F("taskvaluetoggle")) ||
            command.equalsIgnoreCase(F("rules"))) {
     addLog(LOG_LEVEL_INFO,String(F("HTTP : ")) + webrequest);
     ExecuteCommand(VALUE_SOURCE_HTTP,webrequest.c_str());
@@ -4194,6 +4208,7 @@ void handle_download()
 
   WebServer.sendHeader(F("Content-Disposition"), str);
   WebServer.streamFile(dataFile, F("application/octet-stream"));
+  dataFile.close();
 }
 
 
@@ -4617,7 +4632,10 @@ void handle_filelist() {
     TXBuffer += F("</a>");
     fs::File f = dir.openFile("r");
     html_TD();
-    TXBuffer += f.size();
+    if (f) {
+      TXBuffer += f.size();
+      f.close();
+    }
     if (count >= endIdx)
     {
       break;
@@ -4975,7 +4993,11 @@ void handle_setup() {
       {
         html_TR_TD(); TXBuffer += F("<label class='container2'>");
         TXBuffer += F("<input type='radio' name='ssid' value='");
-        TXBuffer += WiFi.SSID(i);
+        {
+          String escapeBuffer = WiFi.SSID(i);
+          htmlStrongEscape(escapeBuffer);
+          TXBuffer += escapeBuffer;
+        }
         TXBuffer += F("'");
         if (WiFi.SSID(i) == ssid)
           TXBuffer += F(" checked ");
@@ -5114,7 +5136,7 @@ void handle_rules() {
         log += F(" Create new file: ");
         log += fileName;
         fs::File f = SPIFFS.open(fileName, "w");
-        f.close();
+        if (f) f.close();
       }
     }
     addLog(LOG_LEVEL_INFO, log);
@@ -5249,6 +5271,13 @@ void handle_sysinfo() {
    TXBuffer += lowestRAM;
    TXBuffer += F(" - ");
    TXBuffer += lowestRAMfunction;
+   TXBuffer += F(")");
+   html_TR_TD(); TXBuffer += F("Free Stack<TD>");
+   TXBuffer += getCurrentFreeStack();
+   TXBuffer += F(" (");
+   TXBuffer += lowestFreeStack;
+   TXBuffer += F(" - ");
+   TXBuffer += lowestFreeStackfunction;
    TXBuffer += F(")");
 
    html_TR_TD(); TXBuffer += F("Boot<TD>");
@@ -5417,6 +5446,8 @@ void handle_sysinfo() {
      TXBuffer += ESP.getCpuFreqMHz();
      TXBuffer += F(" MHz");
   #endif
+  html_TR_TD(); TXBuffer += F("ESP Board Name:<TD>");
+  TXBuffer += ARDUINO_BOARD;
 
 
    addTableSeparator(F("Storage"), 2, 3);
