@@ -292,6 +292,7 @@
 #define NPLUGIN_NOT_FOUND                 255
 
 
+#define LOG_LEVEL_NONE                      0
 #define LOG_LEVEL_ERROR                     1
 #define LOG_LEVEL_INFO                      2
 #define LOG_LEVEL_DEBUG                     3
@@ -674,6 +675,7 @@ struct SecurityStruct
   uint8_t       md5[16];
 } SecuritySettings;
 
+
 /*********************************************************************************************\
  * SettingsStruct
 \*********************************************************************************************/
@@ -693,6 +695,10 @@ struct SettingsStruct
     if (Latitude  < -90.0  || Latitude > 90.0) Latitude = 0.0;
     if (Longitude < -180.0 || Longitude > 180.0) Longitude = 0.0;
     if (VariousBits1 > (1 << 30)) VariousBits1 = 0;
+  }
+
+  bool networkSettingsEmpty() {
+    return (IP[0] == 0 && Gateway[0] == 0 && Subnet[0] == 0 && DNS[0] == 0);
   }
 
   void clearNetworkSettings() {
@@ -894,13 +900,30 @@ SettingsStruct* SettingsStruct_ptr = new SettingsStruct;
 SettingsStruct& Settings = *SettingsStruct_ptr;
 */
 
+
 /*********************************************************************************************\
- * ControllerSettingsStruct
+ *  Analyze SettingsStruct and report inconsistencies
+ *  Not a member function to be able to use the F-macro
+\*********************************************************************************************/
+bool SettingsCheck(String& error) {
+  error = "";
+  if (!Settings.networkSettingsEmpty()) {
+    if (Settings.IP[0] == 0 || Settings.Gateway[0] == 0 || Settings.Subnet[0] == 0 || Settings.DNS[0] == 0) {
+      error += F("Error: Either fill all IP settings fields or leave all empty");
+    }
+  }
+
+  return error.length() == 0;
+}
+
+/*********************************************************************************************\
+ * ControllerSettingsStruct definition
 \*********************************************************************************************/
 struct ControllerSettingsStruct
 {
   ControllerSettingsStruct() : UseDNS(false), Port(0),
-      MinimalTimeBetweenMessages(100), MaxQueueDepth(10), MaxRetry(10), DeleteOldest(false), ClientTimeout(100) {
+      MinimalTimeBetweenMessages(100), MaxQueueDepth(10), MaxRetry(10),
+      DeleteOldest(false), ClientTimeout(100), MustCheckReply(false) {
     for (byte i = 0; i < 4; ++i) {
       IP[i] = 0;
     }
@@ -925,6 +948,7 @@ struct ControllerSettingsStruct
   unsigned int  MaxRetry;
   boolean       DeleteOldest; // Action to perform when buffer full, delete oldest, or ignore newest.
   unsigned int  ClientTimeout;
+  boolean       MustCheckReply; // When set to false, a sent message is considered always successful.
 
   void validate() {
     if (Port > 65535) Port = 0;
@@ -932,8 +956,9 @@ struct ControllerSettingsStruct
       MinimalTimeBetweenMessages = CONTROLLER_DELAY_QUEUE_DELAY_DFLT;
     if (MaxQueueDepth > CONTROLLER_DELAY_QUEUE_DEPTH_MAX) MaxQueueDepth = CONTROLLER_DELAY_QUEUE_DEPTH_DFLT;
     if (MaxRetry > CONTROLLER_DELAY_QUEUE_RETRY_MAX) MaxRetry = CONTROLLER_DELAY_QUEUE_RETRY_MAX;
-    if (ClientTimeout < 10 || ClientTimeout > CONTROLLER_CLIENTTIMEOUT_MAX)
+    if (ClientTimeout < 10 || ClientTimeout > CONTROLLER_CLIENTTIMEOUT_MAX) {
       ClientTimeout = CONTROLLER_CLIENTTIMEOUT_DFLT;
+    }
   }
 
   IPAddress getIP() const {
@@ -1318,10 +1343,11 @@ struct LogStruct {
 } Logging;
 
 std::deque<char> serialLogBuffer;
-unsigned long last_serial_log_emptied = 0;
+unsigned long last_serial_log_read = 0;
 
 byte highest_active_log_level = 0;
 bool log_to_serial_disabled = false;
+bool log_to_serial_disabled_temporary = false;
 // Do this in a template to prevent casting to String when not needed.
 #define addLog(L,S) if (loglevelActiveFor(L)) { addToLog(L,S); }
 
