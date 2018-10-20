@@ -1041,17 +1041,22 @@ void handle_config() {
       addLog(LOG_LEVEL_INFO, F("Unit Name changed."));
       MQTTclient_should_reconnect = true;
     }
-    safe_strncpy(Settings.Name, name, sizeof(Settings.Name));
+    // Unit name
+    safe_strncpy(Settings.Name, name.c_str(), sizeof(Settings.Name));
     Settings.appendUnitToHostname(isFormItemChecked(F("appendunittohostname")));
-    //safe_strncpy(SecuritySettings.Password, password.c_str(), sizeof(SecuritySettings.Password));
+
+    // Password
     copyFormPassword(F("password"), SecuritySettings.Password, sizeof(SecuritySettings.Password));
-    safe_strncpy(SecuritySettings.WifiSSID, ssid, sizeof(SecuritySettings.WifiSSID));
-    //safe_strncpy(SecuritySettings.WifiKey, key.c_str(), sizeof(SecuritySettings.WifiKey));
+
+    // SSID 1
+    safe_strncpy(SecuritySettings.WifiSSID, ssid.c_str(), sizeof(SecuritySettings.WifiSSID));
     copyFormPassword(F("key"), SecuritySettings.WifiKey, sizeof(SecuritySettings.WifiKey));
-    safe_strncpy(SecuritySettings.WifiSSID2, ssid2, sizeof(SecuritySettings.WifiSSID2));
-    //safe_strncpy(SecuritySettings.WifiKey2, key2.c_str(), sizeof(SecuritySettings.WifiKey2));
+
+    // SSID 2
+    safe_strncpy(SecuritySettings.WifiSSID2, ssid2.c_str(), sizeof(SecuritySettings.WifiSSID2));
     copyFormPassword(F("key2"), SecuritySettings.WifiKey2, sizeof(SecuritySettings.WifiKey2));
-    //safe_strncpy(SecuritySettings.WifiAPKey, apkey.c_str(), sizeof(SecuritySettings.WifiAPKey));
+
+    // Access point password.
     copyFormPassword(F("apkey"), SecuritySettings.WifiAPKey, sizeof(SecuritySettings.WifiAPKey));
 
 
@@ -1192,7 +1197,7 @@ void handle_controllers() {
   //submitted data
   if (protocol != -1 && !controllerNotSet)
   {
-    ControllerSettingsStruct ControllerSettings;
+    MakeControllerSettings(ControllerSettings);
     //submitted changed protocol
     if (Settings.Protocol[controllerindex] != protocol)
     {
@@ -1210,11 +1215,11 @@ void handle_controllers() {
 //        ControllerSettings.MaxQueueDepth = 0;
         if (Protocol[ProtocolIndex].usesTemplate)
           CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_TEMPLATE, &TempEvent, dummyString);
-        safe_strncpy(ControllerSettings.Subscribe, TempEvent.String1, sizeof(ControllerSettings.Subscribe));
-        safe_strncpy(ControllerSettings.Publish, TempEvent.String2, sizeof(ControllerSettings.Publish));
-        safe_strncpy(ControllerSettings.MQTTLwtTopic, TempEvent.String3, sizeof(ControllerSettings.MQTTLwtTopic));
-        safe_strncpy(ControllerSettings.LWTMessageConnect, TempEvent.String4, sizeof(ControllerSettings.LWTMessageConnect));
-        safe_strncpy(ControllerSettings.LWTMessageDisconnect, TempEvent.String5, sizeof(ControllerSettings.LWTMessageDisconnect));
+        safe_strncpy(ControllerSettings.Subscribe, TempEvent.String1.c_str(), sizeof(ControllerSettings.Subscribe));
+        safe_strncpy(ControllerSettings.Publish, TempEvent.String2.c_str(), sizeof(ControllerSettings.Publish));
+        safe_strncpy(ControllerSettings.MQTTLwtTopic, TempEvent.String3.c_str(), sizeof(ControllerSettings.MQTTLwtTopic));
+        safe_strncpy(ControllerSettings.LWTMessageConnect, TempEvent.String4.c_str(), sizeof(ControllerSettings.LWTMessageConnect));
+        safe_strncpy(ControllerSettings.LWTMessageDisconnect, TempEvent.String5.c_str(), sizeof(ControllerSettings.LWTMessageDisconnect));
         TempEvent.String1 = "";
         TempEvent.String2 = "";
         TempEvent.String3 = "";
@@ -1289,7 +1294,7 @@ void handle_controllers() {
     TXBuffer += F("<table class='multirow' border=1px frame='box' rules='all'><TR><TH style='width:70px;'>");
     TXBuffer += F("<TH style='width:50px;'>Nr<TH style='width:100px;'>Enabled<TH>Protocol<TH>Host<TH>Port");
 
-    ControllerSettingsStruct ControllerSettings;
+    MakeControllerSettings(ControllerSettings);
     for (byte x = 0; x < CONTROLLER_MAX; x++)
     {
       LoadControllerSettings(x, ControllerSettings);
@@ -1347,7 +1352,7 @@ void handle_controllers() {
 
     if (Settings.Protocol[controllerindex])
     {
-      ControllerSettingsStruct ControllerSettings;
+      MakeControllerSettings(ControllerSettings);
       LoadControllerSettings(controllerindex, ControllerSettings);
       byte choice = ControllerSettings.UseDNS;
       String options[2];
@@ -1557,7 +1562,7 @@ void handle_notifications() {
 
   if (notification != -1 && !notificationindexNotSet)
   {
-    NotificationSettingsStruct NotificationSettings;
+    MakeNotificationSettings(NotificationSettings);
     if (Settings.Notification[notificationindex] != notification)
     {
       Settings.Notification[notificationindex] = notification;
@@ -1584,7 +1589,7 @@ void handle_notifications() {
       }
     }
     // Save the settings.
-    addHtmlError(SaveNotificationSettings(notificationindex, (byte*)&NotificationSettings, sizeof(NotificationSettings)));
+    addHtmlError(SaveNotificationSettings(notificationindex, (byte*)&NotificationSettings, sizeof(NotificationSettingsStruct)));
     addHtmlError(SaveSettings());
     if (WebServer.hasArg(F("test"))) {
       // Perform tests with the settings in the form.
@@ -1605,10 +1610,10 @@ void handle_notifications() {
     TXBuffer += F("<table class='multirow' border=1px frame='box' rules='all'><TR><TH style='width:70px;'>");
     TXBuffer += F("<TH style='width:50px;'>Nr<TH style='width:100px;'>Enabled<TH>Service<TH>Server<TH>Port");
 
-    NotificationSettingsStruct NotificationSettings;
+    MakeNotificationSettings(NotificationSettings);
     for (byte x = 0; x < NOTIFICATION_MAX; x++)
     {
-      LoadNotificationSettings(x, (byte*)&NotificationSettings, sizeof(NotificationSettings));
+      LoadNotificationSettings(x, (byte*)&NotificationSettings, sizeof(NotificationSettingsStruct));
       html_TR_TD();
       TXBuffer += F("<a class='button link' href=\"notifications?index=");
       TXBuffer += x + 1;
@@ -1666,8 +1671,8 @@ void handle_notifications() {
 
     if (Settings.Notification[notificationindex])
     {
-      NotificationSettingsStruct NotificationSettings;
-      LoadNotificationSettings(notificationindex, (byte*)&NotificationSettings, sizeof(NotificationSettings));
+      MakeNotificationSettings(NotificationSettings);
+      LoadNotificationSettings(notificationindex, (byte*)&NotificationSettings, sizeof(NotificationSettingsStruct));
 
       byte NotificationProtocolIndex = getNotificationProtocolIndex(Settings.Notification[notificationindex]);
       if (NotificationProtocolIndex!=NPLUGIN_NOT_FOUND)
@@ -3677,6 +3682,7 @@ void handle_control() {
   else if (command.equalsIgnoreCase(F("taskrun")) ||
            command.equalsIgnoreCase(F("taskvalueset")) ||
            command.equalsIgnoreCase(F("taskvaluetoggle")) ||
+           command.equalsIgnoreCase(F("let")) ||
            command.equalsIgnoreCase(F("rules"))) {
     addLog(LOG_LEVEL_INFO,String(F("HTTP : ")) + webrequest);
     ExecuteCommand(VALUE_SOURCE_HTTP,webrequest.c_str());
@@ -5642,6 +5648,15 @@ void handle_sysvars() {
   addSysVar_html(F("%vcc%"));
 #endif
 
+  addTableSeparator(F("System status"), 3, 3);
+
+  addSysVar_html(F("%iswifi%"));
+  addSysVar_html(F("%isntp%"));
+  addSysVar_html(F("%ismqtt%"));
+#ifdef USES_P037
+  addSysVar_html(F("%ismqttimp%"));
+#endif // USES_P037
+
   addTableSeparator(F("Time"), 3, 3);
   addSysVar_html(F("%lcltime%"));
   addSysVar_html(F("%lcltime_am%"));
@@ -5667,6 +5682,11 @@ void handle_sysvars() {
   addSysVar_html(F("%sunset-1h%"));
   addSysVar_html(F("%sunrise%"));
   addSysVar_html(F("%sunrise+10m%"));
+
+  addTableSeparator(F("Custom Variables"), 3, 3);
+  for (byte i = 0; i < CUSTOM_VARS_MAX; ++i) {
+    addSysVar_html("%v"+toString(i+1,0)+'%');
+  }
 
   addTableSeparator(F("Special Characters"), 3, 2);
   addTableSeparator(F("Degree"), 3, 3);

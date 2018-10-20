@@ -339,6 +339,7 @@
 #define RULES_BUFFER_SIZE                  64
 #define NAME_FORMULA_LENGTH_MAX            40
 #define RULES_IF_MAX_NESTING_LEVEL          4
+#define CUSTOM_VARS_MAX                    16
 
 #define UDP_PACKETSIZE_MAX               2048
 
@@ -600,6 +601,12 @@ bool MQTTclient_should_reconnect = true;
 bool MQTTclient_connected = false;
 int mqtt_reconnect_count = 0;
 
+//NTP status
+bool statusNTPInitialized = false;
+
+// mqtt import status
+bool P037_MQTTImport_connected = false;
+
 // udp protocol stuff (syslog, global sync, node info list, ntp time)
 WiFiUDP portUDP;
 
@@ -672,6 +679,15 @@ struct SecurityStruct
   uint8_t       md5[16];
 } SecuritySettings;
 
+
+/*********************************************************************************************\
+ * Custom Variables for usage in rules and http.
+ * Syntax: %vX%
+ * usage:
+ * let,1,10
+ * if %v1%=10 do ...
+\*********************************************************************************************/
+float         customFloatVar[CUSTOM_VARS_MAX];
 
 /*********************************************************************************************\
  * SettingsStruct
@@ -1058,6 +1074,11 @@ private:
 
 };
 
+typedef std::shared_ptr<ControllerSettingsStruct> ControllerSettingsStruct_ptr_type;
+#define MakeControllerSettings(T) ControllerSettingsStruct_ptr_type ControllerSettingsStruct_ptr(new ControllerSettingsStruct());\
+                                    ControllerSettingsStruct& T = *ControllerSettingsStruct_ptr;
+
+
 
 /*********************************************************************************************\
  * NotificationSettingsStruct
@@ -1088,6 +1109,11 @@ struct NotificationSettingsStruct
   char          Pass[33];
   //its safe to extend this struct, up to 4096 bytes, default values in config are 0
 };
+
+typedef std::shared_ptr<NotificationSettingsStruct> NotificationSettingsStruct_ptr_type;
+#define MakeNotificationSettings(T) NotificationSettingsStruct_ptr_type NotificationSettingsStruct_ptr(new NotificationSettingsStruct());\
+                                    NotificationSettingsStruct& T = *NotificationSettingsStruct_ptr;
+
 
 /*********************************************************************************************\
  * ExtraTaskSettingsStruct
