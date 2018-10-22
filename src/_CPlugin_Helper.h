@@ -265,15 +265,14 @@ struct ControllerDelayHandlerStruct {
 
   // Get the next element.
   // Remove front element when max_retries is reached.
-  bool getNext(T& element) {
-    if (sendQueue.empty()) return false;
+  T* getNext() {
+    if (sendQueue.empty()) return NULL;
     if (attempt > max_retries) {
       sendQueue.pop_front();
       attempt = 0;
-      if (sendQueue.empty()) return false;
+      if (sendQueue.empty()) return NULL;
     }
-    element = sendQueue.front();
-    return true;
+    return &sendQueue.front();
   }
 
   // Mark as processed and return time to schedule for next process.
@@ -336,17 +335,17 @@ ControllerDelayHandlerStruct<MQTT_queue_element> MQTTDelayHandler;
                 ControllerDelayHandlerStruct<C##NNN##_queue_element> C##NNN##_DelayHandler; \
                 bool do_process_c##NNN##_delay_queue(int controller_number, const C##NNN##_queue_element& element, ControllerSettingsStruct& ControllerSettings); \
                 void process_c##NNN##_delay_queue() { \
-                  C##NNN##_queue_element element; \
-                  if (!C##NNN##_DelayHandler.getNext(element)) return; \
+                  C##NNN##_queue_element* element(C##NNN##_DelayHandler.getNext()); \
+                  if (element == NULL) return; \
                   MakeControllerSettings(ControllerSettings); \
-                  LoadControllerSettings(element.controller_idx, ControllerSettings); \
+                  LoadControllerSettings(element->controller_idx, ControllerSettings); \
                   C##NNN##_DelayHandler.configureControllerSettings(ControllerSettings); \
                   if (!WiFiConnected(100)) { \
                     scheduleNextDelayQueue(TIMER_C##NNN##_DELAY_QUEUE, C##NNN##_DelayHandler.getNextScheduleTime()); \
                     return; \
                   } \
                   START_TIMER; \
-                  C##NNN##_DelayHandler.markProcessed(do_process_c##NNN##_delay_queue(M, element, ControllerSettings)); \
+                  C##NNN##_DelayHandler.markProcessed(do_process_c##NNN##_delay_queue(M, *element, ControllerSettings)); \
                   STOP_TIMER(C##NNN##_DELAY_QUEUE); \
                   scheduleNextDelayQueue(TIMER_C##NNN##_DELAY_QUEUE, C##NNN##_DelayHandler.getNextScheduleTime()); \
                 }
@@ -402,26 +401,30 @@ bool safeReadStringUntil(Stream &input, String &str, char terminator, unsigned i
 
 	do {
 		//read character
-		c = input.read();
-		if (c >= 0) {
-			//found terminator, we're ok
-			if (c == terminator) {
-				return(true);
-			}
-			//found character, add to string
-			else{
-				str += char(c);
-				//string at max size?
-				if (str.length() >= maxSize) {
-					addLog(LOG_LEVEL_ERROR, F("Not enough bufferspace to read all input data!"));
-					return(false);
-				}
-			}
-		}
-    // We must run the backgroundtasks every now and then.
-    if (timeOutReached(backgroundtasks_timer)) {
-      backgroundtasks_timer += 10;
-      backgroundtasks();
+    if (input.available()) {
+  		c = input.read();
+  		if (c >= 0) {
+  			//found terminator, we're ok
+  			if (c == terminator) {
+  				return(true);
+  			}
+  			//found character, add to string
+  			else{
+  				str += char(c);
+  				//string at max size?
+  				if (str.length() >= maxSize) {
+  					addLog(LOG_LEVEL_ERROR, F("Not enough bufferspace to read all input data!"));
+  					return(false);
+  				}
+  			}
+  		}
+      // We must run the backgroundtasks every now and then.
+      if (timeOutReached(backgroundtasks_timer)) {
+        backgroundtasks_timer += 10;
+        backgroundtasks();
+      } else {
+        yield();
+      }
     } else {
       yield();
     }
@@ -621,6 +624,11 @@ bool try_connect_host(int controller_number, WiFiClient& client, ControllerSetti
 // See: https://github.com/esp8266/Arduino/pull/5113
 //      https://github.com/esp8266/Arduino/pull/1829
 bool client_available(WiFiClient& client) {
+  #ifdef ESP32
+  yield();
+  #else
+  esp_yield(); // Could be called from events
+  #endif
   return client.available() || client.connected();
 }
 
@@ -631,7 +639,7 @@ bool send_via_http(const String& logIdentifier, WiFiClient& client, const String
 
   if (must_check_reply) {
     unsigned long timer = millis() + 200;
-    while (!client.available()) {
+    while (!client_available(client)) {
       if (timeOutReached(timer)) return false;
       delay(1);
     }
