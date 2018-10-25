@@ -198,7 +198,7 @@ void sendContentBlocking(String& data) {
 
   TXBuffer.sentBytes += length;
   data = "";
-  yield();
+  delay(0);
 }
 
 void sendHeaderBlocking(bool json) {
@@ -232,17 +232,21 @@ void sendHeaderBlocking(bool json) {
     delay(1);
   }
 #endif
-  yield();
+  delay(0);
 }
 
-void sendHeadandTail(const String& tmplName, boolean Tail = false) {
+void sendHeadandTail(const String& tmplName, boolean Tail = false, boolean rebooting = false) {
   String pageTemplate = "";
   int indexStart, indexEnd;
   String varName;  //, varValue;
   String fileName = tmplName;
+  String meta;
   fileName += F(".htm");
   fs::File f = SPIFFS.open(fileName, "r+");
 
+  if(rebooting){
+    meta = F("<meta http-equiv='refresh' content='10 url=/'>");
+  }
   if (f) {
     pageTemplate.reserve(f.size());
     while (f.available()) pageTemplate += (char)f.read();
@@ -271,7 +275,11 @@ void sendHeadandTail(const String& tmplName, boolean Tail = false) {
           break;  // send first part of result only
         } else if (varName == F("error")) {
           getErrorNotifications();
-        } else {
+        }
+        else if(varName == F("meta")) {
+          TXBuffer += meta;
+        }
+        else {
           getWebPageTemplateVar(varName);
         }
       } else {  // no closing "}}"
@@ -598,6 +606,7 @@ void getWebPageTemplateDefault(const String& tmplName, String& tmpl)
         "<meta charset='utf-8'/>"
         "<title>{{name}}</title>"
         "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        "{{meta}}"
         "{{js}}"
         "{{css}}"
       "</head>"
@@ -808,15 +817,17 @@ void handle_root() {
     WebServer.send(200, "text/html", F("<meta HTTP-EQUIV='REFRESH' content='0; url=/setup'>"));
     return;
   }
-   if (!isLoggedIn()) return;
-   navMenuIndex = 0;
-   TXBuffer.startStream();
-   sendHeadandTail(F("TmplStd"),_HEAD);
+  if (!isLoggedIn()) return;
+  navMenuIndex = 0;
+  TXBuffer.startStream();
+  String sCommand = WebServer.arg(F("cmd"));
+  boolean rebootCmd = strcasecmp_P(sCommand.c_str(), PSTR("reboot")) == 0;
+  sendHeadandTail(F("TmplStd"),_HEAD, rebootCmd);
 
   int freeMem = ESP.getFreeHeap();
-  String sCommand = WebServer.arg(F("cmd"));
 
-  if ((strcasecmp_P(sCommand.c_str(), PSTR("wifidisconnect")) != 0) && (strcasecmp_P(sCommand.c_str(), PSTR("reboot")) != 0)&& (strcasecmp_P(sCommand.c_str(), PSTR("reset")) != 0))
+
+  if ((strcasecmp_P(sCommand.c_str(), PSTR("wifidisconnect")) != 0) && (rebootCmd == false)&& (strcasecmp_P(sCommand.c_str(), PSTR("reset")) != 0))
   {
     if (timerAPoff)
       timerAPoff = millis() + 2000L;  //user has reached the main page - AP can be switched off in 2..3 sec
@@ -1772,6 +1783,51 @@ void addIPaccessControlSelect(String name, int choice)
 // Web Interface device page
 //********************************************************************************
 //19480 (11128)
+
+// change of device: cleanup old device and reset default settings
+void setTaskDevice_to_TaskIndex(byte taskdevicenumber, byte taskIndex) {
+  struct EventStruct TempEvent;
+  TempEvent.TaskIndex = taskIndex;
+  String dummy;
+
+  //let the plugin do its cleanup by calling PLUGIN_EXIT with this TaskIndex
+  PluginCall(PLUGIN_EXIT, &TempEvent, dummy);
+  taskClear(taskIndex, false); // clear settings, but do not save
+  ClearCustomTaskSettings(taskIndex);
+
+  Settings.TaskDeviceNumber[taskIndex] = taskdevicenumber;
+  if (taskdevicenumber != 0) // set default values if a new device has been selected
+  {
+    //NOTE: do not enable task by default. allow user to enter sensible valus first and let him enable it when ready.
+    PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummy); //the plugin should populate ExtraTaskSettings with its default values.
+  } else {
+    // New task is empty task, thus save config now.
+    SaveTaskSettings(taskIndex);
+    SaveSettings();
+  }
+}
+
+void setBasicTaskValues(byte taskIndex, unsigned long taskdevicetimer,
+                        bool enabled, const String& name, int pin1, int pin2, int pin3) {
+    LoadTaskSettings(taskIndex); // Make sure ExtraTaskSettings are up-to-date
+    byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[taskIndex]);
+    if (taskdevicetimer > 0) {
+      Settings.TaskDeviceTimer[taskIndex] = taskdevicetimer;
+    } else {
+      if (!Device[DeviceIndex].TimerOptional) // Set default delay, unless it's optional...
+        Settings.TaskDeviceTimer[taskIndex] = Settings.Delay;
+      else
+        Settings.TaskDeviceTimer[taskIndex] = 0;
+    }
+    Settings.TaskDeviceEnabled[taskIndex] = enabled;
+    safe_strncpy(ExtraTaskSettings.TaskDeviceName, name.c_str(), sizeof(ExtraTaskSettings.TaskDeviceName));
+    if (pin1 >= 0) Settings.TaskDevicePin1[taskIndex] = pin1;
+    if (pin2 >= 0) Settings.TaskDevicePin2[taskIndex] = pin2;
+    if (pin3 >= 0) Settings.TaskDevicePin3[taskIndex] = pin3;
+    SaveTaskSettings(taskIndex);
+}
+
+
 void handle_devices() {
   checkRAM(F("handle_devices"));
   if (!isLoggedIn()) return;
@@ -1865,56 +1921,32 @@ void handle_devices() {
   // FIXME TD-er: Might have to clear any caches here.
   if (edit != 0  && !taskIndexNotSet) // when form submitted
   {
-    if (Settings.TaskDeviceNumber[taskIndex] != taskdevicenumber) // change of device: cleanup old device and reset default settings
+    if (Settings.TaskDeviceNumber[taskIndex] != taskdevicenumber)
     {
-      //let the plugin do its cleanup by calling PLUGIN_EXIT with this TaskIndex
-      TempEvent.TaskIndex = taskIndex;
-      PluginCall(PLUGIN_EXIT, &TempEvent, dummyString);
-
-      taskClear(taskIndex, false); // clear settings, but do not save
-      ClearCustomTaskSettings(taskIndex);
-
-      Settings.TaskDeviceNumber[taskIndex] = taskdevicenumber;
-      if (taskdevicenumber != 0) // set default values if a new device has been selected
-      {
-        //NOTE: do not enable task by default. allow user to enter sensible valus first and let him enable it when ready.
-        if (ExtraTaskSettings.TaskIndex != taskIndex) // if field set empty, reload defaults
-          PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummyString); //the plugin should populate ExtraTaskSettings with its default values.
-      } else {
-        SaveTaskSettings(taskIndex);
-        SaveSettings();
-      }
+      // change of device: cleanup old device and reset default settings
+      setTaskDevice_to_TaskIndex(taskdevicenumber, taskIndex);
     }
     else if (taskdevicenumber != 0) //save settings
     {
       Settings.TaskDeviceNumber[taskIndex] = taskdevicenumber;
-      DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[taskIndex]);
-
-      if (taskdevicetimer > 0)
-        Settings.TaskDeviceTimer[taskIndex] = taskdevicetimer;
-      else
-      {
-        if (!Device[DeviceIndex].TimerOptional) // Set default delay, unless it's optional...
-          Settings.TaskDeviceTimer[taskIndex] = Settings.Delay;
-        else
-          Settings.TaskDeviceTimer[taskIndex] = 0;
-      }
-
-      Settings.TaskDeviceEnabled[taskIndex] = isFormItemChecked(F("TDE"));
-      strncpy_webserver_arg(ExtraTaskSettings.TaskDeviceName, F("TDN"));
-      Settings.TaskDevicePort[taskIndex] =  getFormItemInt(F("TDP"), 0);
+      int pin1 = -1;
+      int pin2 = -1;
+      int pin3 = -1;
+      update_whenset_FormItemInt(F("taskdevicepin1"), pin1);
+      update_whenset_FormItemInt(F("taskdevicepin2"), pin2);
+      update_whenset_FormItemInt(F("taskdevicepin3"), pin3);
+      setBasicTaskValues(taskIndex, taskdevicetimer,
+                         isFormItemChecked(F("TDE")), WebServer.arg(F("TDN")),
+                         pin1, pin2, pin3);
+      Settings.TaskDevicePort[taskIndex] = getFormItemInt(F("TDP"), 0);
 
       for (byte controllerNr = 0; controllerNr < CONTROLLER_MAX; controllerNr++)
       {
-
         Settings.TaskDeviceID[controllerNr][taskIndex] = getFormItemInt(String(F("TDID")) + (controllerNr + 1));
         Settings.TaskDeviceSendData[controllerNr][taskIndex] = isFormItemChecked(String(F("TDSD")) + (controllerNr + 1));
       }
 
-      update_whenset_FormItemInt(F("taskdevicepin1"), Settings.TaskDevicePin1[taskIndex]);
-      update_whenset_FormItemInt(F("taskdevicepin2"), Settings.TaskDevicePin2[taskIndex]);
-      update_whenset_FormItemInt(F("taskdevicepin3"), Settings.TaskDevicePin3[taskIndex]);
-
+      DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[taskIndex]);
       if (Device[DeviceIndex].PullUpOption)
         Settings.TaskDevicePin1PullUp[taskIndex] = isFormItemChecked(F("TDPPU"));
 
@@ -1923,7 +1955,6 @@ void handle_devices() {
 
       for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
       {
-
         strncpy_webserver_arg(ExtraTaskSettings.TaskDeviceFormula[varNr], String(F("TDF")) + (varNr + 1));
         ExtraTaskSettings.TaskDeviceValueDecimals[varNr] = getFormItemInt(String(F("TDVD")) + (varNr + 1));
         strncpy_webserver_arg(ExtraTaskSettings.TaskDeviceValueNames[varNr], String(F("TDVN")) + (varNr + 1));
@@ -5394,21 +5425,27 @@ void handle_sysinfo() {
   TXBuffer += deviceCount + 1;
   TXBuffer += getPluginDescriptionString();
 
-  addRowLabel(F("Build Md5"));
-  for (byte i = 0; i<16; i++)    TXBuffer += String(CRCValues.compileTimeMD5[i],HEX);
+  bool filenameDummy = String(CRCValues.binaryFilename).startsWith(F("ThisIsTheDummy"));
+  if (!filenameDummy) {
+    addRowLabel(F("Build Md5"));
+    for (byte i = 0; i<16; i++)    TXBuffer += String(CRCValues.compileTimeMD5[i],HEX);
 
-   addRowLabel(F("Md5 check"));
-  if (! CRCValues.checkPassed())
-     TXBuffer += F("<font color = 'red'>fail !</font>");
-  else  TXBuffer += F("passed.");
-
+     addRowLabel(F("Md5 check"));
+    if (! CRCValues.checkPassed())
+       TXBuffer += F("<font color = 'red'>fail !</font>");
+    else  TXBuffer += F("passed.");
+  }
   addRowLabel_copy(F("Build time"));
   TXBuffer += String(CRCValues.compileDate);
   TXBuffer += " ";
   TXBuffer += String(CRCValues.compileTime);
 
   addRowLabel_copy(F("Binary filename"));
-  TXBuffer += String(CRCValues.binaryFilename);
+  if (filenameDummy) {
+    TXBuffer += F("<b>Self built!</b>");
+  } else {
+    TXBuffer += String(CRCValues.binaryFilename);
+  }
 
   addTableSeparator(F("System Status"), 2, 3);
   {
@@ -5586,7 +5623,7 @@ void addSysVar_html(const String& input) {
   parseSystemVariables(replacement, true); // URL encoded
   parseStandardConversions(replacement, true);
   TXBuffer += replacement;
-  yield();
+  delay(0);
 }
 
 
