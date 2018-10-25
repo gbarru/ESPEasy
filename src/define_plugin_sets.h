@@ -498,12 +498,13 @@ To create/register a plugin, you have to :
     #define USES_P071   // Kamstrup401
     #define USES_P072   // HDC1080
     #define USES_P073   // 7DG
-    #define USES_P074   // TSL2561
+//    #define USES_P074   // TSL2561
     #define USES_P075   // Nextion
 
     #define USES_P078   // Eastron Modbus Energy meters
-    #define USES_P079   // Wemos Motoshield
-    #define USES_P080   // iButton Sensor  DS1990A
+//    #define USES_P079   // Wemos Motoshield
+//    #define USES_P080   // iButton Sensor  DS1990A
+    #define USES_P222   //Display HCMS_2915
 #endif
 
 
@@ -519,11 +520,11 @@ To create/register a plugin, you have to :
 
 // EXPERIMENTAL (playground) #######################
 #ifdef PLUGIN_SET_EXPERIMENTAL
-    #define USES_P046   // VentusW266
-    #define USES_P050   // TCS34725 RGB Color Sensor with IR filter and White LED
-    #define USES_P064   // APDS9960 Gesture
-    #define USES_P077	// CSE7766   Was P134 on Playground
-
+//    #define USES_P046   // VentusW266
+//    #define USES_P050   // TCS34725 RGB Color Sensor with IR filter and White LED
+//    #define USES_P064   // APDS9960 Gesture
+//    #define USES_P077	// CSE7766   Was P134 on Playground
+    #define USES_P222 // HCMS_2915 display
 
     // [copied from Playground as of 6 March 2018]
     // It needs some cleanup as some are ALSO in the main repo,
@@ -590,6 +591,7 @@ To create/register a plugin, you have to :
 	#define USES_P211	// MPU6050
 	#define USES_P212	// MY9291
 	#define USES_P213	// VEML6070
+  #define USES_P222 // HCMS_2915 display
 #endif
 
 

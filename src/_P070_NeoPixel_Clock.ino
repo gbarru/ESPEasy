@@ -5,7 +5,7 @@
 
 //This plugin is disabled, change it to PLUGIN_BUILD_NORMAL to re-enable it.
 //#ifdef PLUGIN_BUILD_DISABLED
-#ifdef PLUGIN_BUILD_NORMAL
+//#ifdef PLUGIN_BUILD_NORMAL
 //A clock that uses a strip/ring of 60 WS2812 NeoPixel LEDs as display for a classic clock.
 //The hours are RED, the minutes are GREEN, the seconds are BLUE and the hour marks are WHITE.
 //The brightness of the clock hands and the hour marks can be set in the device page,
@@ -281,5 +281,5 @@ void timeToStrip(int hours, int minutes, int seconds) {
   }
 }
 
-#endif // PLUGIN_BUILD_DISABLED
+//#endif // PLUGIN_BUILD_DISABLED
 #endif // USES_P070
