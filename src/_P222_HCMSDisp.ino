@@ -123,7 +123,7 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
       string = F(PLUGIN_NAME_222);
       break;
     }
-/*
+
     case PLUGIN_GET_DEVICEGPIONAMES:
     {
       event->String1 = F("GPIO &rarr; dataPin");
@@ -131,7 +131,7 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
       event->String3 = F("GPIO &rarr; clockPin");
       break;
     }
-*/
+
 
     case PLUGIN_GET_DEVICEVALUENAMES:
     {
@@ -168,8 +168,8 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
     //  For strings, always use the F() macro, which stores the string in flash, not in memory.
       //String dropdown[5] = { F("option1"), F("option2"), F("option3"), F("option4")};
       //addFormSelector(string, F("drop-down menu"), F("plugin_xxx_displtype"), 4, dropdown, NULL, Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
-      addFormPinSelect(F("GPIO &rarr; chipEnable"), F("ChipEnable"), (Settings.TaskDevicePin[event->TaskIndex][3]));
-     addFormPinSelect(F("GPIO &rarr; reset"), F("Reset"), (Settings.TaskDevicePin[event->TaskIndex][4]));
+      addFormPinSelect(F("GPIO &rarr; ChipEnable"), F("chipEnable"), (Settings.TaskDevicePluginConfig[event->TaskIndex][3]));
+     addFormPinSelect(F("GPIO &rarr; Reset"), F("reset"), (Settings.TaskDevicePluginConfig[event->TaskIndex][4]));
       addFormNote(F("HCMS:  1st=DataPin, 2nd=registerSelect, 3rd= clockPin, 4th= Enable 5th=Reset"));
       addFormNumericBox(F("DisplayLenght"), F("displaylenght"), (int)Settings.TaskDevicePluginConfig[event->TaskIndex][5], 0, 15);
       addFormNumericBox(F("Brightness"), F("brightness"), (int)Settings.TaskDevicePluginConfig[event->TaskIndex][6], 0, 15);
@@ -189,20 +189,31 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
   //      CONFIG(3) = getFormItemInt(F("chipEnable"));
   //      CONFIG(4) = getFormItemInt(F("reset"));
   //      CONFIG(5) = getFormItemInt(F("displayLenght"));
+  Settings.TaskDevicePluginConfig[event->TaskIndex][3] = (int8_t)getFormItemInt(F("chipEnable"));
+  Settings.TaskDevicePluginConfig[event->TaskIndex][4] = (int8_t)getFormItemInt(F("reset"));
 
-      Settings.TaskDevicePin[event->TaskIndex][3] = (int8_t) getFormItemInt(F("ChipEnable"));
-      Settings.TaskDevicePin[event->TaskIndex][4] = (int8_t) getFormItemInt(F("Reset"));
+
+
+    //  Settings.TaskDevicePin[event->TaskIndex][3] = (int8_t) getFormItemInt(F("ChipEnable"));
+    //  Settings.TaskDevicePin[event->TaskIndex][4] = (int8_t) getFormItemInt(F("Reset"));
       Settings.TaskDevicePluginConfig[event->TaskIndex][5] = getFormItemInt(F("displaylenght"));
       Settings.TaskDevicePluginConfig[event->TaskIndex][6] = getFormItemInt(F("brightness"));
       //after the form has been saved successfuly, set success and break
       String log = F("HCMS : SAVE HCMS Pins : ");
           log += Settings.TaskDevicePin1[event->TaskIndex];
+          log += F(" ");
           log += Settings.TaskDevicePin2[event->TaskIndex];
+          log += F(" ");
           log += Settings.TaskDevicePin3[event->TaskIndex];
+          log += F(" ");
           log += Settings.TaskDevicePluginConfig[event->TaskIndex][3];
+          log += F(" ");
           log += Settings.TaskDevicePluginConfig[event->TaskIndex][4];
+          log += F(" ");
           log += Settings.TaskDevicePluginConfig[event->TaskIndex][5];
+          log += F(" ");
           log += Settings.TaskDevicePluginConfig[event->TaskIndex][6];
+          log += F(" ");
           addLog(LOG_LEVEL_DEBUG, log);
       success = true;
       break;
@@ -220,6 +231,7 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
         Plugin_222_M->begin();
         // set the brightness of the display:
         Plugin_222_M->setBrightness(Settings.TaskDevicePluginConfig[event->TaskIndex][6]);
+        Plugin_222_M->clear();
       //after the plugin has been initialised successfuly, set success and break
       String log = F("HCMS : Init HCMS Pins : ");
           log += Settings.TaskDevicePin1[event->TaskIndex];
@@ -268,7 +280,11 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
       if (tmpString.equalsIgnoreCase(F("dothis"))) {
         //do something
 */
+Plugin_222_M->clear();
 
+Plugin_222_M->home();
+//Plugin_222_M->print(hour()":"minute()":"second());
+Plugin_222_M->print("Hello");
       break;
     }
 //        success = true;     //set to true only if plugin has executed a command successfully
@@ -286,18 +302,15 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
     case PLUGIN_ONCE_A_SECOND:
     {
       //code to be executed once a second. Tasks which do not require fast response can be added here
-      Plugin_222_M->home();
-      //Plugin_222_M->print(hour()":"minute()":"second());
-      Plugin_222_M->print("Hello");
-      String log = F("HCMS : Once a Second: HCMS Pins : ");
-          log += Settings.TaskDevicePin1[event->TaskIndex];
-          log += Settings.TaskDevicePin2[event->TaskIndex];
-          log += Settings.TaskDevicePin3[event->TaskIndex];
-          log += Settings.TaskDevicePluginConfig[event->TaskIndex][3];
-          log += Settings.TaskDevicePluginConfig[event->TaskIndex][4];
-          log += Settings.TaskDevicePluginConfig[event->TaskIndex][5];
-          log += Settings.TaskDevicePluginConfig[event->TaskIndex][6];
-          addLog(LOG_LEVEL_DEBUG, log);
+    //  Plugin_222_M->home();
+    Plugin_222_M->clear();
+    Plugin_222_M->home();
+    Plugin_222_M->print(hour());
+    Plugin_222_M->print(":");
+    Plugin_222_M->print(minute());
+    Plugin_222_M->print(":");
+    Plugin_222_M->print(second());
+    //  Plugin_222_M->print("Hello");
 
       success = true;
 

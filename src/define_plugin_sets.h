@@ -554,9 +554,15 @@ To create/register a plugin, you have to :
     #define USES_P075   // Nextion
 
     #define USES_P078   // Eastron Modbus Energy meters
+<<<<<<< HEAD
 //    #define USES_P079   // Wemos Motoshield
 //    #define USES_P080   // iButton Sensor  DS1990A
     #define USES_P222   //Display HCMS_2915
+=======
+    #define USES_P079   // Wemos Motoshield
+    #define USES_P080   // iButton Sensor  DS1990A
+    #define USES_P081   // Cron
+>>>>>>> upstream/mega
 #endif
 
 
