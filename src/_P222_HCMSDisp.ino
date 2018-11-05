@@ -184,18 +184,20 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
       int argIndex = tmpString.indexOf(',');
       if (argIndex)
         tmpString = tmpString.substring(0, argIndex);
-
-      String tmpStr = string;
-      int comma1 = tmpStr.indexOf(',');
-      if (tmpString.equalsIgnoreCase(F("dothis"))) {
-        //do something
 */
-      Plugin_222_M->setBrightness(Settings.TaskDevicePluginConfig[event->TaskIndex][6]);
-      Plugin_222_M->clear();
-      Plugin_222_M->home();
-      Plugin_222_M->print("Hello");
+    String command = parseString(string,1);
 
-        success = true;     //set to true only if plugin has executed a command successfully
+      if (command == F("setbrightness")) {
+        String param = parseString(string, 2);
+        int brightness;
+        if (validIntFromString(param, brightness)) {
+          if (brightness >= 0 && brightness <= 15)
+            Plugin_222_M->setBrightness(brightness);
+        }
+        success = true;
+
+      }
+      success = true;     //set to true only if plugin has executed a command successfully
     break;
     }
 
