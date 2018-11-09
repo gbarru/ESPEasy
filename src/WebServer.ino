@@ -204,15 +204,20 @@ void sendContentBlocking(String& data) {
 void sendHeaderBlocking(bool json) {
   checkRAM(F("sendHeaderBlocking"));
   WebServer.client().flush();
+  String contenttype;
+  if (json)
+    contenttype = F("application/json");
+  else
+    contenttype = F("text/html");
+
 #if defined(ESP8266) && defined(ARDUINO_ESP8266_RELEASE_2_3_0)
   WebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  WebServer.sendHeader(F("Content-Type"), json ? F("application/json") : F("text/html"), true);
   WebServer.sendHeader(F("Accept-Ranges"), F("none"));
   WebServer.sendHeader(F("Cache-Control"), F("no-cache"));
   WebServer.sendHeader(F("Transfer-Encoding"), F("chunked"));
   if (json)
     WebServer.sendHeader(F("Access-Control-Allow-Origin"),"*");
-  WebServer.send(200);
+  WebServer.send(200, contenttype, "");
 #else
   unsigned int timeout = 0;
   uint32_t freeBeforeSend = ESP.getFreeHeap();
@@ -220,11 +225,10 @@ void sendHeaderBlocking(bool json) {
   if (freeBeforeSend < 4000) timeout = 1000;
   const uint32_t beginWait = millis();
   WebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  WebServer.sendHeader(F("Content-Type"), json ? F("application/json") : F("text/html"), true);
   WebServer.sendHeader(F("Cache-Control"), F("no-cache"));
   if (json)
     WebServer.sendHeader(F("Access-Control-Allow-Origin"),"*");
-  WebServer.send(200);
+  WebServer.send(200, contenttype, "");
   // dont wait on 2.3.0. Memory returns just too slow.
   while ((ESP.getFreeHeap() < freeBeforeSend) &&
          !timeOutReached(beginWait + timeout)) {
@@ -898,7 +902,7 @@ void handle_root() {
     TXBuffer += formatIP(ip);
 
     addRowLabel(F("Wifi RSSI"));
-    if (wifiStatus == ESPEASY_WIFI_SERVICES_INITIALIZED)
+    if (WiFiConnected())
     {
       TXBuffer += String(WiFi.RSSI());
       TXBuffer += F(" dB (");
@@ -5312,7 +5316,7 @@ void handle_setup() {
 
   addHeader(false,TXBuffer.buf);
 
-  if (wifiStatus == ESPEASY_WIFI_SERVICES_INITIALIZED)
+  if (WiFiConnected())
   {
     addHtmlError(SaveSettings());
     const IPAddress ip = WiFi.localIP();
@@ -5688,7 +5692,7 @@ void handle_sysinfo() {
 
    addTableSeparator(F("Network"), 2, 3, F("Wifi"));
 
-  if (wifiStatus == ESPEASY_WIFI_SERVICES_INITIALIZED)
+  if (WiFiConnected())
   {
      addRowLabel(F("Wifi"));
     #if defined(ESP8266)
