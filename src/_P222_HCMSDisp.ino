@@ -41,6 +41,8 @@ x can be between 1 - 8 and can store values between -32767 - 32768 (16 bit)
 */
 LedDisplay *Plugin_222_M = NULL;
 
+uint8_t p222_showbuffer[8];
+
 boolean Plugin_222(byte function, struct EventStruct *event, String& string)
 {
   //function: reason the plugin was called
@@ -108,6 +110,8 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
       addFormNote(F("HCMS:  1st=DataPin, 2nd=registerSelect, 3rd= clockPin, 4th= Enable 5th=Reset"));
       addFormNumericBox(F("DisplayLenght"), F("displaylenght"), (int)Settings.TaskDevicePluginConfig[event->TaskIndex][5], 0, 15);
       addFormNumericBox(F("Brightness"), F("brightness"), (int)Settings.TaskDevicePluginConfig[event->TaskIndex][6], 0, 15);
+      String displout[3] = { F("Manual"), F("Clock"), F("Date")  };
+      addFormSelector(F("Display Output"), F("p222_displout"), 3, displout, NULL, Settings.TaskDevicePluginConfig[event->TaskIndex][7]);
       success = true;
       break;
     }
@@ -130,6 +134,7 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
 
       Settings.TaskDevicePluginConfig[event->TaskIndex][5] = getFormItemInt(F("displaylenght"));
       Settings.TaskDevicePluginConfig[event->TaskIndex][6] = getFormItemInt(F("brightness"));
+      Settings.TaskDevicePluginConfig[event->TaskIndex][7] = getFormItemInt(F("p222_displout"));
 
       String log = F("HCMS : SAVE HCMS Pins : ");
       log += Settings.TaskDevicePin1[event->TaskIndex]; log += F(" ");
@@ -139,6 +144,7 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
       log += Settings.TaskDevicePluginConfig[event->TaskIndex][4]; log += F(" ");
       log += Settings.TaskDevicePluginConfig[event->TaskIndex][5]; log += F(" ");
       log += Settings.TaskDevicePluginConfig[event->TaskIndex][6]; log += F(" ");
+      log += Settings.TaskDevicePluginConfig[event->TaskIndex][7];
       addLog(LOG_LEVEL_DEBUG, log);
 
       success = true;
@@ -209,14 +215,39 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_ONCE_A_SECOND:
     {
-      Plugin_222_M->clear();
-      Plugin_222_M->home();
-      Plugin_222_M->print(hour());
-      Plugin_222_M->print(":");
-      Plugin_222_M->print(minute());
-      Plugin_222_M->print(":");
-      Plugin_222_M->print(second());
-
+byte p222_output=Settings.TaskDevicePluginConfig[event->TaskIndex][7];
+      switch (p222_output){
+        case 1:
+        {
+          p222_FillBufferWithTime();
+          Plugin_222_M->clear();
+          Plugin_222_M->home();
+          Plugin_222_M->print(p222_showbuffer[0]);
+          Plugin_222_M->print(p222_showbuffer[1]);
+          Plugin_222_M->print(":");
+          Plugin_222_M->print(p222_showbuffer[2]);
+          Plugin_222_M->print(p222_showbuffer[3]);
+          Plugin_222_M->print(":");
+          Plugin_222_M->print(p222_showbuffer[4]);
+          Plugin_222_M->print(p222_showbuffer[5]);
+        break;
+        }
+        case 2:
+        {
+          p222_FillBufferWithDate();
+          Plugin_222_M->clear();
+          Plugin_222_M->home();
+          Plugin_222_M->print(p222_showbuffer[0]);
+          Plugin_222_M->print(p222_showbuffer[1]);
+          Plugin_222_M->print("/");
+          Plugin_222_M->print(p222_showbuffer[2]);
+          Plugin_222_M->print(p222_showbuffer[3]);
+          Plugin_222_M->print("/");
+          Plugin_222_M->print(p222_showbuffer[4]);
+          Plugin_222_M->print(p222_showbuffer[5]);
+        break;
+        }
+      }
       success = true;
     break;
     }
@@ -241,6 +272,43 @@ void p222_do_sth_useful()
   //code
 }
 */
+void p222_FillBufferWithTime(void)
+{
+  memset(p222_showbuffer,0,sizeof(p222_showbuffer));
+  byte hours = hour();
+  byte minutes = minute();
+  byte seconds = second();
+  uint8_t p222_digit1, p222_digit2;
+  p222_digit1 = (uint8_t)(hours / 10);
+  p222_digit2 = hours - p222_digit1*10;
+  p222_showbuffer[0] = p222_digit1; p222_showbuffer[1] = p222_digit2;
+  p222_digit1 = (uint8_t)(minutes / 10);
+  p222_digit2 = minutes - p222_digit1*10;
+  p222_showbuffer[2] = p222_digit1; p222_showbuffer[3] = p222_digit2;
+  p222_digit1 = (uint8_t)(seconds / 10);
+  p222_digit2 = seconds - p222_digit1*10;
+  p222_showbuffer[4] = p222_digit1; p222_showbuffer[5] = p222_digit2;
+}
+
+void p222_FillBufferWithDate(void)
+{
+  memset(p222_showbuffer,0,sizeof(p222_showbuffer));
+  byte digit_day = day();
+  byte digit_month = month();
+  byte digit1_year = uint8_t(year()/100);
+  byte digit2_year = uint8_t(year()-digit1_year*100);
+  uint8_t p222_digit1, p222_digit2;
+  p222_digit1 = (uint8_t)(digit_day / 10);
+  p222_digit2 = digit_day - p222_digit1*10;
+  p222_showbuffer[0] = p222_digit1; p222_showbuffer[1] = p222_digit2;
+  p222_digit1 = (uint8_t)(digit_month / 10);
+  p222_digit2 = digit_month - p222_digit1*10;
+  p222_showbuffer[2] = p222_digit1; p222_showbuffer[3] = p222_digit2;
+  p222_digit1 = (uint8_t)(digit2_year / 10);
+  p222_digit2 = digit2_year - p222_digit1*10;
+  p222_showbuffer[4] = p222_digit1; p222_showbuffer[5] = p222_digit2;
+}
+
 #endif PLUGIN_BUILD_DEVELOPMENT
 //#endif PLUGIN_BUILD_TESTING
 #endif // USES_P222
