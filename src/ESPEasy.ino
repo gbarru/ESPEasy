@@ -1,4 +1,6 @@
 
+#include <Arduino.h>
+
 #ifdef CONTINUOUS_INTEGRATION
 #pragma GCC diagnostic error "-Wall"
 #else
@@ -125,7 +127,7 @@ void setup()
   #endif
 
   Serial.begin(115200);
-  // Serial.print("\n\n\nBOOOTTT\n\n\n");
+  // serialPrint("\n\n\nBOOOTTT\n\n\n");
 
   initLog();
 
@@ -142,7 +144,7 @@ void setup()
 
   if (SpiffsSectors() < 32)
   {
-    Serial.println(F("\nNo (or too small) SPIFFS area..\nSystem Halted\nPlease reflash with 128k SPIFFS minimum!"));
+    serialPrintln(F("\nNo (or too small) SPIFFS area..\nSystem Halted\nPlease reflash with 128k SPIFFS minimum!"));
     while (true)
       delay(1);
   }
@@ -196,6 +198,7 @@ void setup()
   fileSystemCheck();
   progMemMD5check();
   LoadSettings();
+  Settings.UseRTOSMultitasking = false; // For now, disable it, we experience heap corruption.
   if (RTC.bootFailedCount > 10 && RTC.bootCounter > 10) {
     byte toDisable = RTC.bootFailedCount - 10;
     toDisable = disablePlugin(toDisable);
@@ -215,11 +218,11 @@ void setup()
   if (Settings.Version != VERSION || Settings.PID != ESP_PROJECT_PID)
   {
     // Direct Serial is allowed here, since this is only an emergency task.
-    Serial.print(F("\nPID:"));
-    Serial.println(Settings.PID);
-    Serial.print(F("Version:"));
-    Serial.println(Settings.Version);
-    Serial.println(F("INIT : Incorrect PID or version!"));
+    serialPrint(F("\nPID:"));
+    serialPrintln(String(Settings.PID));
+    serialPrint(F("Version:"));
+    serialPrintln(String(Settings.Version));
+    serialPrintln(F("INIT : Incorrect PID or version!"));
     delay(1000);
     ResetFactory();
   }
@@ -706,12 +709,7 @@ void runOncePerSecond()
         }
       case CMD_REBOOT:
         {
-          #if defined(ESP8266)
-            ESP.reset();
-          #endif
-          #if defined(ESP32)
-            ESP.restart();
-          #endif
+          reboot();
           break;
         }
     }
@@ -750,15 +748,15 @@ void runOncePerSecond()
 /*
   if (Settings.SerialLogLevel == LOG_LEVEL_DEBUG_DEV)
   {
-    Serial.print(F("Plugin calls: 50 ps:"));
-    Serial.print(elapsed50ps);
-    Serial.print(F(" uS, 10 ps:"));
-    Serial.print(elapsed10ps);
-    Serial.print(F(" uS, 10 psU:"));
-    Serial.print(elapsed10psU);
-    Serial.print(F(" uS, 1 ps:"));
-    Serial.print(elapsed);
-    Serial.println(F(" uS"));
+    serialPrint(F("Plugin calls: 50 ps:"));
+    serialPrint(elapsed50ps);
+    serialPrint(F(" uS, 10 ps:"));
+    serialPrint(elapsed10ps);
+    serialPrint(F(" uS, 10 psU:"));
+    serialPrint(elapsed10psU);
+    serialPrint(F(" uS, 1 ps:"));
+    serialPrint(elapsed);
+    serialPrintln(F(" uS"));
     elapsed50ps=0;
     elapsed10ps=0;
     elapsed10psU=0;
@@ -910,7 +908,7 @@ void backgroundtasks()
   #if defined(ESP8266)
     tcpCleanup();
   #endif
-  process_serialLogBuffer();
+  process_serialWriteBuffer();
   if(!UseRTOSMultitasking){
     if (Settings.UseSerial)
       if (Serial.available())

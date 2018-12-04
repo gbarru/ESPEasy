@@ -246,7 +246,7 @@ boolean Plugin_020(byte function, struct EventStruct *event, String& string)
         if (Settings.UseRules)
         {
           String message = (char*)serial_buf;
-          int NewLinePos = message.indexOf(F("\r\n"));
+          int NewLinePos = message.indexOf("\r\n");
           if (NewLinePos > 0)
             message = message.substring(0, NewLinePos);
           String eventString = "";
@@ -296,7 +296,7 @@ boolean Plugin_020(byte function, struct EventStruct *event, String& string)
         {
           success = true;
           String tmpString = string.substring(11);
-          Serial.println(tmpString);
+          Serial.println(tmpString); // FIXME TD-er: Should this also use the serial write buffer?
         }
         break;
       }

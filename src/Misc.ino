@@ -211,7 +211,7 @@ boolean remoteConfig(struct EventStruct *event, const String& string)
   return success;
 }
 
-int8_t getTaskIndexByName(String TaskNameSearch)
+int8_t getTaskIndexByName(const String& TaskNameSearch)
 {
 
   for (byte x = 0; x < TASKS_MAX; x++)
@@ -293,6 +293,7 @@ String formatGpioName_RX_HW(bool optional) {
 /*********************************************************************************************\
    set pin mode & state (info table)
   \*********************************************************************************************/
+/*
 void setPinState(byte plugin, byte index, byte mode, uint16_t value)
 {
   // plugin number and index form a unique key
@@ -320,11 +321,13 @@ void setPinState(byte plugin, byte index, byte mode, uint16_t value)
       }
   }
 }
-
+*/
 
 /*********************************************************************************************\
    get pin mode & state (info table)
   \*********************************************************************************************/
+
+/*
 boolean getPinState(byte plugin, byte index, byte *mode, uint16_t *value)
 {
   for (byte x = 0; x < PINSTATE_TABLE_MAX; x++)
@@ -337,10 +340,11 @@ boolean getPinState(byte plugin, byte index, byte *mode, uint16_t *value)
   return false;
 }
 
-
+*/
 /*********************************************************************************************\
    check if pin mode & state is known (info table)
   \*********************************************************************************************/
+/*
 boolean hasPinState(byte plugin, byte index)
 {
   for (byte x = 0; x < PINSTATE_TABLE_MAX; x++)
@@ -351,6 +355,7 @@ boolean hasPinState(byte plugin, byte index)
   return false;
 }
 
+*/
 
 /*********************************************************************************************\
    Bitwise operators
@@ -368,7 +373,7 @@ void setBitToUL(uint32_t& number, byte bitnr, bool value) {
 /*********************************************************************************************\
    report pin mode & state (info table) using json
   \*********************************************************************************************/
-String getPinStateJSON(boolean search, byte plugin, byte index, String& log, uint16_t noSearchValue)
+String getPinStateJSON(boolean search, uint32_t key, const String& log, uint16_t noSearchValue)
 {
   checkRAM(F("getPinStateJSON"));
   printToWebJSON = true;
@@ -377,16 +382,11 @@ String getPinStateJSON(boolean search, byte plugin, byte index, String& log, uin
   String reply = "";
   boolean found = false;
 
-  if (search)
+  if (search && existPortStatus(key))
   {
-    for (byte x = 0; x < PINSTATE_TABLE_MAX; x++)
-      if ((pinStates[x].plugin == plugin) && (pinStates[x].index == index))
-      {
-        mode = pinStates[x].mode;
-        value = pinStates[x].value;
-        found = true;
-        break;
-      }
+    mode = globalMapPortStatus[key].mode;
+    value = globalMapPortStatus[key].state;
+    found = true;
   }
 
   if (!search || (search && found))
@@ -394,9 +394,9 @@ String getPinStateJSON(boolean search, byte plugin, byte index, String& log, uin
     reply += F("{\n\"log\": \"");
     reply += log.substring(7, 32); // truncate to 25 chars, max MQTT message size = 128 including header...
     reply += F("\",\n\"plugin\": ");
-    reply += plugin;
+    reply += getPluginFromKey(key);
     reply += F(",\n\"pin\": ");
-    reply += index;
+    reply += getPortFromKey(key);
     reply += F(",\n\"mode\": \"");
     switch (mode)
     {
@@ -405,6 +405,12 @@ String getPinStateJSON(boolean search, byte plugin, byte index, String& log, uin
         break;
       case PIN_MODE_INPUT:
         reply += F("input");
+        break;
+      case PIN_MODE_INPUT_PULLUP:
+        reply += F("input pullup");
+        break;
+      case PIN_MODE_OFFLINE:
+        reply += F("offline");
         break;
       case PIN_MODE_OUTPUT:
         reply += F("output");
@@ -415,6 +421,8 @@ String getPinStateJSON(boolean search, byte plugin, byte index, String& log, uin
       case PIN_MODE_SERVO:
         reply += F("servo");
         break;
+      default:
+        reply += F("ERROR: Not Defined");
     }
     reply += F("\",\n\"state\": ");
     reply += value;
@@ -512,19 +520,18 @@ void delayBackground(unsigned long delay)
 void parseCommandString(struct EventStruct *event, const String& string)
 {
   checkRAM(F("parseCommandString"));
-  char *TmpStr1 = new char[INPUT_COMMAND_SIZE]();
+  String TmpStr1;
   event->Par1 = 0;
   event->Par2 = 0;
   event->Par3 = 0;
   event->Par4 = 0;
   event->Par5 = 0;
 
-  if (GetArgv(string.c_str(), TmpStr1, 2)) { event->Par1 = CalculateParam(TmpStr1); }
-  if (GetArgv(string.c_str(), TmpStr1, 3)) { event->Par2 = CalculateParam(TmpStr1); }
-  if (GetArgv(string.c_str(), TmpStr1, 4)) { event->Par3 = CalculateParam(TmpStr1); }
-  if (GetArgv(string.c_str(), TmpStr1, 5)) { event->Par4 = CalculateParam(TmpStr1); }
-  if (GetArgv(string.c_str(), TmpStr1, 6)) { event->Par5 = CalculateParam(TmpStr1); }
-  delete[] TmpStr1;
+  if (GetArgv(string.c_str(), TmpStr1, 2)) { event->Par1 = CalculateParam(TmpStr1.c_str()); }
+  if (GetArgv(string.c_str(), TmpStr1, 3)) { event->Par2 = CalculateParam(TmpStr1.c_str()); }
+  if (GetArgv(string.c_str(), TmpStr1, 4)) { event->Par3 = CalculateParam(TmpStr1.c_str()); }
+  if (GetArgv(string.c_str(), TmpStr1, 5)) { event->Par4 = CalculateParam(TmpStr1.c_str()); }
+  if (GetArgv(string.c_str(), TmpStr1, 6)) { event->Par5 = CalculateParam(TmpStr1.c_str()); }
 }
 
 /********************************************************************************************\
@@ -565,13 +572,13 @@ String checkTaskSettings(byte taskIndex) {
         if (strcasecmp(ExtraTaskSettings.TaskDeviceName, deviceName.c_str()) == 0) {
           err = F("Task Device Name is not unique, conflicts with task ID #");
           err += (i+1);
-          return err;
+//          return err;
         }
       }
     }
   }
 
-  err = LoadTaskSettings(taskIndex);
+  err += LoadTaskSettings(taskIndex);
   return err;
 }
 
@@ -629,16 +636,31 @@ byte getNotificationProtocolIndex(byte Number)
 /********************************************************************************************\
   Find positional parameter in a char string
   \*********************************************************************************************/
-boolean GetArgv(const char *string, char *argv, unsigned int argc) {
-  return GetArgv(string, argv, INPUT_COMMAND_SIZE, argc);
+
+bool HasArgv(const char *string, unsigned int argc) {
+  int pos_begin, pos_end;
+  return GetArgvBeginEnd(string, argc, pos_begin, pos_end);
 }
 
-boolean GetArgv(const char *string, char *argv, unsigned int argv_size, unsigned int argc)
-{
-  memset(argv, 0, argv_size);
+bool GetArgv(const char *string, String& argvString, unsigned int argc) {
+  int pos_begin, pos_end;
+  bool hasArgument = GetArgvBeginEnd(string, argc, pos_begin, pos_end);
+  argvString = "";
+  if (pos_begin >= 0 && pos_end >= 0) {
+    argvString.reserve(pos_end - pos_begin);
+    for (int i = pos_begin; i < pos_end && i >= 0; ++i) {
+      argvString += string[i];
+    }
+  }
+  return hasArgument;
+}
+
+bool GetArgvBeginEnd(const char *string, const unsigned int argc, int& pos_begin, int& pos_end) {
+  pos_begin = -1;
+  pos_end = -1;
   size_t string_len = strlen(string);
-  unsigned int string_pos = 0, argv_pos = 0, argc_pos = 0;
-  char c, d;
+  unsigned int string_pos = 0, argc_pos = 0;
+  char c, d; // c = current char, d = next char (if available)
   boolean parenthesis = false;
   char matching_parenthesis = '"';
 
@@ -646,8 +668,9 @@ boolean GetArgv(const char *string, char *argv, unsigned int argv_size, unsigned
   {
     c = string[string_pos];
     d = 0;
-    if ((string_pos + 1) < string_len)
+    if ((string_pos + 1) < string_len) {
       d = string[string_pos + 1];
+    }
 
     if       (!parenthesis && c == ' ' && d == ' ') {}
     else if  (!parenthesis && c == ' ' && d == ',') {}
@@ -657,40 +680,31 @@ boolean GetArgv(const char *string, char *argv, unsigned int argv_size, unsigned
     else if  (c == '"' || c == '\'' || c == '[') {
       parenthesis = true;
       matching_parenthesis = c;
-      if (c == '[')
+      if (c == '[') {
         matching_parenthesis = ']';
+      }
     }
     else
     {
-      if ((argv_pos +2 ) >= argv_size) {
-        if (loglevelActiveFor(LOG_LEVEL_ERROR)) {
-          String log = F("GetArgv Error; argv_size exceeded. argc=");
-          log += argc;
-          log += F(" argv_size=");
-          log += argv_size;
-          log += F(" argv=");
-          log += argv;
-          addLog(LOG_LEVEL_ERROR, log);
-        }
-        return false;
+      if (pos_begin == -1) {
+        pos_begin = string_pos;
+        pos_end = string_pos;
       }
-      argv[argv_pos++] = c;
-      argv[argv_pos] = 0;
+      ++pos_end;
 
       if ((!parenthesis && (d == ' ' || d == ',' || d == 0)) || (parenthesis && (d == matching_parenthesis))) // end of word
       {
-        if (d == matching_parenthesis)
+        if (d == matching_parenthesis) {
           parenthesis = false;
-        argv[argv_pos] = 0;
+        }
         argc_pos++;
 
         if (argc_pos == argc)
         {
           return true;
         }
-
-        argv[0] = 0;
-        argv_pos = 0;
+        pos_begin = -1;
+        pos_end = -1;
         string_pos++;
       }
     }
@@ -698,6 +712,7 @@ boolean GetArgv(const char *string, char *argv, unsigned int argv_size, unsigned
   }
   return false;
 }
+
 
 
 
@@ -717,14 +732,14 @@ boolean GetArgv(const char *string, char *argv, unsigned int argv_size, unsigned
   \*********************************************************************************************/
 #if defined(ARDUINO_ESP8266_RELEASE_2_3_0)
 void dump (uint32_t addr) { //Seems already included in core 2.4 ...
-  Serial.print (addr, HEX);
-  Serial.print(": ");
+  serialPrint (addr, HEX);
+  serialPrint(": ");
   for (uint32_t a = addr; a < addr + 16; a++)
   {
-    Serial.print ( pgm_read_byte(a), HEX);
-    Serial.print (" ");
+    serialPrint ( pgm_read_byte(a), HEX);
+    serialPrint (" ");
   }
-  Serial.println("");
+  serialPrintln("");
 }
 #endif
 
@@ -774,27 +789,31 @@ String getTaskDeviceName(byte TaskIndex) {
 /********************************************************************************************\
   Reset all settings to factory defaults
   \*********************************************************************************************/
-void ResetFactory(void)
+void ResetFactory()
 {
+  const GpioFactorySettingsStruct gpio_settings(ResetFactoryDefaultPreference.getDeviceModel());
 
   checkRAM(F("ResetFactory"));
   // Direct Serial is allowed here, since this is only an emergency task.
-  Serial.println(F("RESET: Resetting factory defaults..."));
+  serialPrint(F("RESET: Resetting factory defaults... using "));
+  serialPrint(getDeviceModelString(ResetFactoryDefaultPreference.getDeviceModel()));
+  serialPrintln(F(" settings"));
   delay(1000);
   if (readFromRTC())
   {
-    Serial.print(F("RESET: Warm boot, reset count: "));
-    Serial.println(RTC.factoryResetCounter);
+    serialPrint(F("RESET: Warm boot, reset count: "));
+    serialPrintln(String(RTC.factoryResetCounter));
     if (RTC.factoryResetCounter >= 3)
     {
-      Serial.println(F("RESET: Too many resets, protecting your flash memory (powercycle to solve this)"));
+      serialPrintln(F("RESET: Too many resets, protecting your flash memory (powercycle to solve this)"));
       return;
     }
   }
   else
   {
-    Serial.println(F("RESET: Cold boot"));
+    serialPrintln(F("RESET: Cold boot"));
     initRTC();
+    // TODO TD-er: Store set device model in RTC.
   }
 
   RTC.flashCounter=0; //reset flashcounter, since we're already counting the number of factory-resets. we dont want to hit a flash-count limit during reset.
@@ -803,12 +822,12 @@ void ResetFactory(void)
 
   //always format on factory reset, in case of corrupt SPIFFS
   SPIFFS.end();
-  Serial.println(F("RESET: formatting..."));
+  serialPrintln(F("RESET: formatting..."));
   SPIFFS.format();
-  Serial.println(F("RESET: formatting done..."));
+  serialPrintln(F("RESET: formatting done..."));
   if (!SPIFFS.begin())
   {
-    Serial.println(F("RESET: FORMAT SPIFFS FAILED!"));
+    serialPrintln(F("RESET: FORMAT SPIFFS FAILED!"));
     return;
   }
 
@@ -828,40 +847,79 @@ void ResetFactory(void)
   fname=FILE_RULES;
   InitFile(fname.c_str(), 0);
 
-  Settings.clearAll();
+  Settings.clearMisc();
+  if (!ResetFactoryDefaultPreference.keepNTP()) {
+    Settings.clearTimeSettings();
+    Settings.UseNTP			= DEFAULT_USE_NTP;
+    strcpy_P(Settings.NTPHost, PSTR(DEFAULT_NTP_HOST));
+    Settings.TimeZone		= DEFAULT_TIME_ZONE;
+    Settings.DST   			= DEFAULT_USE_DST;
+  }
+
+  if (!ResetFactoryDefaultPreference.keepNetwork()) {
+    Settings.clearNetworkSettings();
+    // TD-er Reset access control
+    str2ip((char*)DEFAULT_IPRANGE_LOW, SecuritySettings.AllowedIPrangeLow);
+    str2ip((char*)DEFAULT_IPRANGE_HIGH, SecuritySettings.AllowedIPrangeHigh);
+    SecuritySettings.IPblockLevel = DEFAULT_IP_BLOCK_LEVEL;
+
+    #if DEFAULT_USE_STATIC_IP
+      str2ip((char*)DEFAULT_IP, Settings.IP);
+      str2ip((char*)DEFAULT_DNS, Settings.DNS);
+      str2ip((char*)DEFAULT_GW, Settings.Gateway);
+      str2ip((char*)DEFAULT_SUBNET, Settings.Subnet);
+    #endif
+  }
+
+  Settings.clearNotifications();
+  Settings.clearControllers();
+  Settings.clearTasks();
+  if (!ResetFactoryDefaultPreference.keepLogSettings()) {
+    Settings.clearLogSettings();
+    str2ip((char*)DEFAULT_SYSLOG_IP, Settings.Syslog_IP);
+
+    setLogLevelFor(LOG_TO_SYSLOG, DEFAULT_SYSLOG_LEVEL);
+    setLogLevelFor(LOG_TO_SERIAL, DEFAULT_SERIAL_LOG_LEVEL);
+    setLogLevelFor(LOG_TO_WEBLOG, DEFAULT_WEB_LOG_LEVEL);
+    setLogLevelFor(LOG_TO_SDCARD, DEFAULT_SD_LOG_LEVEL);
+    Settings.SyslogFacility	= DEFAULT_SYSLOG_FACILITY;
+    Settings.UseValueLogger = DEFAULT_USE_SD_LOG;
+  }
+  if (!ResetFactoryDefaultPreference.keepUnitName()) {
+    Settings.clearUnitNameSettings();
+    Settings.Unit           = UNIT;
+    strcpy_P(Settings.Name, PSTR(DEFAULT_NAME));
+    Settings.UDPPort				= 0; //DEFAULT_SYNC_UDP_PORT;
+  }
+  if (!ResetFactoryDefaultPreference.keepWiFi()) {
+    strcpy_P(SecuritySettings.WifiSSID, PSTR(DEFAULT_SSID));
+    strcpy_P(SecuritySettings.WifiKey, PSTR(DEFAULT_KEY));
+    strcpy_P(SecuritySettings.WifiAPKey, PSTR(DEFAULT_AP_KEY));
+    SecuritySettings.WifiSSID2[0] = 0;
+    SecuritySettings.WifiKey2[0] = 0;
+  }
+  SecuritySettings.Password[0] = 0;
+
+  Settings.ResetFactoryDefaultPreference = ResetFactoryDefaultPreference.getPreference();
+
   // now we set all parameters that need to be non-zero as default value
 
-#if DEFAULT_USE_STATIC_IP
-  str2ip((char*)DEFAULT_IP, Settings.IP);
-  str2ip((char*)DEFAULT_DNS, Settings.DNS);
-  str2ip((char*)DEFAULT_GW, Settings.Gateway);
-  str2ip((char*)DEFAULT_SUBNET, Settings.Subnet);
-#endif
 
   Settings.PID             = ESP_PROJECT_PID;
   Settings.Version         = VERSION;
-  Settings.Unit            = UNIT;
-  strcpy_P(SecuritySettings.WifiSSID, PSTR(DEFAULT_SSID));
-  strcpy_P(SecuritySettings.WifiKey, PSTR(DEFAULT_KEY));
-  strcpy_P(SecuritySettings.WifiAPKey, PSTR(DEFAULT_AP_KEY));
-  SecuritySettings.Password[0] = 0;
-  // TD-er Reset access control
-  str2ip((char*)DEFAULT_IPRANGE_LOW, SecuritySettings.AllowedIPrangeLow);
-  str2ip((char*)DEFAULT_IPRANGE_HIGH, SecuritySettings.AllowedIPrangeHigh);
-  SecuritySettings.IPblockLevel = DEFAULT_IP_BLOCK_LEVEL;
-
+  Settings.Build           = BUILD;
+//  Settings.IP_Octet				 = DEFAULT_IP_OCTET;
   Settings.Delay           = DEFAULT_DELAY;
-  Settings.Pin_i2c_sda     = DEFAULT_PIN_I2C_SDA;
-  Settings.Pin_i2c_scl     = DEFAULT_PIN_I2C_SCL;
-  Settings.Pin_status_led  = DEFAULT_PIN_STATUS_LED;
+  Settings.Pin_i2c_sda     = gpio_settings.i2c_sda;
+  Settings.Pin_i2c_scl     = gpio_settings.i2c_scl;
+  Settings.Pin_status_led  = gpio_settings.status_led;
   Settings.Pin_status_led_Inversed  = DEFAULT_PIN_STATUS_LED_INVERSED;
   Settings.Pin_sd_cs       = -1;
-  Settings.Pin_Reset = -1;
-  Settings.Protocol[0]        = DEFAULT_PROTOCOL;
-  strcpy_P(Settings.Name, PSTR(DEFAULT_NAME));
-  Settings.deepSleep = false;
-  Settings.CustomCSS = false;
-  Settings.InitSPI = false;
+  Settings.Pin_Reset       = -1;
+  Settings.Protocol[0]     = DEFAULT_PROTOCOL;
+  Settings.deepSleep       = false;
+  Settings.CustomCSS       = false;
+  Settings.InitSPI         = false;
   for (byte x = 0; x < TASKS_MAX; x++)
   {
     Settings.TaskDevicePin1[x] = -1;
@@ -873,35 +931,20 @@ void ResetFactory(void)
       Settings.TaskDeviceSendData[y][x] = true;
     Settings.TaskDeviceTimer[x] = Settings.Delay;
   }
-  Settings.Build = BUILD;
 
-	// advanced Settings
-	Settings.UseRules 		= DEFAULT_USE_RULES;
+  // advanced Settings
+  Settings.UseRules 		= DEFAULT_USE_RULES;
 
-	Settings.MQTTRetainFlag	= DEFAULT_MQTT_RETAIN;
-	Settings.MessageDelay	= DEFAULT_MQTT_DELAY;
-	Settings.MQTTUseUnitNameAsClientId = DEFAULT_MQTT_USE_UNITNAME_AS_CLIENTID;
+  Settings.MQTTRetainFlag	= DEFAULT_MQTT_RETAIN;
+  Settings.MessageDelay	= DEFAULT_MQTT_DELAY;
+  Settings.MQTTUseUnitNameAsClientId = DEFAULT_MQTT_USE_UNITNAME_AS_CLIENTID;
 
-    Settings.UseNTP			= DEFAULT_USE_NTP;
-	strcpy_P(Settings.NTPHost, PSTR(DEFAULT_NTP_HOST));
-	Settings.TimeZone		= DEFAULT_TIME_ZONE;
-    Settings.DST 			= DEFAULT_USE_DST;
 
-	str2ip((char*)DEFAULT_SYSLOG_IP, Settings.Syslog_IP);
-
-  setLogLevelFor(LOG_TO_SYSLOG, DEFAULT_SYSLOG_LEVEL);
-  setLogLevelFor(LOG_TO_SERIAL, DEFAULT_SERIAL_LOG_LEVEL);
-	setLogLevelFor(LOG_TO_WEBLOG, DEFAULT_WEB_LOG_LEVEL);
-  setLogLevelFor(LOG_TO_SDCARD, DEFAULT_SD_LOG_LEVEL);
-  Settings.SyslogFacility	= DEFAULT_SYSLOG_FACILITY;
-	Settings.UseValueLogger = DEFAULT_USE_SD_LOG;
-
-	Settings.UseSerial		= DEFAULT_USE_SERIAL;
-	Settings.BaudRate		= DEFAULT_SERIAL_BAUD;
+  Settings.UseSerial		= DEFAULT_USE_SERIAL;
+  Settings.BaudRate		= DEFAULT_SERIAL_BAUD;
 
 /*
 	Settings.GlobalSync						= DEFAULT_USE_GLOBAL_SYNC;
-	Settings.UDPPort						= DEFAULT_SYNC_UDP_PORT;
 
 	Settings.IP_Octet						= DEFAULT_IP_OCTET;
 	Settings.WDI2CAddress					= DEFAULT_WD_IC2_ADDRESS;
@@ -914,11 +957,8 @@ void ResetFactory(void)
   strcpy_P(Settings.Name, PSTR(PLUGIN_DESCR));
 #endif
 
-  addPredefinedPlugins();
-  addPredefinedRules();
-
-
-
+  addPredefinedPlugins(gpio_settings);
+  addPredefinedRules(gpio_settings);
 
   SaveSettings();
 
@@ -935,7 +975,7 @@ void ResetFactory(void)
   SaveControllerSettings(0, ControllerSettings);
 #endif
   checkRAM(F("ResetFactory2"));
-  Serial.println(F("RESET: Succesful, rebooting. (you might need to press the reset button if you've justed flashed the firmware)"));
+  serialPrintln(F("RESET: Succesful, rebooting. (you might need to press the reset button if you've justed flashed the firmware)"));
   //NOTE: this is a known ESP8266 bug, not our fault. :)
   delay(1000);
   WiFi.persistent(true); // use SDK storage of SSID/WPA parameters
@@ -943,108 +983,6 @@ void ResetFactory(void)
   WifiDisconnect(); // this will store empty ssid/wpa into sdk storage
   WiFi.persistent(false); // Do not use SDK storage of SSID/WPA parameters
   reboot();
-}
-
-void addSwitchPlugin(byte taskIndex, byte gpio, const String& name, bool activeLow) {
-  setTaskDevice_to_TaskIndex(1, taskIndex);
-  setBasicTaskValues(
-    taskIndex,
-    0,            // taskdevicetimer
-    true,         // enabled
-    name,         // name
-    gpio,         // pin1
-    -1,            // pin2
-    -1);           // pin3
-  Settings.TaskDevicePin1PullUp[taskIndex] = true;
-  if (activeLow)
-    Settings.TaskDevicePluginConfig[taskIndex][2] = 1; // PLUGIN_001_BUTTON_TYPE_PUSH_ACTIVE_LOW;
-}
-
-bool addPredefinedPlugins() {
-  byte taskIndex = 0;
-  #ifdef GPIO_KEY1
-  // Create button switch P001
-  addSwitchPlugin(taskIndex, GPIO_KEY1, F("Button1"), true);
-  ++taskIndex;
-  #endif // GPIO_KEY1
-  #ifdef GPIO_KEY2
-  // Create button switch P001
-  addSwitchPlugin(taskIndex, GPIO_KEY2, F("Button2"), true);
-  ++taskIndex;
-  #endif // GPIO_KEY2
-  #ifdef GPIO_KEY3
-  // Create button switch P001
-  addSwitchPlugin(taskIndex, GPIO_KEY3, F("Button3"), true);
-  ++taskIndex;
-  #endif // GPIO_KEY3
-  #ifdef GPIO_KEY4
-  // Create button switch P001
-  addSwitchPlugin(taskIndex, GPIO_KEY4, F("Button4"), true);
-  ++taskIndex;
-  #endif // GPIO_KEY4
-
-  #ifdef GPIO_REL1
-    // Create relay switch P001
-    addSwitchPlugin(taskIndex, GPIO_REL1, F("Relay1"), false);
-    ++taskIndex;
-  #endif // GPIO_REL1
-  #ifdef GPIO_REL2
-    // Create relay switch P001
-    addSwitchPlugin(taskIndex, GPIO_REL2, F("Relay2"), false);
-    ++taskIndex;
-  #endif // GPIO_REL2
-  #ifdef GPIO_REL3
-    // Create relay switch P001
-    addSwitchPlugin(taskIndex, GPIO_REL3, F("Relay3"), false);
-    ++taskIndex;
-  #endif // GPIO_REL3
-  #ifdef GPIO_REL4
-    // Create relay switch P001
-    addSwitchPlugin(taskIndex, GPIO_REL4, F("Relay4"), false);
-    ++taskIndex;
-  #endif // GPIO_REL4
-  return taskIndex != 0; // Indicate something was added
-  // Also needed to make sure the variable is being used.
-}
-
-void addButtonRelayRule(byte buttonNumber, byte relay_gpio) {
-  Settings.UseRules = true;
-  String fileName;
-  #if defined(ESP32)
-    fileName += '/';
-  #endif
-  fileName += F("rules1.txt");
-  String rule = F("on ButtonBNR#switch do\n  if [ButtonBNR#switch]=1\n    gpio,GNR,1\n  else\n    gpio,GNR,0\n  endif\nendon\n");
-  rule.replace(F("BNR"), String(buttonNumber));
-  rule.replace(F("GNR"), String(relay_gpio));
-  String result = appendLineToFile(fileName, rule);
-  if (result.length() > 0) {
-    addLog(LOG_LEVEL_ERROR, result);
-  }
-}
-
-void addPredefinedRules() {
-  #ifdef GPIO_KEY1
-    #ifdef GPIO_REL1
-      addButtonRelayRule(1, GPIO_REL1);
-    #endif // GPIO_REL1
-  #endif // GPIO_KEY1
-  #ifdef GPIO_KEY2
-    #ifdef GPIO_REL2
-      addButtonRelayRule(2, GPIO_REL2);
-    #endif // GPIO_REL2
-  #endif // GPIO_KEY2
-  #ifdef GPIO_KEY3
-    #ifdef GPIO_REL3
-      addButtonRelayRule(3, GPIO_REL3);
-    #endif // GPIO_REL3
-  #endif // GPIO_KEY3
-  #ifdef GPIO_KEY4
-    #ifdef GPIO_REL4
-      addButtonRelayRule(4, GPIO_REL4);
-    #endif // GPIO_REL4
-  #endif // GPIO_KEY4
-
 }
 
 
@@ -1062,7 +1000,7 @@ void emergencyReset()
   if (Serial.available() == 2)
     if (Serial.read() == 0xAA && Serial.read() == 0x55)
     {
-      Serial.println(F("\n\n\rSystem will reset to factory defaults in 10 seconds..."));
+      serialPrintln(F("\n\n\rSystem will reset to factory defaults in 10 seconds..."));
       delay(10000);
       ResetFactory();
     }
@@ -1398,12 +1336,13 @@ void setLogLevelFor(byte destination, byte logLevel) {
 
 void updateLogLevelCache() {
   byte max_lvl = 0;
-  if (!log_to_serial_disabled && serialLogActiveRead()) {
-    max_lvl = _max(max_lvl, Settings.SerialLogLevel);
-    if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE)
-      Serial.setDebugOutput(true);
-  } else {
+  if (log_to_serial_disabled) {
     Serial.setDebugOutput(false);
+  } else {
+    max_lvl = _max(max_lvl, Settings.SerialLogLevel);
+    if (Settings.SerialLogLevel >= LOG_LEVEL_DEBUG_MORE) {
+      Serial.setDebugOutput(true);
+    }
   }
   max_lvl = _max(max_lvl, Settings.SyslogLevel);
   if (Logging.logActiveRead()) {
@@ -1420,22 +1359,13 @@ bool loglevelActiveFor(byte logLevel) {
 }
 
 byte getSerialLogLevel() {
-  byte logLevelSettings = 0;
-  if (!Settings.UseSerial) return 0;
-  if (log_to_serial_disabled || log_to_serial_disabled_temporary) return 0;
-  logLevelSettings = Settings.SerialLogLevel;
+  if (log_to_serial_disabled || !Settings.UseSerial) return 0;
   if (wifiStatus != ESPEASY_WIFI_SERVICES_INITIALIZED){
-    logLevelSettings = 2;
-  }
-/*
-  if (!serialLogActiveRead()) {
-    if (logLevelSettings != 0) {
-      updateLogLevelCache();
+    if (Settings.SerialLogLevel < LOG_LEVEL_INFO) {
+      return LOG_LEVEL_INFO;
     }
-    logLevelSettings = 0;
   }
-*/
-  return logLevelSettings;
+  return Settings.SerialLogLevel;
 }
 
 byte getWebLogLevel() {
@@ -1484,23 +1414,11 @@ boolean loglevelActive(byte logLevel, byte logLevelSettings) {
 
 void addToLog(byte logLevel, const char *line)
 {
-  const size_t line_length = strlen(line);
   if (loglevelActiveFor(LOG_TO_SERIAL, logLevel)) {
-    int roomLeft = ESP.getFreeHeap() - 5000;
-    if (roomLeft > 0) {
-      String timestamp_log(millis());
-      timestamp_log += F(" : ");
-      for (size_t i = 0; i < timestamp_log.length(); ++i) {
-        serialLogBuffer.push_back(timestamp_log[i]);
-      }
-      size_t pos = 0;
-      while (pos < line_length && pos < static_cast<size_t>(roomLeft)) {
-        serialLogBuffer.push_back(line[pos]);
-        ++pos;
-      }
-      serialLogBuffer.push_back('\r');
-      serialLogBuffer.push_back('\n');
-    }
+    addToSerialBuffer(String(millis()).c_str());
+    addToSerialBuffer(" : ");
+    addToSerialBuffer(line);
+    addNewlineToSerialBuffer();
   }
   if (loglevelActiveFor(LOG_TO_SYSLOG, logLevel)) {
     syslog(logLevel, line);
@@ -1519,59 +1437,6 @@ void addToLog(byte logLevel, const char *line)
 #endif
 }
 
-void process_serialLogBuffer() {
-  if (serialLogBuffer.size() == 0) return;
-  size_t snip = 128; // Some default, ESP32 doesn't have the availableForWrite function yet.
-#if defined(ESP8266)
-  snip = Serial.availableForWrite();
-#endif
-  if (snip > 0) {
-    last_serial_log_read = millis();
-    size_t bytes_to_write = serialLogBuffer.size();
-    if (snip < bytes_to_write) bytes_to_write = snip;
-    for (size_t i = 0; i < bytes_to_write; ++i) {
-      Serial.write(serialLogBuffer.front());
-      serialLogBuffer.pop_front();
-    }
-  }
-}
-
-void tempDisableSerialLog(bool setToDisabled) {
-  if (log_to_serial_disabled_temporary == setToDisabled) return;
-
-  // FIXME TD-er: For some reason disabling serial log will not enable it again.
-  //  log_to_serial_disabled_temporary = setToDisabled;
-  //  updateLogLevelCache();
-}
-
-bool serialLogActiveRead() {
-  if (!Settings.UseSerial) return false;
-  // Some default, ESP32 doesn't have the availableForWrite function yet.
-  // Not sure how to detect read activity on an ESP32.
-  size_t tx_free = 128;
-#if defined(ESP8266)
-  tx_free = Serial.availableForWrite();
-#endif
-  static size_t prev_tx_free = 0;
-  if (tx_free < prev_tx_free) {
-    prev_tx_free = tx_free;
-    tempDisableSerialLog(false);
-    return true;
-  }
-  // Must always set it or else it will never recover from prev_tx_free == 0
-  prev_tx_free = tx_free;
-  if (timePassedSince(last_serial_log_read) > LOG_BUFFER_EXPIRE) {
-    serialLogBuffer.clear();
-    // Just add some marker to get it going again when the serial buffer is
-    // read again and the serial log level was temporary set to 0 since nothing was read.
-    if (Settings.SerialLogLevel > 0) {
-      serialLogBuffer.push_back('\n');
-    }
-    tempDisableSerialLog(true);
-    return false;
-  }
-  return true;
-}
 
 /********************************************************************************************\
   Delayed reboot, in case of issues, do not reboot with high frequency as it might not help...
@@ -1581,8 +1446,8 @@ void delayedReboot(int rebootDelay)
   // Direct Serial is allowed here, since this is only an emergency task.
   while (rebootDelay != 0 )
   {
-    Serial.print(F("Delayed Reset "));
-    Serial.println(rebootDelay);
+    serialPrint(F("Delayed Reset "));
+    serialPrintln(String(rebootDelay));
     rebootDelay--;
     delay(1000);
   }
@@ -1590,6 +1455,8 @@ void delayedReboot(int rebootDelay)
 }
 
 void reboot() {
+  // FIXME TD-er: Should network connections be actively closed or does this introduce new issues?
+  flushAndDisconnectAllClients();
   #if defined(ESP32)
     ESP.restart();
   #else
@@ -2365,7 +2232,7 @@ int Calculate(const char *input, float* result)
   return CALCULATE_OK;
 }
 
-int CalculateParam(char *TmpStr) {
+int CalculateParam(const char *TmpStr) {
   int returnValue;
 
   // Minimize calls to the Calulate function.
@@ -2374,8 +2241,8 @@ int CalculateParam(char *TmpStr) {
     returnValue=str2int(TmpStr);
   } else {
     float param=0;
-    TmpStr[0] = ' '; //replace '=' with space
-    int returnCode=Calculate(TmpStr, &param);
+    // Starts with an '=', so Calculate starting at next position
+    int returnCode=Calculate(&TmpStr[1], &param);
     if (returnCode!=CALCULATE_OK) {
       String errorDesc;
       switch (returnCode) {
@@ -2418,747 +2285,6 @@ int CalculateParam(char *TmpStr) {
   return returnValue;
 }
 
-void checkRuleSets(){
-for (byte x=0; x < RULESETS_MAX; x++){
-  #if defined(ESP8266)
-    String fileName = F("rules");
-  #endif
-  #if defined(ESP32)
-    String fileName = F("/rules");
-  #endif
-  fileName += x+1;
-  fileName += F(".txt");
-  if (SPIFFS.exists(fileName))
-    activeRuleSets[x] = true;
-  else
-    activeRuleSets[x] = false;
-
-  if (Settings.SerialLogLevel == LOG_LEVEL_DEBUG_DEV){
-    Serial.print(fileName);
-    Serial.print(" ");
-    Serial.println(activeRuleSets[x]);
-    }
-  }
-}
-
-
-/********************************************************************************************\
-  Rules processing
-  \*********************************************************************************************/
-void rulesProcessing(String& event)
-{
-  if (!Settings.UseRules) return;
-  checkRAM(F("rulesProcessing"));
-  unsigned long timer = millis();
-  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
-    String log = F("EVENT: ");
-    log += event;
-    addLog(LOG_LEVEL_INFO, log);
-  }
-
-  for (byte x = 0; x < RULESETS_MAX; x++)
-  {
-    #if defined(ESP8266)
-      String fileName = F("rules");
-    #endif
-    #if defined(ESP32)
-      String fileName = F("/rules");
-    #endif
-    fileName += x+1;
-    fileName += F(".txt");
-    if(activeRuleSets[x])
-      rulesProcessingFile(fileName, event);
-  }
-
-  if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
-    String log = F("EVENT: ");
-    log += event;
-    log += F(" Processing time:");
-    log += timePassedSince(timer);
-    log += F(" milliSeconds");
-    addLog(LOG_LEVEL_DEBUG, log);
-  }
-  backgroundtasks();
-
-}
-
-/********************************************************************************************\
-  Rules processing
-  \*********************************************************************************************/
-String rulesProcessingFile(const String& fileName, String& event)
-{
-  if (!Settings.UseRules) return "";
-  checkRAM(F("rulesProcessingFile"));
-  if (Settings.SerialLogLevel == LOG_LEVEL_DEBUG_DEV){
-    Serial.print(F("RuleDebug Processing:"));
-    Serial.println(fileName);
-    Serial.println(F("     flags CMI  parse output:"));
-  }
-
-  static byte nestingLevel = 0;
-  int data = 0;
-  String log = "";
-
-  nestingLevel++;
-  if (nestingLevel > RULES_MAX_NESTING_LEVEL)
-  {
-    addLog(LOG_LEVEL_ERROR, F("EVENT: Error: Nesting level exceeded!"));
-    nestingLevel--;
-    return (log);
-  }
-
-  fs::File f = SPIFFS.open(fileName, "r+");
-  SPIFFS_CHECK(f, fileName.c_str());
-
-  String line = "";
-  bool match = false;
-  bool codeBlock = false;
-  bool isCommand = false;
-  bool condition[RULES_IF_MAX_NESTING_LEVEL];
-  bool ifBranche[RULES_IF_MAX_NESTING_LEVEL];
-  byte ifBlock = 0;
-  byte fakeIfBlock = 0;
-
-  byte buf[RULES_BUFFER_SIZE];
-  int len = 0;
-  while (f.available())
-  {
-    len = f.read((byte*)buf, RULES_BUFFER_SIZE);
-    for (int x = 0; x < len; x++) {
-      data = buf[x];
-
-      SPIFFS_CHECK(data >= 0, fileName.c_str());
-
-      if (data != 10) {
-        line += char(data);
-      }
-      else
-      {      // if line complete, parse this rule
-        line.replace("\r", "");
-        if (line.substring(0, 2) != F("//") && line.length() > 0)
-        {
-          parseCompleteNonCommentLine(
-            line, event, log,
-            match, codeBlock, isCommand,
-            condition, ifBranche,
-            ifBlock, fakeIfBlock);
-          backgroundtasks();
-        }
-
-        line = "";
-      }
-    }
-  }
-  if (f) f.close();
-
-  nestingLevel--;
-  checkRAM(F("rulesProcessingFile2"));
-  return ("");
-}
-
-void parseCompleteNonCommentLine(
-    String& line,
-    String& event,
-    String& log,
-    bool& match,
-    bool& codeBlock,
-    bool& isCommand,
-    bool condition[],
-    bool ifBranche[],
-    byte& ifBlock,
-    byte& fakeIfBlock)
-{
-  isCommand = true;
-
-  // Strip comments
-  int comment = line.indexOf(F("//"));
-  if (comment > 0)
-    line = line.substring(0, comment);
-
-  if (match || !codeBlock) {
-    // only parse [xxx#yyy] if we have a matching ruleblock or need to eval the "on" (no codeBlock)
-    // This to avoid waisting CPU time...
-
-
-    if (match && !fakeIfBlock) {
-      // substitution of %eventvalue% is made here so it can be used on if statement too
-      if (event.charAt(0) == '!')
-      {
-        line.replace(F("%eventvalue%"), event); // substitute %eventvalue% with literal event string if starting with '!'
-      }
-      else
-      {
-        int equalsPos = event.indexOf("=");
-        if (equalsPos > 0)
-        {
-          String tmpString = event.substring(equalsPos + 1);
-          //line.replace(F("%eventvalue%"), tmpString); // substitute %eventvalue% with the actual value from the event
-          char* tmpParam = new char[INPUT_COMMAND_SIZE];
-          tmpParam[0] = 0;
-
-          if (GetArgv(tmpString.c_str(),tmpParam,1)) {
-             line.replace(F("%eventvalue%"), tmpParam); // for compatibility issues
-             line.replace(F("%eventvalue1%"), tmpParam); // substitute %eventvalue1% in actions with the actual value from the event
-          }
-          if (GetArgv(tmpString.c_str(),tmpParam,2)) line.replace(F("%eventvalue2%"), tmpParam); // substitute %eventvalue2% in actions with the actual value from the event
-          if (GetArgv(tmpString.c_str(),tmpParam,3)) line.replace(F("%eventvalue3%"), tmpParam); // substitute %eventvalue3% in actions with the actual value from the event
-          if (GetArgv(tmpString.c_str(),tmpParam,4)) line.replace(F("%eventvalue4%"), tmpParam); // substitute %eventvalue4% in actions with the actual value from the event
-          delete[] tmpParam;
-        }
-      }
-    }
-    line = parseTemplate(line, line.length());
-  }
-  line.trim();
-
-  String lineOrg = line; // store original line for future use
-  line.toLowerCase(); // convert all to lower case to make checks easier
-
-
-  String eventTrigger = "";
-  String action = "";
-
-  if (!codeBlock)  // do not check "on" rules if a block of actions is to be processed
-  {
-    if (line.startsWith(F("on ")))
-    {
-      ifBlock = 0;
-      fakeIfBlock = 0;
-      line = line.substring(3);
-      int split = line.indexOf(F(" do"));
-      if (split != -1)
-      {
-        eventTrigger = line.substring(0, split);
-        action = lineOrg.substring(split + 7);
-        action.trim();
-      }
-      if (eventTrigger == "*") // wildcard, always process
-        match = true;
-      else
-        match = ruleMatch(event, eventTrigger);
-      if (action.length() > 0) // single on/do/action line, no block
-      {
-        isCommand = true;
-        codeBlock = false;
-      }
-      else
-      {
-        isCommand = false;
-        codeBlock = true;
-      }
-    }
-  }
-  else
-  {
-    action = lineOrg;
-  }
-
-  String lcAction = action;
-  lcAction.toLowerCase();
-  if (lcAction == F("endon")) // Check if action block has ended, then we will wait for a new "on" rule
-  {
-    isCommand = false;
-    codeBlock = false;
-    match = false;
-    ifBlock = 0;
-    fakeIfBlock = 0;
-  }
-
-  if (Settings.SerialLogLevel == LOG_LEVEL_DEBUG_DEV){
-    Serial.print(F("RuleDebug: "));
-    Serial.print(codeBlock);
-    Serial.print(match);
-    Serial.print(isCommand);
-    Serial.print(F(": "));
-    Serial.println(line);
-  }
-
-  if (match) // rule matched for one action or a block of actions
-  {
-    processMatchedRule(
-      lcAction, action, event, log,
-      match, codeBlock, isCommand,
-      condition, ifBranche,
-      ifBlock, fakeIfBlock);
-  }
-}
-
-void processMatchedRule(
-  String& lcAction, String& action, String& event, String& log,
-  bool& match,
-  bool& codeBlock,
-  bool& isCommand,
-  bool condition[],
-  bool ifBranche[],
-  byte& ifBlock,
-  byte& fakeIfBlock)
-{
-  if (fakeIfBlock)
-    isCommand = false;
-  else if (ifBlock)
-    if (condition[ifBlock-1] != ifBranche[ifBlock-1])
-      isCommand = false;
-  int split = lcAction.indexOf(F("elseif ")); // check for optional "elseif" condition
-  if (split != -1)
-  {
-    isCommand = false;
-    if (ifBlock && !fakeIfBlock)
-    {
-      if (ifBranche[ifBlock-1])
-      {
-        if (condition[ifBlock-1])
-          ifBranche[ifBlock-1] = false;
-        else
-        {
-          String check = lcAction.substring(split + 7);
-          condition[ifBlock-1] = conditionMatchExtended(check);
-          if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
-            log = F("Lev.");
-            log += String(ifBlock);
-            log += F(": [elseif ");
-            log += check;
-            log += F("]=");
-            log += toString(condition[ifBlock-1]);
-            addLog(LOG_LEVEL_DEBUG, log);
-          }
-        }
-      }
-    }
-  }
-  else
-  {
-    split = lcAction.indexOf(F("if ")); // check for optional "if" condition
-    if (split != -1)
-    {
-      if (ifBlock < RULES_IF_MAX_NESTING_LEVEL)
-      {
-        if (isCommand)
-        {
-          ifBlock++;
-          String check = lcAction.substring(split + 3);
-          condition[ifBlock-1] = conditionMatchExtended(check);
-          ifBranche[ifBlock-1] = true;
-          if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
-            log = F("Lev.");
-            log += String(ifBlock);
-            log += F(": [if ");
-            log += check;
-            log += F("]=");
-            log += toString(condition[ifBlock-1]);
-            addLog(LOG_LEVEL_DEBUG, log);
-          }
-        }
-        else
-          fakeIfBlock++;
-      }
-      else
-      {
-        fakeIfBlock++;
-        if (loglevelActiveFor(LOG_LEVEL_ERROR)) {
-          log = F("Lev.");
-          log += String(ifBlock);
-          log = F(": Error: IF Nesting level exceeded!");
-          addLog(LOG_LEVEL_ERROR, log);
-        }
-      }
-      isCommand = false;
-    }
-  }
-
-  if ((lcAction == F("else")) && !fakeIfBlock) // in case of an "else" block of actions, set ifBranche to false
-  {
-    ifBranche[ifBlock-1] = false;
-    isCommand = false;
-    if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
-      log = F("Lev.");
-      log += String(ifBlock);
-      log += F(": [else]=");
-      log += toString(condition[ifBlock-1] == ifBranche[ifBlock-1]);
-      addLog(LOG_LEVEL_DEBUG, log);
-    }
-  }
-
-  if (lcAction == F("endif")) // conditional block ends here
-  {
-    if (fakeIfBlock)
-      fakeIfBlock--;
-    else if (ifBlock)
-      ifBlock--;
-    isCommand = false;
-  }
-
-  // process the action if it's a command and unconditional, or conditional and the condition matches the if or else block.
-  if (isCommand)
-  {
-    if (event.charAt(0) == '!')
-    {
-      action.replace(F("%eventvalue%"), event); // substitute %eventvalue% with literal event string if starting with '!'
-    }
-    else
-    {
-      int equalsPos = event.indexOf("=");
-      if (equalsPos > 0)
-      {
-        String tmpString = event.substring(equalsPos + 1);
-
-        char* tmpParam = new char[INPUT_COMMAND_SIZE];
-        tmpParam[0] = 0;
-
-        if (GetArgv(tmpString.c_str(),tmpParam,1)) {
-           action.replace(F("%eventvalue%"), tmpParam); // for compatibility issues
-           action.replace(F("%eventvalue1%"), tmpParam); // substitute %eventvalue1% in actions with the actual value from the event
-        }
-        if (GetArgv(tmpString.c_str(),tmpParam,2)) action.replace(F("%eventvalue2%"), tmpParam); // substitute %eventvalue2% in actions with the actual value from the event
-        if (GetArgv(tmpString.c_str(),tmpParam,3)) action.replace(F("%eventvalue3%"), tmpParam); // substitute %eventvalue3% in actions with the actual value from the event
-        if (GetArgv(tmpString.c_str(),tmpParam,4)) action.replace(F("%eventvalue4%"), tmpParam); // substitute %eventvalue4% in actions with the actual value from the event
-        delete[] tmpParam;
-      }
-    }
-
-    if (loglevelActiveFor(LOG_LEVEL_INFO)) {
-      String log = F("ACT  : ");
-      log += action;
-      addLog(LOG_LEVEL_INFO, log);
-    }
-
-    struct EventStruct TempEvent;
-    parseCommandString(&TempEvent, action);
-
-    // FIXME TD-er: This part seems a bit strange.
-    // It can't schedule a call to PLUGIN_WRITE.
-    // Maybe ExecuteCommand can be scheduled?
-    delay(0);
-    // Use a tmp string to call PLUGIN_WRITE, since PluginCall may inadvertenly alter the string.
-    String tmpAction(action);
-    if (!PluginCall(PLUGIN_WRITE, &TempEvent, tmpAction)) {
-      if (!tmpAction.equals(action)) {
-        if (loglevelActiveFor(LOG_LEVEL_ERROR)) {
-          String log = F("PLUGIN_WRITE altered the string: ");
-          log += action;
-          log += F(" to: ");
-          log += tmpAction;
-          addLog(LOG_LEVEL_ERROR, log);
-        }
-        // TODO: assign here modified action???
-      }
-      ExecuteCommand(VALUE_SOURCE_SYSTEM, action.c_str());
-    }
-    delay(0);
-  }
-}
-
-/********************************************************************************************\
-  Check if an event matches to a given rule
-  \*********************************************************************************************/
-boolean ruleMatch(String& event, String& rule)
-{
-  checkRAM(F("ruleMatch"));
-  boolean match = false;
-  String tmpEvent = event;
-  String tmpRule = rule;
-
-  //Ignore escape char
-  tmpRule.replace("[","");
-  tmpRule.replace("]","");
-
-  // Special handling of literal string events, they should start with '!'
-  if (event.charAt(0) == '!')
-  {
-    int pos = rule.indexOf('*');
-    if (pos != -1) // a * sign in rule, so use a'wildcard' match on message
-      {
-        tmpEvent = event.substring(0,pos-1);
-        tmpRule = rule.substring(0,pos-1);
-      }
-    else
-      {
-        pos = rule.indexOf('#');
-        if (pos == -1) // no # sign in rule, use 'wildcard' match on event 'source'
-          {
-            tmpEvent = event.substring(0,rule.length());
-            tmpRule = rule;
-          }
-      }
-
-    if (tmpEvent.equalsIgnoreCase(tmpRule))
-      return true;
-    else
-      return false;
-  }
-
-  if (event.startsWith(F("Clock#Time"))) // clock events need different handling...
-  {
-    int pos1 = event.indexOf("=");
-    int pos2 = rule.indexOf("=");
-    if (pos1 > 0 && pos2 > 0)
-    {
-      tmpEvent = event.substring(0, pos1);
-      tmpRule  = rule.substring(0, pos2);
-      if (tmpRule.equalsIgnoreCase(tmpEvent)) // if this is a clock rule
-      {
-        tmpEvent = event.substring(pos1 + 1);
-        tmpRule  = rule.substring(pos2 + 1);
-        unsigned long clockEvent = string2TimeLong(tmpEvent);
-        unsigned long clockSet = string2TimeLong(tmpRule);
-        if (matchClockEvent(clockEvent, clockSet))
-          return true;
-        else
-          return false;
-      }
-    }
-  }
-
-
-  // parse event into verb and value
-  float value = 0;
-  int pos = event.indexOf("=");
-  if (pos)
-  {
-    tmpEvent = event.substring(pos + 1);
-    value = tmpEvent.toFloat();
-    tmpEvent = event.substring(0, pos);
-  }
-
-  // parse rule
-  int comparePos = 0;
-  char compare = ' ';
-  comparePos = rule.indexOf(">");
-  if (comparePos > 0)
-  {
-    compare = '>';
-  }
-  else
-  {
-    comparePos = rule.indexOf("<");
-    if (comparePos > 0)
-    {
-      compare = '<';
-    }
-    else
-    {
-      comparePos = rule.indexOf("=");
-      if (comparePos > 0)
-      {
-        compare = '=';
-      }
-    }
-  }
-
-  float ruleValue = 0;
-
-  if (comparePos > 0)
-  {
-    tmpRule = rule.substring(comparePos + 1);
-    ruleValue = tmpRule.toFloat();
-    tmpRule = rule.substring(0, comparePos);
-  }
-
-  switch (compare)
-  {
-    case '>':
-      if (tmpRule.equalsIgnoreCase(tmpEvent) && value > ruleValue)
-        match = true;
-      break;
-
-    case '<':
-      if (tmpRule.equalsIgnoreCase(tmpEvent) && value < ruleValue)
-        match = true;
-      break;
-
-    case '=':
-      if (tmpRule.equalsIgnoreCase(tmpEvent) && value == ruleValue)
-        match = true;
-      break;
-
-    case ' ':
-      if (tmpRule.equalsIgnoreCase(tmpEvent))
-        match = true;
-      break;
-  }
-  checkRAM(F("ruleMatch2"));
-  return match;
-}
-
-
-/********************************************************************************************\
-  Check expression
-  \*********************************************************************************************/
-
-boolean conditionMatchExtended(String& check) {
-	int condAnd = -1;
-	int condOr = -1;
-	boolean rightcond = false;
-	boolean leftcond = conditionMatch(check); // initial check
-
-	do {
-		condAnd = check.indexOf(F(" and "));
-		condOr  = check.indexOf(F(" or "));
-
-		if (condAnd > 0 || condOr > 0) { // we got AND/OR
-			if (condAnd > 0	&& ((condOr < 0 && condOr < condAnd) || (condOr > 0 && condOr > condAnd))) { //AND is first
-				check = check.substring(condAnd + 5);
-				rightcond = conditionMatch(check);
-				leftcond = (leftcond && rightcond);
-			} else { //OR is first
-				check = check.substring(condOr + 4);
-				rightcond = conditionMatch(check);
-				leftcond = (leftcond || rightcond);
-			}
-		}
-	} while (condAnd > 0 || condOr > 0);
-	return leftcond;
-}
-
-boolean conditionMatch(const String& check)
-{
-  boolean match = false;
-
-  char compare    = ' ';
-
-  int posStart = check.length();
-  int posEnd = posStart;
-  int comparePos  = 0;
-
-  if ((comparePos = check.indexOf("!="))>0 && comparePos<posStart) {
-	  posStart = comparePos;
-	  posEnd = posStart+2;
-	  compare = '!'+'=';
-  }
-  if ((comparePos = check.indexOf("<>"))>0 && comparePos<posStart) {
-	  posStart = comparePos;
-	  posEnd = posStart+2;
-	  compare = '!'+'=';
-  }
-  if ((comparePos = check.indexOf(">="))>0 && comparePos<posStart) {
-	  posStart = comparePos;
-	  posEnd = posStart+2;
-	  compare = '>'+'=';
-  }
-  if ((comparePos = check.indexOf("<="))>0 && comparePos<posStart) {
-	  posStart = comparePos;
-	  posEnd = posStart+2;
-	  compare = '<'+'=';
-  }
-  if ((comparePos = check.indexOf("<"))>0 && comparePos<posStart) {
-	  posStart = comparePos;
-	  posEnd = posStart+1;
-	  compare = '<';
-  }
-  if ((comparePos = check.indexOf(">"))>0 && comparePos<posStart) {
-	  posStart = comparePos;
-	  posEnd = posStart+1;
-	  compare = '>';
-  }
-  if ((comparePos = check.indexOf("="))>0 && comparePos<posStart) {
-	  posStart = comparePos;
-	  posEnd = posStart+1;
-	  compare = '=';
-  }
-
-  float Value1 = 0;
-  float Value2 = 0;
-
-  if (compare > ' ')
-  {
-    String tmpCheck1 = check.substring(0, posStart);
-    String tmpCheck2 = check.substring(posEnd);
-    if (!isFloat(tmpCheck1) || !isFloat(tmpCheck2)) {
-        Value1 = timeStringToSeconds(tmpCheck1);
-        Value2 = timeStringToSeconds(tmpCheck2);
-    } else {
-        Value1 = tmpCheck1.toFloat();
-        Value2 = tmpCheck2.toFloat();
-    }
-  }
-  else
-    return false;
-
-  switch (compare)
-  {
-  case '>'+'=':
-	  if (Value1 >= Value2)
-		  match = true;
-	  break;
-
-  case '<'+'=':
-	  if (Value1 <= Value2)
-		  match = true;
-	  break;
-
-  case '!'+'=':
-	  if (Value1 != Value2)
-		  match = true;
-	  break;
-
-  case '>':
-	  if (Value1 > Value2)
-		  match = true;
-	  break;
-
-  case '<':
-	  if (Value1 < Value2)
-		  match = true;
-	  break;
-
-  case '=':
-	  if (Value1 == Value2)
-		  match = true;
-	  break;
-  }
-  return match;
-}
-
-
-/********************************************************************************************\
-  Check rule timers
-  \*********************************************************************************************/
-void rulesTimers()
-{
-  if (!Settings.UseRules) return;
-  for (byte x = 0; x < RULES_TIMER_MAX; x++)
-  {
-    if (!RulesTimer[x].paused && RulesTimer[x].timestamp != 0L) // timer active?
-    {
-      if (timeOutReached(RulesTimer[x].timestamp)) // timer finished?
-      {
-        RulesTimer[x].timestamp = 0L; // turn off this timer
-        String event = F("Rules#Timer=");
-        event += x + 1;
-        rulesProcessing(event);
-      }
-    }
-  }
-}
-
-
-/********************************************************************************************\
-  Generate rule events based on task refresh
-  \*********************************************************************************************/
-
-void createRuleEvents(byte TaskIndex)
-{
-  if (!Settings.UseRules) return;
-  LoadTaskSettings(TaskIndex);
-  byte BaseVarIndex = TaskIndex * VARS_PER_TASK;
-  byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[TaskIndex]);
-  byte sensorType = Device[DeviceIndex].VType;
-  for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
-  {
-    String eventString = getTaskDeviceName(TaskIndex);
-    eventString += F("#");
-    eventString += ExtraTaskSettings.TaskDeviceValueNames[varNr];
-    eventString += F("=");
-
-    if (sensorType == SENSOR_TYPE_LONG)
-      eventString += (unsigned long)UserVar[BaseVarIndex] + ((unsigned long)UserVar[BaseVarIndex + 1] << 16);
-    else
-      eventString += UserVar[BaseVarIndex + varNr];
-
-    rulesProcessing(eventString);
-  }
-}
-
-
 void SendValueLogger(byte TaskIndex)
 {
   bool featureSD = false;
@@ -3183,7 +2309,7 @@ void SendValueLogger(byte TaskIndex)
       logger += ExtraTaskSettings.TaskDeviceValueNames[varNr];
       logger += ',';
       logger += formatUserVarNoCheck(TaskIndex, varNr);
-      logger += F("\r\n");
+      logger += "\r\n";
     }
 
     addLog(LOG_LEVEL_DEBUG, logger);
@@ -3219,7 +2345,7 @@ class RamTracker{
             lowestMemoryInTraceIndex=i;
             }
           }
-      //Serial.println(lowestMemoryInTraceIndex);
+      //serialPrintln(lowestMemoryInTraceIndex);
       return lowestMemoryInTraceIndex;
       }
 
@@ -3531,30 +2657,29 @@ void ArduinoOTAInit()
     ArduinoOTA.setPassword(SecuritySettings.Password);
 
   ArduinoOTA.onStart([]() {
-      Serial.println(F("OTA  : Start upload"));
+      serialPrintln(F("OTA  : Start upload"));
       SPIFFS.end(); //important, otherwise it fails
   });
 
   ArduinoOTA.onEnd([]() {
-      Serial.println(F("\nOTA  : End"));
+      serialPrintln(F("\nOTA  : End"));
       //"dangerous": if you reset during flash you have to reflash via serial
       //so dont touch device until restart is complete
-      Serial.println(F("\nOTA  : DO NOT RESET OR POWER OFF UNTIL BOOT+FLASH IS COMPLETE."));
+      serialPrintln(F("\nOTA  : DO NOT RESET OR POWER OFF UNTIL BOOT+FLASH IS COMPLETE."));
       delay(100);
       reboot();
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-
       Serial.printf("OTA  : Progress %u%%\r", (progress / (total / 100)));
   });
 
   ArduinoOTA.onError([](ota_error_t error) {
-      Serial.print(F("\nOTA  : Error (will reboot): "));
-      if (error == OTA_AUTH_ERROR) Serial.println(F("Auth Failed"));
-      else if (error == OTA_BEGIN_ERROR) Serial.println(F("Begin Failed"));
-      else if (error == OTA_CONNECT_ERROR) Serial.println(F("Connect Failed"));
-      else if (error == OTA_RECEIVE_ERROR) Serial.println(F("Receive Failed"));
-      else if (error == OTA_END_ERROR) Serial.println(F("End Failed"));
+      serialPrint(F("\nOTA  : Error (will reboot): "));
+      if (error == OTA_AUTH_ERROR) serialPrintln(F("Auth Failed"));
+      else if (error == OTA_BEGIN_ERROR) serialPrintln(F("Begin Failed"));
+      else if (error == OTA_CONNECT_ERROR) serialPrintln(F("Connect Failed"));
+      else if (error == OTA_RECEIVE_ERROR) serialPrintln(F("Receive Failed"));
+      else if (error == OTA_END_ERROR) serialPrintln(F("End Failed"));
 
       delay(100);
       reboot();
@@ -3608,4 +2733,60 @@ float compute_dew_point_temp(float temperature, float humidity_percentage) {
 float compute_humidity_from_dewpoint(float temperature, float dew_temperature) {
   return 100.0 * pow((112.0 - 0.1 * temperature + dew_temperature) /
                      (112.0 + 0.9 * temperature), 8);
+}
+
+/**********************************************************
+*                                                         *
+* Helper Functions for managing the status data structure *
+*                                                         *
+**********************************************************/
+
+void savePortStatus(uint32_t key, struct portStatusStruct &tempStatus) {
+  if (tempStatus.task<=0 && tempStatus.monitor<=0 && tempStatus.command<=0)
+    globalMapPortStatus.erase(key);
+  else
+    globalMapPortStatus[key] = tempStatus;
+}
+
+bool existPortStatus(uint32_t key) {
+  bool retValue = false;
+  //check if KEY exists:
+  std::map<uint32_t,portStatusStruct>::iterator it;
+  it = globalMapPortStatus.find(key);
+  if (it != globalMapPortStatus.end()) {  //if KEY exists...
+    retValue = true;
+  }
+  return retValue;
+}
+
+void removeTaskFromPort(uint32_t key) {
+  if (existPortStatus(key)) {
+    (globalMapPortStatus[key].task > 0) ? globalMapPortStatus[key].task-- : globalMapPortStatus[key].task = 0;
+    if (globalMapPortStatus[key].task<=0 && globalMapPortStatus[key].monitor<=0 && globalMapPortStatus[key].command<=0&& globalMapPortStatus[key].init<=0)
+      globalMapPortStatus.erase(key);
+  }
+}
+
+void removeMonitorFromPort(uint32_t key) {
+  if (existPortStatus(key)) {
+    globalMapPortStatus[key].monitor=0;
+    if (globalMapPortStatus[key].task<=0 && globalMapPortStatus[key].monitor<=0 && globalMapPortStatus[key].command<=0&& globalMapPortStatus[key].init<=0)
+      globalMapPortStatus.erase(key);
+  }
+}
+
+void addMonitorToPort(uint32_t key) {
+  globalMapPortStatus[key].monitor=1;
+}
+
+uint32_t createKey(uint16_t pluginNumber, uint16_t portNumber) {
+  return (uint32_t) pluginNumber << 16 | portNumber;
+}
+
+uint16_t getPluginFromKey(uint32_t key) {
+  return (uint16_t)(key >> 16);
+}
+
+uint16_t getPortFromKey(uint32_t key) {
+  return (uint16_t)(key);
 }

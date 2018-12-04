@@ -1,3 +1,6 @@
+.. include:: ../Plugin/_plugin_substitutions.repl
+.. include:: _plugin_categories.repl
+
 #######
 Plugins
 #######
@@ -18,6 +21,7 @@ There's three different released versions of ESP Easy:
    :header: "Plugin name", "Plugin status", "Plugin number"
    :widths: 10, 8, 5
 
+   ":ref:`P000_page`","|P000_status|","P000 (core)"
    ":ref:`P001_page`","|P001_status|","P001"
    ":ref:`P002_page`","|P002_status|","P002"
    ":ref:`P003_page`","|P003_status|","P003"
@@ -99,3 +103,123 @@ There's three different released versions of ESP Easy:
    ":ref:`P079_page`","|P079_status|","P079"
    ":ref:`P080_page`","|P080_status|","P080"
    ":ref:`P081_page`","|P081_status|","P081"
+
+Analog input
+============
+
+Plugins: |Plugin_Analog_input|
+
+Color
+=====
+
+Plugins: |Plugin_Color|
+
+Communication
+=============
+
+Plugins: |Plugin_Communication|
+
+Display
+=======
+
+Plugins: |Plugin_Display|
+
+Distance
+========
+
+Plugins: |Plugin_Distance|
+
+Dust
+====
+
+Plugins: |Plugin_Dust|
+
+Energy (AC)
+===========
+
+Plugins: |Plugin_Energy_AC|
+
+Energy (DC)
+===========
+
+Plugins: |Plugin_Energy_DC|
+
+Environment
+===========
+
+Plugins: |Plugin_Environment|
+
+Extra IO
+========
+
+Plugins: |Plugin_Extra_IO|
+
+Gases
+=====
+
+Plugins: |Plugin_Gases|
+
+Generic
+=======
+
+Plugins: |Plugin_Generic|
+
+Gesture
+=======
+
+Plugins: |Plugin_Gesture|
+
+Gyro
+====
+
+Plugins: |Plugin_Gyro|
+
+Hardware
+========
+
+Plugins: |Plugin_Hardware|
+
+Keypad
+======
+
+Plugins: |Plugin_Keypad|
+
+Light/Lux
+=========
+
+Plugins: |Plugin_Light_Lux|
+
+Motor
+=====
+
+Plugins: |Plugin_Motor|
+
+Notify
+======
+
+Plugins: |Plugin_Notify|
+
+Output
+======
+
+Plugins: |Plugin_Output|
+
+Regulator
+=========
+
+Plugins: |Plugin_Regulator|
+
+RFID
+====
+
+Plugins: |Plugin_RFID|
+
+Switch input
+============
+
+Plugins: |Plugin_Switch_input|
+
+Weight
+======
+
+Plugins: |Plugin_Weight|

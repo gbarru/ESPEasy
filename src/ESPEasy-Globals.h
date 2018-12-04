@@ -73,6 +73,7 @@
 #endif
 
 #define DEFAULT_USE_RULES                       false   // (true|false) Enable Rules?
+#define DEFAULT_RULES_OLDENGINE                true
 
 #define DEFAULT_MQTT_RETAIN                     false   // (true|false) Retain MQTT messages?
 #define DEFAULT_MQTT_DELAY                      100    // Time in milliseconds to retain MQTT messages
@@ -177,7 +178,7 @@
   #define VERSION                             3 // Change in config.dat mapping needs a full reset
 #endif
 
-#define BUILD                           20102 // git version 2.1.02
+#define BUILD                           20103 // git version 2.1.03
 #if defined(ESP8266)
   #define BUILD_NOTES                 " - Mega"
 #endif
@@ -337,7 +338,7 @@
 #define NPLUGIN_MAX                         4
 #define UNIT_MAX                          254 // unit 255 = broadcast
 #define RULES_TIMER_MAX                     8
-#define PINSTATE_TABLE_MAX                 32
+//#define PINSTATE_TABLE_MAX                 32
 #define RULES_MAX_SIZE                   2048
 #define RULES_MAX_NESTING_LEVEL             3
 #define RULESETS_MAX                        4
@@ -353,6 +354,8 @@
 #define PIN_MODE_OUTPUT                     2
 #define PIN_MODE_PWM                        3
 #define PIN_MODE_SERVO                      4
+#define PIN_MODE_INPUT_PULLUP               5
+#define PIN_MODE_OFFLINE                    6
 
 #define SEARCH_PIN_STATE                 true
 #define NO_SEARCH_PIN_STATE             false
@@ -642,7 +645,6 @@ bool WiFiConnected();
 bool hostReachable(const IPAddress& ip);
 bool hostReachable(const String& hostname);
 void formatMAC(const uint8_t* mac, char (&strMAC)[20]);
-void formatIP(const IPAddress& ip, char (&strIP)[20]);
 String to_json_object_value(const String& object, const String& value);
 
 
@@ -708,13 +710,21 @@ float         customFloatVar[CUSTOM_VARS_MAX];
 \*********************************************************************************************/
 struct SettingsStruct
 {
-  SettingsStruct() {
+  SettingsStruct() : ResetFactoryDefaultPreference(0) {
     clearAll();
+    clearNetworkSettings();
   }
 
   // VariousBits1 defaults to 0, keep in mind when adding bit lookups.
   bool appendUnitToHostname() {  return !getBitFromUL(VariousBits1, 1); }
   void appendUnitToHostname(bool value) { setBitToUL(VariousBits1, 1, !value); }
+
+  bool uniqueMQTTclientIdReconnect() {  return getBitFromUL(VariousBits1, 2); }
+  void uniqueMQTTclientIdReconnect(bool value) { setBitToUL(VariousBits1, 2, value); }
+
+  bool OldRulesEngine() {  return !getBitFromUL(VariousBits1, 3); }
+  void OldRulesEngine(bool value) {  setBitToUL(VariousBits1, 3, !value); }
+
 
   void validate() {
     if (UDPPort > 65535) UDPPort = 0;
@@ -737,69 +747,97 @@ struct SettingsStruct
     }
   }
 
-  void clearAll() {
+  void clearTimeSettings() {
+    UseNTP = false;
+    NTPHost[0] = 0;
+    TimeZone = 0;
+    DST = false;
+    DST_Start = 0;
+    DST_End = 0;
+    Latitude = 0.0;
+    Longitude = 0.0;
+  }
+
+  void clearNotifications() {
+    for (byte i = 0; i < NOTIFICATION_MAX; ++i) {
+      Notification[i] = 0;
+      NotificationEnabled[i] = false;
+    }
+  }
+
+  void clearControllers() {
+    for (byte i = 0; i < CONTROLLER_MAX; ++i) {
+      Protocol[i] = 0;
+      ControllerEnabled[i] = false;
+    }
+  }
+
+  void clearTasks() {
+    for (byte task = 0; task < TASKS_MAX; ++task) {
+      clearTask(task);
+    }
+  }
+
+  void clearLogSettings() {
+    SyslogLevel = 0;
+    SerialLogLevel = 0;
+    WebLogLevel = 0;
+    SDLogLevel = 0;
+    SyslogFacility = DEFAULT_SYSLOG_FACILITY;
+    for (byte i = 0; i < 4; ++i) {  Syslog_IP[i] = 0; }
+  }
+
+  void clearUnitNameSettings() {
+    Unit = 0;
+    Name[0] = 0;
+    UDPPort = 0;
+  }
+
+  void clearMisc() {
     PID = 0;
     Version = 0;
     Build = 0;
     IP_Octet = 0;
-    Unit = 0;
-    Name[0] = 0;
-    NTPHost[0] = 0;
     Delay = 0;
     Pin_i2c_sda = -1;
     Pin_i2c_scl = -1;
     Pin_status_led = -1;
     Pin_sd_cs = -1;
     for (byte i = 0; i < 17; ++i) { PinBootStates[i] = 0; }
-    for (byte i = 0; i < 4; ++i) {  Syslog_IP[i] = 0; }
-    UDPPort = 0;
-    SyslogLevel = 0;
-    SerialLogLevel = 0;
-    WebLogLevel = 0;
-    SDLogLevel = 0;
     BaudRate = 0;
     MessageDelay = 0;
     deepSleep = 0;
     CustomCSS = false;
-    DST = false;
     WDI2CAddress = 0;
     UseRules = false;
     UseSerial = false;
     UseSSDP = false;
-    UseNTP = false;
     WireClockStretchLimit = 0;
     GlobalSync = false;
     ConnectionFailuresThreshold = 0;
-    TimeZone = 0;
     MQTTRetainFlag = false;
     InitSPI = false;
     Pin_status_led_Inversed = false;
     deepSleepOnFail = false;
     UseValueLogger = false;
     ArduinoOTAEnable = false;
-    DST_Start = 0;
-    DST_End = 0;
     UseRTOSMultitasking = false;
     Pin_Reset = -1;
-    SyslogFacility = DEFAULT_SYSLOG_FACILITY;
     StructSize = sizeof(SettingsStruct);
     MQTTUseUnitNameAsClientId = 0;
-    Latitude = 0.0;
-    Longitude = 0.0;
     VariousBits1 = 0;
+    OldRulesEngine(DEFAULT_RULES_OLDENGINE);
+  }
 
-    for (byte i = 0; i < CONTROLLER_MAX; ++i) {
-      Protocol[i] = 0;
-      ControllerEnabled[i] = false;
-    }
-    for (byte i = 0; i < NOTIFICATION_MAX; ++i) {
-      Notification[i] = 0;
-      NotificationEnabled[i] = false;
-    }
-    for (byte task = 0; task < TASKS_MAX; ++task) {
-      clearTask(task);
-    }
+  void clearAll() {
+    clearMisc();
+    clearTimeSettings();
     clearNetworkSettings();
+    clearNotifications();
+    clearControllers();
+    clearTasks();
+    clearLogSettings();
+    clearUnitNameSettings();
   }
 
   void clearTask(byte task) {
@@ -808,7 +846,7 @@ struct SettingsStruct
       TaskDeviceSendData[i][task] = false;
     }
     TaskDeviceNumber[task] = 0;
-    OLD_TaskDeviceID[task] = 0;
+    OLD_TaskDeviceID[task] = 0; //UNUSED: this can be removed
     TaskDevicePin1[task] = -1;
     TaskDevicePin2[task] = -1;
     TaskDevicePin3[task] = -1;
@@ -873,7 +911,7 @@ struct SettingsStruct
   byte          Protocol[CONTROLLER_MAX];
   byte          Notification[NOTIFICATION_MAX]; //notifications, point to a NPLUGIN id
   byte          TaskDeviceNumber[TASKS_MAX];
-  unsigned int  OLD_TaskDeviceID[TASKS_MAX];
+  unsigned int  OLD_TaskDeviceID[TASKS_MAX];  //UNUSED: this can be removed
   union {
     struct {
       int8_t        TaskDevicePin1[TASKS_MAX];
@@ -915,6 +953,7 @@ struct SettingsStruct
   float         Latitude;
   float         Longitude;
   uint32_t      VariousBits1;
+  uint32_t      ResetFactoryDefaultPreference; // Do not clear this one in the clearAll()
 
   // FIXME @TD-er: As discussed in #1292, the CRC for the settings is now disabled.
   // make sure crc is the last value in the struct
@@ -926,7 +965,6 @@ struct SettingsStruct
 SettingsStruct* SettingsStruct_ptr = new SettingsStruct;
 SettingsStruct& Settings = *SettingsStruct_ptr;
 */
-
 
 /*********************************************************************************************\
  *  Analyze SettingsStruct and report inconsistencies
@@ -1381,12 +1419,10 @@ struct LogStruct {
 
 } Logging;
 
-std::deque<char> serialLogBuffer;
-unsigned long last_serial_log_read = 0;
+std::deque<char> serialWriteBuffer;
 
 byte highest_active_log_level = 0;
 bool log_to_serial_disabled = false;
-bool log_to_serial_disabled_temporary = false;
 // Do this in a template to prevent casting to String when not needed.
 #define addLog(L,S) if (loglevelActiveFor(L)) { addToLog(L,S); }
 
@@ -1470,7 +1506,7 @@ struct NodeStruct
       for (byte i = 0; i < 4; ++i) ip[i] = 0;
     }
   String nodeName;
-  byte ip[4];
+  IPAddress ip;
   uint16_t build;
   byte age;
   byte nodeType;
@@ -1506,6 +1542,7 @@ enum gpio_direction {
 /*********************************************************************************************\
  * pinStatesStruct
 \*********************************************************************************************/
+/*
 struct pinStatesStruct
 {
   pinStatesStruct() : value(0), plugin(0), index(0), mode(0) {}
@@ -1514,7 +1551,7 @@ struct pinStatesStruct
   byte index;
   byte mode;
 } pinStates[PINSTATE_TABLE_MAX];
-
+*/
 
 // this offsets are in blocks, bytes = blocks * 4
 #define RTC_BASE_STRUCT 64
@@ -1956,10 +1993,175 @@ String getMiscStatsName(int stat) {
     return F("Unknown");
 }
 
+
+struct portStatusStruct {
+  portStatusStruct() : state(-1), output(-1), command(0), init(0), mode(0), task(0), monitor(0),  previousTask(-1) {}
+
+  int8_t state : 2; //-1,0,1
+  int8_t output : 2; //-1,0,1
+  int8_t command : 2; //0,1
+  int8_t init : 2; //0,1
+
+  uint8_t mode : 3; //6 current values (max. 8)
+  uint8_t task : 4; //0-15 (max. 16)
+  uint8_t monitor : 1; //0,1
+
+  int8_t previousTask : 8;
+};
+
+std::map<uint32_t, portStatusStruct> globalMapPortStatus;
+
+
+/********************************************************************************************\
+  Pre defined settings for off-the-shelf hardware
+  \*********************************************************************************************/
+
+// This enum will be stored, so do not change order or at least the values.
+enum DeviceModel {
+  DeviceModel_default = 0,
+  DeviceModel_Sonoff_Basic,
+  DeviceModel_Sonoff_TH1x,
+  DeviceModel_Sonoff_S2x,
+  DeviceModel_Sonoff_TouchT1,
+  DeviceModel_Sonoff_TouchT2,
+  DeviceModel_Sonoff_TouchT3,
+  DeviceModel_Sonoff_4ch,
+  DeviceModel_Sonoff_POW,
+  DeviceModel_Sonoff_POWr2,
+  DeviceModel_Shelly1,
+
+  DeviceModel_MAX
+};
+
+struct ResetFactoryDefaultPreference_struct {
+  ResetFactoryDefaultPreference_struct(uint32_t preference = 0) : _preference(preference) {}
+
+  DeviceModel getDeviceModel() const {
+    return static_cast<DeviceModel>(_preference & 0xFF);
+  }
+
+  void setDeviceModel(DeviceModel model) {
+    _preference &= ~(0xFF); // set DeviceModel bits to 0
+    _preference |= model;
+  }
+
+  bool keepWiFi() const { return getBitFromUL(_preference, 9); }
+  void keepWiFi(bool keep) {       setBitToUL(_preference, 9, keep); }
+
+  bool keepNTP() const { return getBitFromUL(_preference, 10); }
+  void keepNTP(bool keep) {       setBitToUL(_preference, 10, keep); }
+
+  bool keepNetwork() const { return getBitFromUL(_preference, 11); }
+  void keepNetwork(bool keep) {       setBitToUL(_preference, 11, keep); }
+
+  bool keepLogSettings() const { return getBitFromUL(_preference, 12); }
+  void keepLogSettings(bool keep) {       setBitToUL(_preference, 12, keep); }
+
+  bool keepUnitName() const { return getBitFromUL(_preference, 13); }
+  void keepUnitName(bool keep) {       setBitToUL(_preference, 13, keep); }
+
+  uint32_t getPreference() { return _preference; }
+
+  // TODO TD-er: Add extra flags for settings to keep/set when reset to default.
+
+private:
+  uint32_t _preference;
+} ResetFactoryDefaultPreference;
+
+void applyFactoryDefaultPref() {
+  // TODO TD-er: Store it in more places to make it more persistent
+  Settings.ResetFactoryDefaultPreference = ResetFactoryDefaultPreference.getPreference();
+}
+
+struct GpioFactorySettingsStruct {
+  GpioFactorySettingsStruct(DeviceModel model = DeviceModel_default) {
+    for (int i = 0; i < 4; ++i) {
+      button[i] = -1;
+      relais[i] = -1;
+    }
+    switch (model) {
+      case DeviceModel_Sonoff_Basic:
+      case DeviceModel_Sonoff_TH1x:
+      case DeviceModel_Sonoff_S2x:
+      case DeviceModel_Sonoff_TouchT1:
+      case DeviceModel_Sonoff_POWr2:
+        button[0] = 0;   // Single Button
+        relais[0] = 12;  // Red Led and Relay (0 = Off, 1 = On)
+        status_led = 13; // Green/Blue Led (0 = On, 1 = Off)
+        i2c_sda = -1;
+        i2c_scl = -1;
+        break;
+      case DeviceModel_Sonoff_POW:
+        button[0] = 0;   // Single Button
+        relais[0] = 12;  // Red Led and Relay (0 = Off, 1 = On)
+        status_led = 15; // Blue Led (0 = On, 1 = Off)
+        i2c_sda = -1;
+        i2c_scl = -1;    // GPIO5 conflicts with HLW8012 Sel output
+        break;
+      case DeviceModel_Sonoff_TouchT2:
+        button[0] = 0;   // Button 1
+        button[1] = 9;   // Button 2
+        relais[0] = 12;  // Led and Relay1 (0 = Off, 1 = On)
+        relais[1] = 4;   // Led and Relay2 (0 = Off, 1 = On)
+        status_led = 13; // Blue Led (0 = On, 1 = Off)
+        i2c_sda = -1;    // GPIO4 conflicts with GPIO_REL3
+        i2c_scl = -1;    // GPIO5 conflicts with GPIO_REL2
+        break;
+      case DeviceModel_Sonoff_TouchT3:
+        button[0] = 0;   // Button 1
+        button[1] = 10;  // Button 2
+        button[2] = 9;   // Button 3
+        relais[0] = 12;  // Led and Relay1 (0 = Off, 1 = On)
+        relais[1] = 5;   // Led and Relay2 (0 = Off, 1 = On)
+        relais[2] = 4;   // Led and Relay3 (0 = Off, 1 = On)
+        status_led = 13; // Blue Led (0 = On, 1 = Off)
+        i2c_sda = -1;    // GPIO4 conflicts with GPIO_REL3
+        i2c_scl = -1;    // GPIO5 conflicts with GPIO_REL2
+        break;
+
+      case DeviceModel_Sonoff_4ch:
+        button[0] = 0;   // Button 1
+        button[1] = 9;   // Button 2
+        button[2] = 10;  // Button 3
+        button[3] = 14;  // Button 4
+        relais[0] = 12;  // Red Led and Relay1 (0 = Off, 1 = On)
+        relais[1] = 5;   // Red Led and Relay2 (0 = Off, 1 = On)
+        relais[2] = 4;   // Red Led and Relay3 (0 = Off, 1 = On)
+        relais[3] = 15;  // Red Led and Relay4 (0 = Off, 1 = On)
+        status_led = 13; // Blue Led (0 = On, 1 = Off)
+        i2c_sda = -1;    // GPIO4 conflicts with GPIO_REL3
+        i2c_scl = -1;    // GPIO5 conflicts with GPIO_REL2
+        break;
+      case DeviceModel_Shelly1:
+        button[0] = 5;   // Single Button
+        relais[0] = 4;   // Red Led and Relay (0 = Off, 1 = On)
+        status_led = 15; // Blue Led (0 = On, 1 = Off)
+        i2c_sda = -1;    // GPIO4 conflicts with relay control.
+        i2c_scl = -1;    // GPIO5 conflicts with SW input
+        break;
+
+      // case DeviceModel_default: break;
+      default: break;
+    }
+  }
+
+  int8_t button[4];
+  int8_t relais[4];
+  int8_t status_led = DEFAULT_PIN_STATUS_LED;
+  int8_t i2c_sda = DEFAULT_PIN_I2C_SDA;
+  int8_t i2c_scl = DEFAULT_PIN_I2C_SCL;
+};
+
+bool modelMatchingFlashSize(DeviceModel model, int size_MB);
+void addPredefinedPlugins(const GpioFactorySettingsStruct& gpio_settings);
+void addPredefinedRules(const GpioFactorySettingsStruct& gpio_settings);
+
+
 // These wifi event functions must be in a .h-file because otherwise the preprocessor
 // may not filter the ifdef checks properly.
 // Also the functions use a lot of global defined variables, so include at the end of this file.
 #include "ESPEasyWiFiEvent.h"
-
+#define SPIFFS_CHECK(result, fname) if (!(result)) { return(FileError(__LINE__, fname)); }
+#include "WebServer_Rules.h"
 
 #endif /* ESPEASY_GLOBALS_H_ */

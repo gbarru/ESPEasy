@@ -1,3 +1,4 @@
+.. include:: ../Plugin/_plugin_substitutions_p00x.repl
 .. _P001_PIR_sensor_page:
 
 PIR sensor
@@ -21,14 +22,13 @@ Wiring
 
 .. code-block:: html
 
-  ESP               S8
-  GPIO (X)   <-->   TX
-  GPIO (X)   <-->   RX
-
+  ESP               PIR
+  GPIO (X)   <-->   Signal
 
   Power
-  5.0V       <-->   VCC
-  GND        <-->   GND
+  3.3V       <-->   Signal
+              or
+  GND        <-->   Signal
 
 
 Setup

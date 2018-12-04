@@ -1,13 +1,16 @@
 Rules
 *****
+
 Introduction
 ============
+
 Along with ESP Easy R108, a new feature was enabled, named Rules.
 Rules can be used to create very simple flows to control devices on your ESP.
 
 Enable Rules
 ------------
-To enable rules, go to Tools/Advanced and check the Rules checkbox.
+
+To enable rules, :menuselection:`Tools --> Advanced` and check the Rules checkbox.
 
 After clicking Submit, you will find a new page added. Here you can start
 experimenting with Rules:
@@ -34,6 +37,7 @@ Enjoy.
 
 Syntax
 ------
+
 The syntax of a rule can be single line:
 
 .. code-block:: html
@@ -52,6 +56,7 @@ or multi-line (need to be closed with an "endon"):
 
 IF/ELSE
 -------
+
 Also simple if ... else ... statements are possible:
 
 .. code-block:: html
@@ -154,6 +159,7 @@ The trigger can be an device value being changed:
 
 Operator (inequality function)
 ------------------------------
+
 Or a inequality function:
 
 .. code-block:: html
@@ -181,16 +187,16 @@ Where the "inequality function" is a simple check:
 
 (System) events
 ---------------
+
 Some special cases are these system triggers which is triggered upon
 boot/reboot/time/sleep etc. of the unit:
 
 .. csv-table::
-   :header: "Event", "Info", "Example"
-   :widths: 10, 30, 15
+   :header: "Event", "Example"
+   :widths: 30, 20
 
    "
    ``<taskname>#<valuename>``
-   ","
    As described already, each task can produced one or more events, one for each measured value. You should not name your devices and value names so that the combination equals to any of the below listed system events!
    ","
 
@@ -203,7 +209,6 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``System#Wake``
-   ","
    Triggered after power on.
    ","
 
@@ -216,7 +221,6 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``System#Boot``
-   ","
    Triggered at boot time.
    ","
 
@@ -230,7 +234,6 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``System#Sleep``
-   ","
    Triggered just before the ESP goes to deep sleep.
    ","
 
@@ -243,20 +246,18 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``MQTT#Connected``
-   ","
    Triggered when the ESP has connected to broker.
    ","
 
    .. code-block:: html
 
 	   on MQTT#Connected do
-	    Publish %sysname%/status,First message!
+	    Publish,%sysname%/status,First message!
 	   endon
 
    "
    "
    ``MQTT#Disconnected``
-   ","
    Triggered when the ESP has disconnected from the broker.
    ","
 
@@ -269,7 +270,6 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``MQTTimport#Connected``
-   ","
    Triggered when the ESP has connected to broker (the MQTT Import plugin uses a separate connection than the generic one).
    ","
 
@@ -282,7 +282,6 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``MQTTimport#Disconnected``
-   ","
    Triggered when the ESP has disconnected from the broker (the MQTT Import plugin uses a separate connection than the generic one).
    ","
 
@@ -295,7 +294,6 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``WiFi#Connected``
-   ","
    Triggered when the ESP has connected to Wi-Fi.
    ","
 
@@ -308,60 +306,55 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``WiFi#ChangedAccesspoint``
-   ","
    Triggered when the ESP has changed to access point, will also trigger first time the unit connects to the Wi-Fi.
    ","
 
    .. code-block:: html
 
-	   on MQTTimport#Connected do
-	    Publish %sysname%/status,AP changed
+	   on WiFi#ChangedAccesspoint do
+	    Publish,%sysname%/status,AP changed
 	   endon
 
    "
    "
    ``Login#Failed``
-   ","
    Triggered when (someone) has tried to login to a ESP unit with admin password enabled, but have failed to enter correct password.
    ","
 
    .. code-block:: html
 
 	   on Login#Failed do
-	    Publish %sysname%/warning,Intruder alert!
+	    Publish,%sysname%/warning,Intruder alert!
 	   endon
 
    "
    "
    ``Time#Initialized``
-   ","
    Triggered the first time (after boot) NTP is updating the unit.
    ","
 
    .. code-block:: html
 
 	   on Time#Initialized do
-	    Publish %sysname%/Time,%systime%
+	    Publish,%sysname%/Time,%systime%
 	   endon
 
    "
    "
    ``Time#Set``
-   ","
    Triggered when the time is set by an update from NTP.
    ","
 
    .. code-block:: html
 
 	   on Time#Set do
-	    Publish %sysname%/Time,%systime%
-	    Publish %sysname%/NTP,Updated time at: %systime%
+	    Publish,%sysname%/Time,%systime%
+	    Publish,%sysname%/NTP,Updated time at: %systime%
 	   endon
 
    "
    "
    ``Rules#Timer=``
-   ","
    As described already, triggered when a rules timer ends (setting a timer to 0 will disable the timer).
    ","
 
@@ -374,7 +367,6 @@ boot/reboot/time/sleep etc. of the unit:
    "
    "
    ``Clock#Time=``
-   ","
    Triggered every minute with day and time like: Mon,12:30 or Tue,14:45. You can define triggers on specific days or all days using 'All' for days indicator. You can also use wildcards in the time setting like All,**:00 to run every hour.
    ","
 
@@ -425,6 +417,7 @@ tests (the "event" command).
 
 Comment
 -------
+
 If you want you can add comments to any row in your rules code. Just
 remember to add them after the code and always begin with "//":
 
@@ -441,6 +434,7 @@ remember to add them after the code and always begin with "//":
 
 Best practice
 -------------
+
 It is possible to use CAPITAL letters and lower case as you please but best
 practice is to use the same types of letters that are found in the
 [ADD_LINK], and plugin specific commands. For the logics (on, if, else ... )
@@ -585,6 +579,7 @@ SR04 and LDR
 
 Timer
 -----
+
 There are 8 timers (1-8) you can use:
 
 .. code-block:: html
@@ -607,6 +602,7 @@ There are 8 timers (1-8) you can use:
 
 Starting/stopping repeating timers with events
 ----------------------------------------------
+
 To disable an existing timer, set it to 0. This is useful to make repeating
 timers for things like alarms or warnings:
 
@@ -641,6 +637,7 @@ To start or stop the warning signal use http:
 
 HTTP call
 ---------
+
 When you enter this first command with the correct IP address in the URL of your browser:
 
 .. code-block:: html
@@ -671,6 +668,7 @@ Provided that you also have the valve etc., the plants will be happy.
 
 SendTo and Publish
 ------------------
+
 With SendTo you can add a Rule to your ESP Easy, capable of sending an event to another unit.
 This can be useful in cases where you want to take immediate action.
 There are two flavors:
@@ -718,6 +716,7 @@ To be created.
 
 Time
 ----
+
 With Rules you can also start or stop actions on a given day and time, or even on every day.
 
 .. code-block:: html
@@ -754,6 +753,7 @@ before 7 in the morning or after 19:00 in the evening
 
 SendToHTTP
 ----------
+
 To send a message to another device, like a command to switch on a light to Domoticz
 
 .. code-block:: html
@@ -777,6 +777,7 @@ There is the following workaround:
 
 Dew Point for temp/humidity sensors (BME280 for example)
 --------------------------------------------------------
+
 If you have a sensor that is monitoring the air temperature and the relative
 humidity you may calculate the dew point with rules. This example use MQTT to
 publish the values but you may change this to whatever you want. We also make
@@ -790,9 +791,9 @@ For dew point on the 'outside':
  on TempHumidityPressure_OUTSIDE#%RH do
   TaskValueSet,7,1,[TempHumidityPressure_OUTSIDE#°C]-(100-[TempHumidityPressure_OUTSIDE#%RH])/5  // "7" is the number of the task that the dummy device is on, "1" is its first value where we dump our result
   if [TempHumidityPressure_OUTSIDE#%RH]>49
-   Publish %sysname%/DewPoint_OUTSIDE/°C,[Dew_point#°C1]
+   Publish,%sysname%/DewPoint_OUTSIDE/°C,[Dew_point#°C1]
   else
-   Publish %sysname%/DewPoint_OUTSIDE/°C,[Dew_point#°C1]*  //This asterix shows that the calculation is not correct due to the humidity being below 50%!
+   Publish,%sysname%/DewPoint_OUTSIDE/°C,[Dew_point#°C1]*  //This asterix shows that the calculation is not correct due to the humidity being below 50%!
   endif
  endon
 
@@ -803,32 +804,34 @@ For dew point on the 'inside':
  on TempHumidityPressure_INSIDE#%RH do
   TaskValueSet,7,2,[TempHumidityPressure_INSIDE#°C]-(100-[TempHumidityPressure_INSIDE#%RH])/5  // "7" is the number of the task that the dummy device is on, "2" is its second value where we dump our result
   if [TempHumidityPressure_INSIDE#%RH]>49
-   Publish %sysname%/DewPoint_INSIDE/°C,[Dew_point#°C2]
+   Publish,%sysname%/DewPoint_INSIDE/°C,[Dew_point#°C2]
   else
-   Publish %sysname%/DewPoint_INSIDE/°C,[Dew_point#°C2]*  //This asterix shows that the calculation is not correct due to the humidity being below 50%!
+   Publish,%sysname%/DewPoint_INSIDE/°C,[Dew_point#°C2]*  //This asterix shows that the calculation is not correct due to the humidity being below 50%!
   endif
  endon
 
 
 Report IP every 30 seconds using MQTT
 -------------------------------------
+
 This rule also work as a ping or heart beat of the unit. If it has not
 published a IP number for 30+ seconds the unit is experiencing problems.
 
 .. code-block:: html
 
  On System#Boot do    //When the ESP boots, do
-  Publish %sysname%/IP,%ip%
+  Publish,%sysname%/IP,%ip%
   timerSet,1,30      //Set Timer 1 for the next event in 30 seconds
  endon
 
  On Rules#Timer=1 do  //When Timer1 expires, do
-  Publish %sysname%/IP,%ip%
+  Publish,%sysname%/IP,%ip%
   timerSet,1,30       //Resets the Timer 1 for another 30 seconds
  endon
 
 Custom reports to Domoticz with own IDX
 ---------------------------------------
+
 This rule was presented as a workaround for a problem where a sensor had
 three different values but only one IDX value. You could publish your own
 Domoticz messages (MQTT or HTTP) using this method. Below we use the INA219
@@ -866,6 +869,7 @@ please refer to this [ADD_LINK] for a workaround.)
 
 One button, multiple actions using long press
 ---------------------------------------------
+
 Using a "normal switch" device which is in this example normally set to low
 (0) you can make one of two actions  when pressed. If you either release the
 button in less than a second or press it for more than a second:

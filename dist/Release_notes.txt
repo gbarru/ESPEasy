@@ -1,4 +1,160 @@
 -------------------------------------------------
+Changes in release mega-20181204 (since mega-20181203)
+-------------------------------------------------
+
+Release date: Tue Dec  4 04:00:08 CET 2018
+
+Grovkillen (1):
+      [docs] Added P001 (hardware)
+
+
+-------------------------------------------------
+Changes in release mega-20181203 (since mega-20181201)
+-------------------------------------------------
+
+Release date: Mon Dec  3 04:00:11 CET 2018
+
+Gijs Noorlander (13):
+      [Rules engine] Set UseOldRulesEngine as default
+      [Stack] Reduce allocations on stack
+      [Stack] Make IP-address formatting simpler
+      [Stack] Optimize GetArgv to only allocate what is needed.
+      [Stack] P035_IRTX reduction of memory usage & speed improvement
+      [Uncrustify] Make rules source code files better readable
+      [Memory] Pass String as reference or const reference, not deepcopy
+      [Rules] GetArgv should clear the return string before filling it
+      [ESP32] Disable RTOS Multitasking option (multi_heap_poisoning)
+      [PWM] #2117  PWM stops after about 80 msec in core 2.4.1
+      [webserver CORS] #2119 Allow commands to be scripted
+      [HLW8012] Update library to 1.1.1
+      [HLW8012] Make reading Sonoff POW non blocking ( #2097 )
+
+Saverio Cisternino (7):
+      Moved the rules related functions from Misc.ino to ESPEasyRules.ino
+      implement matching of rule file
+      Added addButton, addFormTextBox overload and  addSaveButton, AddDeleteButton functions
+      Redefine Rules WebUi
+      Change menu url from relative to absolute
+      Fixed ESP32 build
+      Adding flag to settings for switch from old to new rules engine (Default engine old).
+
+
+-------------------------------------------------
+Changes in release mega-20181201 (since mega-20181130)
+-------------------------------------------------
+
+Release date: Sat Dec  1 04:00:09 CET 2018
+
+Gijs Noorlander (2):
+      [Docs] Update to Sphinx 1.8.2
+      [#1970] Fix: HTTP Header broken in 'Generic HTTP Advanced' controller
+
+
+-------------------------------------------------
+Changes in release mega-20181130 (since mega-20181129)
+-------------------------------------------------
+
+Release date: Fri Nov 30 04:00:11 CET 2018
+
+Gijs Noorlander (4):
+      [Readme] Add badge for ReadTheDocs build status
+      [Docs] Document ESPeasy p2p controller
+      [Docs] Move Sphinx substitutions to separate file to speed-up build
+      [Docs] Split Sphinx plugin substitutions to speed-up build
+
+Plebs (12):
+      new data structures
+      added monitor support
+      Added SafeButton feature
+      fixing Safebutton
+      added P019 PCF support
+      Fixed write function in PCF8574
+      Added support for P011, P022, P059, P063
+      Update _P009_MCP.ino
+      fixed pcf8574 to avoid #702
+      bugfixing
+      more bugfixing
+      final cleanup
+
+
+-------------------------------------------------
+Changes in release mega-20181129 (since mega-20181128)
+-------------------------------------------------
+
+Release date: Thu Nov 29 04:00:15 CET 2018
+
+Grovkillen (1):
+      [docs] Small update, fixed some typos
+
+Saverio Cisternino (3):
+      [Embed Files] Add exit code 1 when minify failed
+      [Embed Files] Append zero termination
+      [Embed Files] Avoid redirect http to https of minify_html_css
+
+clumsy-stefan (1):
+      Allow for duplicate task names again
+
+
+-------------------------------------------------
+Changes in release mega-20181128 (since mega-20181127)
+-------------------------------------------------
+
+Release date: Wed Nov 28 04:00:07 CET 2018
+
+Gijs Noorlander (7):
+      [Serial] Redirect all Serial.print/println to a buffer
+      [Serial] Replace serial port activity marker with unprintable marker
+      [Serial] Forgot the Serial.printf
+      [Commands] No longer run commands from scheduler
+      [Serial] Remove code to detect if serial port is read
+      [Sonoff POW] Merge POW r1/r2 in the same build
+      [MQTT] change client-id at reconnect - #1918
+
+Grovkillen (2):
+      [flasher] Warning if baud rate too high + info post-flash
+      [docs] Added servo motor and plugin sections
+
+
+-------------------------------------------------
+Changes in release mega-20181127 (since mega-20181125)
+-------------------------------------------------
+
+Release date: Tue Nov 27 04:00:10 CET 2018
+
+Gijs Noorlander (3):
+      [PlatformIO] Change to LWIP2_LOW_MEMORY
+      [PlatformIO] Lower upload_speed to 115200
+      [Travis] make clean + build only once
+
+Grovkillen (3):
+      [docs] Added GPIO handling pages (tones, relay etc.)
+      [docs] command list updated with internal commands
+      [docs] Fix relative path for command list
+
+
+-------------------------------------------------
+Changes in release mega-20181125 (since mega-20181124)
+-------------------------------------------------
+
+Release date: Sun Nov 25 04:00:07 CET 2018
+
+Gijs Noorlander (3):
+      LCD P012_LCD Plugin German Umlaute #2081
+      P012_LCD Remove duplicate lines
+      Add -mtarget-align to common build_flags
+
+Unknown (8):
+      [HTML Footer] Change to "Powered by LetsControlIt community"
+      [Factory Reset] Add initial structure to set defaults for a device model
+      [Factory Reset] Add Factory reset page and allow to keep some settings
+      [Factory Reset] Add more categories not to clear
+      [Factory Reset] Show page again after saving.
+      [Sysinfo] Add init to P026_sysinfo to set initial config only 1 active.
+      [Factory Reset] Add some documentation
+      [Documentation] Add link to RTD for plugins
+
+
+-------------------------------------------------
 Changes in release mega-20181124 (since mega-20181123)
 -------------------------------------------------
 
