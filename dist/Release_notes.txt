@@ -1,4 +1,50 @@
 -------------------------------------------------
+Changes in release mega-20181208 (since mega-20181207)
+-------------------------------------------------
+
+Release date: Sat Dec  8 04:00:13 CET 2018
+
+Gijs Noorlander (3):
+      [#2144] Only include OTA images that fit (<600 k)
+      [#2144] Extend check for file size of ESP32 images
+      Max OTA filesize on 1MB = 616448 bytes.
+
+Grovkillen (4):
+      [docs] added commented references to commands list
+      [flasher] 0.03.000 added custom serial commands.
+      Revert "[docs] added commented references to commands list"
+      [docs] added hardware tSense
+
+
+-------------------------------------------------
+Changes in release mega-20181207 (since mega-20181204)
+-------------------------------------------------
+
+Release date: Fri Dec  7 04:00:13 CET 2018
+
+Gijs Noorlander (5):
+      [GPIO] Move all GPIO commands out of Switch plugin
+      [GPIO] Move "inputswitchstate" back to Switch plugin
+      [GPIO] Add GPIO pin description page
+      [GPIO] Add some checks to what GPIO pin can be used.
+      [GPIO] GPIO commands with long duration will be stopped async.
+
+Grovkillen (6):
+      [docs] added phantomJS script to streamline the screenshots
+      [docs] updated headlines (css) + added P001 hardware
+      [docs] syntax error fixed.
+      [docs] P052 sensair S8 hardware page updated
+      [docs] Test if arrows (unicode) work with RTD
+      [docs] fixed "ESP Easy" logo margin bug
+
+chunter1 (1):
+      HX711 load cell plugin now supports dual channel support
+
+wdonker (1):
+      Update _C002.ino
+
+
+-------------------------------------------------
 Changes in release mega-20181204 (since mega-20181203)
 -------------------------------------------------
 
