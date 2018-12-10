@@ -191,6 +191,7 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
       if (argIndex)
         tmpString = tmpString.substring(0, argIndex);
 */
+
     String command = parseString(string,1);
 
       if (command == F("setbrightness")) {
@@ -220,14 +221,24 @@ byte p222_output=Settings.TaskDevicePluginConfig[event->TaskIndex][7];
         case 1:
         {
           p222_FillBufferWithTime();
-          Plugin_222_M->clear();
+          //Plugin_222_M->clear();
           Plugin_222_M->home();
           Plugin_222_M->print(p222_showbuffer[0]);
           Plugin_222_M->print(p222_showbuffer[1]);
-          Plugin_222_M->print(":");
+
+          if (p222_showbuffer [5] % 2)
+            Plugin_222_M->print(":");
+          else
+            Plugin_222_M->print(" ");
+
           Plugin_222_M->print(p222_showbuffer[2]);
           Plugin_222_M->print(p222_showbuffer[3]);
-          Plugin_222_M->print(":");
+
+          if (p222_showbuffer [5] % 2)
+            Plugin_222_M->print(":");
+          else
+            Plugin_222_M->print(" ");
+
           Plugin_222_M->print(p222_showbuffer[4]);
           Plugin_222_M->print(p222_showbuffer[5]);
         break;
@@ -235,7 +246,7 @@ byte p222_output=Settings.TaskDevicePluginConfig[event->TaskIndex][7];
         case 2:
         {
           p222_FillBufferWithDate();
-          Plugin_222_M->clear();
+          //Plugin_222_M->clear();
           Plugin_222_M->home();
           Plugin_222_M->print(p222_showbuffer[0]);
           Plugin_222_M->print(p222_showbuffer[1]);
