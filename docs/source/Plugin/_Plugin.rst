@@ -105,6 +105,7 @@ There's three different released versions of ESP Easy:
    ":ref:`P079_page`","|P079_status|","P079"
    ":ref:`P080_page`","|P080_status|","P080"
    ":ref:`P081_page`","|P081_status|","P081"
+   ":ref:`P082_page`","|P082_status|","P082"
 
 
 
@@ -135,11 +136,6 @@ Display
 
 Plugins: |Plugin_Display|
 
-Distance
---------
-
-Plugins: |Plugin_Distance|
-
 Dust
 ----
 
@@ -160,7 +156,7 @@ Environment
 
 Plugins: |Plugin_Environment|
 
-Hardware: |P004_usedby|, |P005_usedby|
+Hardware: |P004_usedby|, |P005_usedby|, |P006_usedby|, |P024_usedby|, |P028_usedby|, |P030_usedby|
 
 Extra IO
 --------
@@ -222,6 +218,13 @@ Output
 ------
 
 Plugins: |Plugin_Output|
+
+Position
+--------
+
+Plugins: |Plugin_Position|
+
+Hardware: |P013_usedby|, |P082_usedby|
 
 Regulator
 ---------

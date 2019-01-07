@@ -171,6 +171,7 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_READ:
     {
+      Plugin_222_M->setBrightness(Settings.TaskDevicePluginConfig[event->TaskIndex][6]);
 
       success = true;
       break;
