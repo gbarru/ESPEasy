@@ -618,9 +618,6 @@ To create/register a plugin, you have to :
     #define USES_P222   //Display HCMS_2915
 #endif
 
-    #define USES_P082   // GPS
-#endif
-
 #ifdef CONTROLLER_SET_TESTING
     #define USES_C011   // Generic HTTP Advanced
     #define USES_C012   // Blynk HTTP
