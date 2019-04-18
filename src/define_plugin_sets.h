@@ -531,8 +531,9 @@ To create/register a plugin, you have to :
     #define USES_P036   // FrameOLED
     #define USES_P037   // MQTTImport
     #define USES_P038   // NeoPixel
-    #define USES_P039   // ID12
+    #define USES_P039   // Environment - Thermocouple
 
+    #define USES_P040   // RFID - ID12LA/RDM6300
     #define USES_P041   // NeoClock
     #define USES_P042   // Candle
     #define USES_P043   // ClkOutput
@@ -621,6 +622,7 @@ To create/register a plugin, you have to :
 #ifdef CONTROLLER_SET_TESTING
     #define USES_C011   // Generic HTTP Advanced
     #define USES_C012   // Blynk HTTP
+    #define USES_C014   // homie 3 & 4dev MQTT
 #endif
 
 #ifdef NOTIFIER_SET_TESTING
@@ -705,6 +707,7 @@ To create/register a plugin, you have to :
 
 
 #ifdef CONTROLLER_SET_EXPERIMENTAL
+  #define USES_C016   // Cache controller
 #endif
 
 
