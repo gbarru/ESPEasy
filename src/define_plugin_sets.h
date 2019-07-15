@@ -630,13 +630,10 @@ To create/register a plugin, you have to :
     #define USES_P081   // Cron
     #define USES_P082   // GPS
     #define USES_P083   // SGP30
-<<<<<<< HEAD
-=======
     #define USES_P084   // VEML6070
     #define USES_P085   // AcuDC24x
     #define USES_P086   // Receiving values according Homie convention. Works together with C014 Homie controller
 #endif
->>>>>>> upstream/mega
 
     #define USES_P222   //Display HCMS_2915
 #endif
