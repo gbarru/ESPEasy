@@ -1983,6 +1983,7 @@ void setTaskDevice_to_TaskIndex(byte taskdevicenumber, byte taskIndex) {
   if (taskdevicenumber != 0) // set default values if a new device has been selected
   {
     //NOTE: do not enable task by default. allow user to enter sensible valus first and let him enable it when ready.
+    PluginCall(PLUGIN_SET_DEFAULTS, &TempEvent, dummy);
     PluginCall(PLUGIN_GET_DEVICEVALUENAMES, &TempEvent, dummy); //the plugin should populate ExtraTaskSettings with its default values.
   } else {
     // New task is empty task, thus save config now.
@@ -2413,8 +2414,10 @@ void handle_devices() {
         if (Device[DeviceIndex].PullUpOption)
         {
           addFormCheckBox(F("Internal PullUp"), F("TDPPU"), Settings.TaskDevicePin1PullUp[taskIndex]);   //="taskdevicepin1pullup"
+          #if defined(ESP8266)
           if ((Settings.TaskDevicePin1[taskIndex] == 16) || (Settings.TaskDevicePin2[taskIndex] == 16) || (Settings.TaskDevicePin3[taskIndex] == 16))
-            addFormNote(F("GPIO-16 (D0) does not support PullUp"));
+            addFormNote(F("PullDown for GPIO-16 (D0)"));
+          #endif
         }
 
         if (Device[DeviceIndex].InverseLogicOption)
@@ -4575,7 +4578,9 @@ void handle_json()
 #ifdef ESP8266
       stream_next_json_object_value(LabelType::FORCE_WIFI_NOSLEEP);
 #endif
+#ifdef SUPPORT_ARP
       stream_next_json_object_value(LabelType::PERIODICAL_GRAT_ARP);
+#endif
       stream_next_json_object_value(LabelType::CONNECTION_FAIL_THRESH);
       stream_last_json_object_value(LabelType::WIFI_RSSI);
       TXBuffer += ",\n";
@@ -4843,8 +4848,6 @@ long stream_timing_statistics(bool clearStats) {
       }
   }
   if (clearStats) {
-    timediff_calls = 0;
-    timediff_cpu_cycles_total = 0;
     timingstats_last_reset = millis();
   }
   return timeSinceLastReset;
@@ -4950,7 +4953,9 @@ void handle_advanced() {
     Settings.WiFiRestart_connection_lost(isFormItemChecked(getInternalLabel(LabelType::RESTART_WIFI_LOST_CONN)));
     Settings.EcoPowerMode(isFormItemChecked(getInternalLabel(LabelType::CPU_ECO_MODE)));
     Settings.WifiNoneSleep(isFormItemChecked(getInternalLabel(LabelType::FORCE_WIFI_NOSLEEP)));
+#ifdef SUPPORT_ARP
     Settings.gratuitousARP(isFormItemChecked(getInternalLabel(LabelType::PERIODICAL_GRAT_ARP)));
+#endif
 
     addHtmlError(SaveSettings());
     if (systemTimePresent())
@@ -5051,7 +5056,9 @@ void handle_advanced() {
   addFormCheckBox(LabelType::FORCE_WIFI_NOSLEEP, Settings.WifiNoneSleep());
 #endif
   addFormNote(F("Change WiFi sleep settings requires reboot to activate"));
+#ifdef SUPPORT_ARP
   addFormCheckBox(LabelType::PERIODICAL_GRAT_ARP, Settings.gratuitousARP());
+#endif
   addFormCheckBox(LabelType::CPU_ECO_MODE, Settings.EcoPowerMode());
   addFormNote(F("Node may miss receiving packets with Eco mode enabled"));
   addFormSeparator(2);
@@ -5449,9 +5456,14 @@ void handleFileUpload() {
       }
       if (valid)
       {
+        String filename;
+#if defined(ESP32)
+        filename += '/';
+#endif
+        filename += upload.filename;
         // once we're safe, remove file and create empty one...
-        tryDeleteFile(upload.filename);
-        uploadFile = tryOpenFile(upload.filename.c_str(), "w");
+        tryDeleteFile(filename);
+        uploadFile = tryOpenFile(filename.c_str(), "w");
         // dont count manual uploads: flashCount();
       }
     }
@@ -5504,6 +5516,7 @@ bool loadFromFS(boolean spiffs, String path) {
   else if (path.endsWith(F(".txt")) ||
            path.endsWith(F(".dat"))) dataType = F("application/octet-stream");
   else if (path.endsWith(F(".esp"))) return handle_custom(path);
+
 #ifndef BUILD_NO_DEBUG
   if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
     String log = F("HTML : Request file ");
@@ -5512,7 +5525,10 @@ bool loadFromFS(boolean spiffs, String path) {
   }
 #endif
 
+#if !defined(ESP32)
   path = path.substring(1);
+#endif
+
   if (spiffs)
   {
     fs::File dataFile = tryOpenFile(path.c_str(), "r");
@@ -5556,7 +5572,10 @@ boolean handle_custom(String path) {
   // path is a deepcopy, since it will be changed.
   checkRAM(F("handle_custom"));
   if (!clientIPallowed()) return false;
+
+#if !defined(ESP32)
   path = path.substring(1);
+#endif
 
   // create a dynamic custom page, parsing task values into [<taskname>#<taskvalue>] placeholders and parsing %xx% system variables
   fs::File dataFile = tryOpenFile(path.c_str(), "r");
@@ -6853,6 +6872,8 @@ void handle_sysinfo() {
   TXBuffer += RTC.bootCounter;
   TXBuffer += ')';
   addRowLabelValue(LabelType::RESET_REASON);
+  addRowLabelValue(LabelType::LAST_TASK_BEFORE_REBOOT);
+  addRowLabelValue(LabelType::SW_WD_COUNT);
 
   addTableSeparator(F("Network"), 2, 3, F("Wifi"));
 
@@ -6920,7 +6941,9 @@ void handle_sysinfo() {
 #ifdef ESP8266
   addRowLabelValue(LabelType::FORCE_WIFI_NOSLEEP);
 #endif
+#ifdef SUPPORT_ARP
   addRowLabelValue(LabelType::PERIODICAL_GRAT_ARP);
+#endif
   addRowLabelValue(LabelType::CONNECTION_FAIL_THRESH);
 
   addTableSeparator(F("Firmware"), 2, 3);

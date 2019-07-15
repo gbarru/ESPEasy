@@ -71,8 +71,14 @@ To create/register a plugin, you have to :
     #define PLUGIN_BUILD_IR
 #endif
 
+#ifdef PLUGIN_BUILD_MINIMAL_IR
+    #define PLUGIN_BUILD_MINIMAL_OTA
+    #define PLUGIN_BUILD_IR
+#endif
+
 #ifdef PLUGIN_BUILD_NORMAL_IR
     #define PLUGIN_BUILD_NORMAL     // add stable
+    #define PLUGIN_DESCR  "Minimal 1M IR"
     #define PLUGIN_BUILD_IR
 #endif
 
@@ -111,7 +117,9 @@ To create/register a plugin, you have to :
 #endif
 
 #ifdef PLUGIN_BUILD_MINIMAL_OTA
-    #define PLUGIN_DESCR  "Minimal 1M OTA"
+    #ifndef PLUGIN_DESCR
+      #define PLUGIN_DESCR  "Minimal 1M OTA"
+    #endif
 
     #define CONTROLLER_SET_NONE
 
@@ -191,6 +199,13 @@ To create/register a plugin, you have to :
     #define USES_P035      // IRTX
 #endif
 
+#ifdef PLUGIN_BUILD_IR_EXTENDED
+    #define PLUGIN_DESCR  "IR_Extended"
+    #define USES_P016      // IR
+    #define USES_P035      // IRTX
+    // The following define is needed for extended decoding of A/C Messages and or using standardised common arguments for controlling all deeply supported A/C units
+    #define P016_P035_Extended_AC
+#endif
 
 /******************************************************************************\
  * Devices ********************************************************************
@@ -615,6 +630,13 @@ To create/register a plugin, you have to :
     #define USES_P081   // Cron
     #define USES_P082   // GPS
     #define USES_P083   // SGP30
+<<<<<<< HEAD
+=======
+    #define USES_P084   // VEML6070
+    #define USES_P085   // AcuDC24x
+    #define USES_P086   // Receiving values according Homie convention. Works together with C014 Homie controller
+#endif
+>>>>>>> upstream/mega
 
     #define USES_P222   //Display HCMS_2915
 #endif
@@ -623,6 +645,8 @@ To create/register a plugin, you have to :
     #define USES_C011   // Generic HTTP Advanced
     #define USES_C012   // Blynk HTTP
     #define USES_C014   // homie 3 & 4dev MQTT
+    #define USES_C015   // Blynk
+    #define USES_C017   // Zabbix
 #endif
 
 #ifdef NOTIFIER_SET_TESTING

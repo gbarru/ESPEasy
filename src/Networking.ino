@@ -7,7 +7,15 @@
 //  #endif
 
 #include <lwip/netif.h>
+#ifdef ESP8266
+  #if !defined(ARDUINO_ESP8266_RELEASE_2_4_0) && !defined(ARDUINO_ESP8266_RELEASE_2_3_0)
+    #define SUPPORT_ARP
+  #endif
+#endif
+
+#ifdef SUPPORT_ARP
 #include <lwip/etharp.h>
+#endif
 
 /*********************************************************************************************\
    Syslog client
@@ -721,6 +729,7 @@ bool connectClient(WiFiClient& client, IPAddress ip, uint16_t port)
     return false;
   }
   bool connected = (client.connect(ip, port) == 1);
+  yield();
   if (!connected) {
     sendGratuitousARP_now();
   }
@@ -743,6 +752,7 @@ bool resolveHostByName(const char* aHostname, IPAddress& aResult) {
 #else
   bool resolvedIP = WiFi.hostByName(aHostname, aResult, CONTROLLER_CLIENTTIMEOUT_DFLT) == 1;
 #endif
+  yield();
   if (!resolvedIP) {
     sendGratuitousARP_now();
   }
@@ -778,7 +788,11 @@ bool beginWiFiUDP_randomPort(WiFiUDP& udp) {
 }
 
 void sendGratuitousARP() {
-#ifndef ESP32
+  if (!WiFiConnected()) {
+    return;
+  }
+#ifdef SUPPORT_ARP
+
   // See https://github.com/letscontrolit/ESPEasy/issues/2374
   START_TIMER;
   netif *n = netif_list;

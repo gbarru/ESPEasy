@@ -1,4 +1,201 @@
 -------------------------------------------------
+Changes in release mega-20190715 (since mega-20190714)
+-------------------------------------------------
+
+Release date: Mon Jul 15 04:00:12 CEST 2019
+
+Gijs Noorlander (2):
+      [Build] Reduce build size normal_esp8266_IR_1M to minimal
+      [Build] Fix build issue on core 2.4.0
+
+
+-------------------------------------------------
+Changes in release mega-20190714 (since mega-20190630)
+-------------------------------------------------
+
+Release date: Sun Jul 14 04:00:15 CEST 2019
+
+Gijs Noorlander (15):
+      [PIO] Fix build issue with PIO core 4.0.0
+      [Crash info] Report last scheduled task before reboot
+      [PIO] Ignore .pio folder in Git.
+      [SW WD] Count SW watchdog and feed HW watchdog
+      [WiF] Improve disconnect/reconnect stability
+      [WiFi] Debugging connect/disconnect behavior
+      [WiFi] Add more debug information
+      [Uncrustify] Move uncrustify.cfg to project dir
+      [Build] Set core 2.5.2 as default and add custom build
+      [TSL2561] Small fix to detect saturation of ADC
+      [TSL2561] Add auto gain and extended auto gain
+      [Dallas 1wire] Add error state value selector
+      [Dallas] Add ignore option as error state output value
+      [WiFi] Code cleanup WiFi/WiFi event files
+      [ESP32] Upgrade to core v1.9.0
+
+jimmys01 (13):
+      [Controller] Zabbix controller initial commit
+      Scheduler fix
+      Zabbix secont attempt
+      Improvments
+      More improvments
+      [ZABBIX] Update code to JSON6+
+      Increace PLUGIN_MAX by 10
+      Update IR library to 2.6.3
+      [IR TX RX] Extended AC commands
+      Couple payload_len to actual JSON payload length.
+      Resolve conflicts with C015
+      Resolving conflicts #2
+      Commit the changed define_plugin_sets.h after conflicts have been resolved
+
+
+-------------------------------------------------
+Changes in release mega-20190630 (since mega-20190626)
+-------------------------------------------------
+
+Release date: Sun Jun 30 04:00:18 CEST 2019
+
+jimmys01 (3):
+      [JSON] Update to Json 6
+      Update code to version JSON 6
+      Update _C002.ino
+
+
+-------------------------------------------------
+Changes in release mega-20190626 (since mega-20190607)
+-------------------------------------------------
+
+Release date: Wed Jun 26 04:00:15 CEST 2019
+
+okarasev (11):
+      testing version
+      compilation fixes
+      plugin number changed 14->15
+      blynk library added
+      EspEasy changes only
+      library files added
+      fix: reconnect_interval not worked correctly
+      ssl support (disabled by default)
+      fix
+      log prefix show in log (ssl/open)
+      thumbrint gui set option (when compilled in ssl mode)
+
+
+-------------------------------------------------
+Changes in release mega-20190607 (since mega-20190523)
+-------------------------------------------------
+
+Release date: Fri Jun  7 04:00:17 CEST 2019
+
+Christian Meinert (3):
+      Handling incomming messages via Plugin
+      Plugin Number chnaged to 86, HSV2RGB functions moved to misc.ino, little bugfixes and documentation
+      Changes as requested
+
+Gijs Noorlander (4):
+      [AcuDC243] Fix modbus address not set
+      [AcuDC243] Fix bug in reading 4th set variable
+      [build] Changes from SPIFFS to FS #2482
+      [Readme] Added download counter
+
+TD-er (1):
+      [Build] Make it build in Arduino IDE again (#2481)
+
+
+-------------------------------------------------
+Changes in release mega-20190523 (since mega-20190522)
+-------------------------------------------------
+
+Release date: Thu May 23 04:00:18 CEST 2019
+
+Gijs Noorlander (1):
+      [Blitzwold SHP] Add build for 1M power nodes
+
+
+-------------------------------------------------
+Changes in release mega-20190522 (since mega-20190511)
+-------------------------------------------------
+
+Release date: Wed May 22 04:00:19 CEST 2019
+
+Gijs Noorlander (10):
+      [P003 Pulse] Adding ICACHE_RAM_ATTR attributes
+      [PubSubClient] Fix Publish_P return value
+      [PubSubClient] Removed an unused variable 618
+      [PubSubClient] Support pre-connected client
+      [PubSubClient] Add delay() calls in connect() and write()
+      [PubSubClient] Fix publish() for payload == nullptr (528)
+      [MQTT] Do not connect with cleanSession flag set
+      [PubSubClient] Check for valid initialized _client
+      [PIO build] Core 2.5.2 has been released
+      [TimeDiff] Clean up timeDiff() function and add ICACHE_RAM_ATTR
+
+Meek Home Automation (1):
+      Update ESPEasySoftwareSerial.cpp
+
+TD-er (15):
+      [Plugins] Make number of outputs dynamic for some plugins
+      [Plugins] Add plugin call to load defaults
+      [Modbus RTU] Add DE/RE pin for use with MAX485 chip
+      [WiFi] Use RSSI value to determine connected state
+      New plugin: AccuEnergy Modbus
+      [AccuEnergy] Allow setup internal parameters
+      [AccuEnergy] Improve calibration and allow to clear logged data
+      [WiFi] Perform explicit disconnect when wifi gets disconnected
+      [AccuEnergy] Rename plugin to P085
+      [Modbus RTU] Removed a delay and increase reading success
+      [SenseAir] Add preliminary support for S11 Sunrise CO2 sensor
+      [AccuEnergy] Make output value selectable
+      Make output value selection more dynamic
+      [GPS] Allow to select output values and update on time or distance travelled
+      [PubSubClient] Upgrade to 2.7
+
+
+-------------------------------------------------
+Changes in release mega-20190511 (since mega-20190508)
+-------------------------------------------------
+
+Release date: Sat May 11 04:00:20 CEST 2019
+
+Christian Meinert (6):
+      Modified P019 & C014 to receive Values
+      1st draft version of docs for C014 Homie Controller
+      Minor fixes
+      C014 Documentation
+      Fixed subscribe topic default
+      Revert "Modified P019 & C014 to receive Values"
+
+svmac (3):
+      PullDown for GPIO16
+      Update _P001_Switch.ino
+      Changes requested
+
+
+-------------------------------------------------
+Changes in release mega-20190508 (since mega-20190425)
+-------------------------------------------------
+
+Release date: Wed May  8 04:00:18 CEST 2019
+
+Bartlomiej Zimon (7):
+      1wire - add more data for debug, add a little more time for reset response
+      ESP32: fix files upload
+      ESP32: fix spiffs files downloading
+      ESP32: fix (custom) dashboard downloading
+      ESP32: fix booting after flash
+      spiffs.open -> tryOpenFile
+      # Conflicts:     #	src/WebServer.ino
+
+MrBenzim (2):
+      Update _P003_Pulse.ino
+      Update _P003_Pulse.ino
+
+Remco van Essen (3):
+      [VEML6070] Added VEML 6070 UV sensor
+      [VEML6070] Updates to plugin and add I2C function for 8 bit reads without sending command code first
+      [VEML6070] Removed unneeded include
+
+
+-------------------------------------------------
 Changes in release mega-20190425 (since mega-20190419)
 -------------------------------------------------
 
