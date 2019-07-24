@@ -25719,4 +25719,30926 @@ boolean Plugin_001(byte function, struct EventStruct *event, String& string)
         options[0] = F("Switch");
         options[1] = F("Dimmer");
         int optionValues[2] = { PLUGIN_001_TYPE_SWITCH, PLUGIN_001_TYPE_DIMMER };
-        const byte switchtype =
+        const byte switchtype = P001_getSwitchType(event);
+        addFormSelector(F("Switch Type"), F("p001_type"), 2, options, optionValues, switchtype);
+
+        if (switchtype == PLUGIN_001_TYPE_DIMMER)
+        {
+          addFormNumericBox(F("Dim value"), F("p001_dimvalue"), PCONFIG(1), 0, 255);
+        }
+
+        byte choice = PCONFIG(2);
+        String buttonOptions[3];
+        buttonOptions[0] = F("Normal Switch");
+        buttonOptions[1] = F("Push Button Active Low");
+        buttonOptions[2] = F("Push Button Active High");
+        int buttonOptionValues[3] = {PLUGIN_001_BUTTON_TYPE_NORMAL_SWITCH, PLUGIN_001_BUTTON_TYPE_PUSH_ACTIVE_LOW, PLUGIN_001_BUTTON_TYPE_PUSH_ACTIVE_HIGH};
+        addFormSelector(F("Switch Button Type"), F("p001_button"), 3, buttonOptions, buttonOptionValues, choice);
+
+        addFormCheckBox(F("Send Boot state"),F("p001_boot"),
+          PCONFIG(3));
+
+        addFormSubHeader(F("Advanced event management"));
+
+        addFormNumericBox(F("De-bounce (ms)"), F("p001_debounce"), round(PCONFIG_FLOAT(0)), 0, 250);
+
+
+        if (PCONFIG_FLOAT(1) < PLUGIN_001_DOUBLECLICK_MIN_INTERVAL)
+          PCONFIG_FLOAT(1) = PLUGIN_001_DOUBLECLICK_MIN_INTERVAL;
+
+        byte choiceDC = PCONFIG(4);
+        String buttonDC[4];
+        buttonDC[0] = F("Disabled");
+        buttonDC[1] = F("Active only on LOW (EVENT=3)");
+        buttonDC[2] = F("Active only on HIGH (EVENT=3)");
+        buttonDC[3] = F("Active on LOW & HIGH (EVENT=3)");
+        int buttonDCValues[4] = {PLUGIN_001_DC_DISABLED, PLUGIN_001_DC_LOW, PLUGIN_001_DC_HIGH,PLUGIN_001_DC_BOTH};
+
+        addFormSelector(F("Doubleclick event"), F("p001_dc"), 4, buttonDC, buttonDCValues, choiceDC);
+
+        addFormNumericBox(F("Doubleclick max. interval (ms)"), F("p001_dcmaxinterval"), round(PCONFIG_FLOAT(1)), PLUGIN_001_DOUBLECLICK_MIN_INTERVAL, PLUGIN_001_DOUBLECLICK_MAX_INTERVAL);
+
+
+        if (PCONFIG_FLOAT(2) < PLUGIN_001_LONGPRESS_MIN_INTERVAL)
+          PCONFIG_FLOAT(2) = PLUGIN_001_LONGPRESS_MIN_INTERVAL;
+
+        byte choiceLP = PCONFIG(5);
+        String buttonLP[4];
+        buttonLP[0] = F("Disabled");
+        buttonLP[1] = F("Active only on LOW (EVENT= 10 [NORMAL] or 11 [INVERSED])");
+        buttonLP[2] = F("Active only on HIGH (EVENT= 11 [NORMAL] or 10 [INVERSED])");
+        buttonLP[3] = F("Active on LOW & HIGH (EVENT= 10 or 11)");
+        int buttonLPValues[4] = {PLUGIN_001_LONGPRESS_DISABLED, PLUGIN_001_LONGPRESS_LOW, PLUGIN_001_LONGPRESS_HIGH,PLUGIN_001_LONGPRESS_BOTH};
+        addFormSelector(F("Longpress event"), F("p001_lp"), 4, buttonLP, buttonLPValues, choiceLP);
+
+        addFormNumericBox(F("Longpress min. interval (ms)"), F("p001_lpmininterval"), round(PCONFIG_FLOAT(2)), PLUGIN_001_LONGPRESS_MIN_INTERVAL, PLUGIN_001_LONGPRESS_MAX_INTERVAL);
+
+        addFormCheckBox(F("Use Safe Button (slower)"), F("p001_sb"), round(PCONFIG_FLOAT(3)));
+
+
+
+
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p001_type"));
+        if (PCONFIG(0) == PLUGIN_001_TYPE_DIMMER)
+        {
+          PCONFIG(1) = getFormItemInt(F("p001_dimvalue"));
+        }
+
+        PCONFIG(2) = getFormItemInt(F("p001_button"));
+
+        PCONFIG(3) = isFormItemChecked(F("p001_boot"));
+
+        PCONFIG_FLOAT(0) = getFormItemInt(F("p001_debounce"));
+
+        PCONFIG(4) = getFormItemInt(F("p001_dc"));
+        PCONFIG_FLOAT(1) = getFormItemInt(F("p001_dcmaxinterval"));
+
+        PCONFIG(5) = getFormItemInt(F("p001_lp"));
+        PCONFIG_FLOAT(2) = getFormItemInt(F("p001_lpmininterval"));
+
+        PCONFIG_FLOAT(3) = isFormItemChecked(F("p001_sb"));
+
+
+
+
+
+
+        for (std::map<uint32_t,portStatusStruct>::iterator it=globalMapPortStatus.begin(); it!=globalMapPortStatus.end(); ++it) {
+          if (it->second.previousTask == event->TaskIndex && getPluginFromKey(it->first)==PLUGIN_ID_001) {
+            globalMapPortStatus[it->first].previousTask = -1;
+            removeTaskFromPort(it->first);
+            break;
+          }
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+
+        if (CONFIG_PIN1 >= 0 && CONFIG_PIN1 <= PIN_D_MAX)
+        {
+          portStatusStruct newStatus;
+          const uint32_t key = createKey(PLUGIN_ID_001,CONFIG_PIN1);
+
+          newStatus = globalMapPortStatus[key];
+
+
+          newStatus.state = Plugin_001_read_switch_state(event);
+          newStatus.output = newStatus.state;
+          (newStatus.task<3) ? newStatus.task++ : newStatus.task = 3;
+
+
+
+          if (Settings.TaskDevicePin1PullUp[event->TaskIndex]) {
+            #if defined(ESP8266)
+            if (CONFIG_PIN1 == 16)
+              pinMode(CONFIG_PIN1, INPUT_PULLDOWN_16);
+            else
+              pinMode(CONFIG_PIN1, INPUT_PULLUP);
+            #else
+            pinMode(CONFIG_PIN1, INPUT_PULLUP);
+            #endif
+            newStatus.mode = PIN_MODE_INPUT_PULLUP;
+          } else {
+            pinMode(CONFIG_PIN1, INPUT);
+            newStatus.mode = PIN_MODE_INPUT;
+          }
+
+
+          if (PCONFIG(3))
+          {
+            newStatus.state = !newStatus.state;
+            newStatus.output = !newStatus.output;
+          }
+
+
+          if (Settings.TaskDevicePin1Inversed[event->TaskIndex]){
+            UserVar[event->BaseVarIndex] = !newStatus.state;
+          } else {
+            UserVar[event->BaseVarIndex] = newStatus.state;
+          }
+
+
+          PCONFIG(7)=0;
+          PCONFIG_LONG(3)=0;
+
+
+          PCONFIG(6)=false;
+
+
+          PCONFIG_LONG(0)=millis();
+          PCONFIG_LONG(1)=millis();
+          PCONFIG_LONG(2)=millis();
+
+
+          if (PCONFIG_FLOAT(1) < PLUGIN_001_DOUBLECLICK_MIN_INTERVAL)
+            PCONFIG_FLOAT(1) = PLUGIN_001_DOUBLECLICK_MIN_INTERVAL;
+
+
+          if (PCONFIG_FLOAT(2) < PLUGIN_001_LONGPRESS_MIN_INTERVAL)
+            PCONFIG_FLOAT(2) = PLUGIN_001_LONGPRESS_MIN_INTERVAL;
+
+          savePortStatus(key,newStatus);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_REQUEST:
+      {
+
+
+
+
+
+        if (string.length()>=13 && string.substring(0,13).equalsIgnoreCase(F("gpio,pinstate")))
+        {
+          int par1;
+            if (validIntFromString(parseString(string, 3), par1)) {
+            string = digitalRead(par1);
+          }
+          success = true;
+        }
+        break;
+      }
+# 373 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P001_Switch.ino"
+      case PLUGIN_MONITOR:
+        {
+
+          const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+          const portStatusStruct currentStatus = globalMapPortStatus[key];
+
+
+            byte state = Plugin_001_read_switch_state(event->Par1, currentStatus.mode);
+            if (currentStatus.state != state || currentStatus.forceMonitor) {
+              if (!currentStatus.task) globalMapPortStatus[key].state = state;
+              if (currentStatus.monitor) {
+                globalMapPortStatus[key].forceMonitor=0;
+                String eventString = F("GPIO#");
+                eventString += event->Par1;
+                eventString += '=';
+                eventString += state;
+                rulesProcessing(eventString);
+              }
+            }
+
+
+          break;
+        }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        const int8_t state = Plugin_001_read_switch_state(event);
+# 421 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P001_Switch.ino"
+        if (CONFIG_PIN1>=0 && CONFIG_PIN1<=PIN_D_MAX) {
+
+          portStatusStruct currentStatus;
+          const uint32_t key = createKey(PLUGIN_ID_001,CONFIG_PIN1);
+
+          currentStatus = globalMapPortStatus[key];
+
+
+
+          if (round(PCONFIG_FLOAT(3)) && state != currentStatus.state && PCONFIG_LONG(3)==0)
+          {
+#ifndef BUILD_NO_DEBUG
+            addLog(LOG_LEVEL_DEBUG,F("SW  : 1st click"));
+#endif
+            PCONFIG_LONG(3) = 1;
+          }
+
+          else if (state != currentStatus.state || currentStatus.forceEvent)
+          {
+
+            currentStatus.forceEvent = 0;
+
+
+            PCONFIG_LONG(3) = 0;
+
+
+            PCONFIG_LONG(2)=millis();
+            PCONFIG(6) = false;
+
+            const unsigned long debounceTime = timePassedSince(PCONFIG_LONG(0));
+            if (debounceTime >= (unsigned long)lround(PCONFIG_FLOAT(0)))
+            {
+              const unsigned long deltaDC = timePassedSince(PCONFIG_LONG(1));
+              if ((deltaDC >= (unsigned long)lround(PCONFIG_FLOAT(1))) ||
+                   PCONFIG(7)==3)
+              {
+
+                PCONFIG(7)=0;
+                PCONFIG_LONG(1)=millis();
+              }
+
+
+  #define COUNTER PCONFIG(7)
+  #define DC PCONFIG(4)
+
+
+                if ( COUNTER!=0 || ( COUNTER==0 && (DC==3 || (DC==1 && state==0) || (DC==2 && state==1))) )
+                  PCONFIG(7)++;
+  #undef DC
+  #undef COUNTER
+
+              currentStatus.state = state;
+              const boolean currentOutputState = currentStatus.output;
+              boolean new_outputState = currentOutputState;
+              switch(PCONFIG(2))
+              {
+                case PLUGIN_001_BUTTON_TYPE_NORMAL_SWITCH:
+                    new_outputState = state;
+                  break;
+                case PLUGIN_001_BUTTON_TYPE_PUSH_ACTIVE_LOW:
+                  if (!state)
+                    new_outputState = !currentOutputState;
+                  break;
+                case PLUGIN_001_BUTTON_TYPE_PUSH_ACTIVE_HIGH:
+                  if (state)
+                    new_outputState = !currentOutputState;
+                  break;
+              }
+
+
+              if (currentOutputState != new_outputState)
+              {
+                byte output_value;
+                currentStatus.output = new_outputState;
+                boolean sendState = new_outputState;
+
+                if (Settings.TaskDevicePin1Inversed[event->TaskIndex])
+                  sendState = !sendState;
+
+                if (PCONFIG(7)==3 && PCONFIG(4)>0)
+                {
+                  output_value = 3;
+                } else {
+                  output_value = sendState ? 1 : 0;
+                }
+                event->sensorType = SENSOR_TYPE_SWITCH;
+                if (P001_getSwitchType(event) == PLUGIN_001_TYPE_DIMMER) {
+                  if (sendState) {
+                    output_value = PCONFIG(1);
+
+                    event->sensorType = SENSOR_TYPE_DIMMER;
+                  }
+                }
+                UserVar[event->BaseVarIndex] = output_value;
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  String log = F("SW  : GPIO=");
+                  log += CONFIG_PIN1;
+                  log += F(" State=");
+                  log += state ? '1' : '0';
+                  log += output_value==3 ? F(" Doubleclick=") : F(" Output value=");
+                  log += output_value;
+                  addLog(LOG_LEVEL_INFO, log);
+                }
+                sendData(event);
+
+
+                UserVar[event->BaseVarIndex] = sendState ? 1 : 0;
+              }
+              PCONFIG_LONG(0) = millis();
+            }
+            savePortStatus(key,currentStatus);
+          }
+
+
+  #define LP PCONFIG(5)
+  #define FIRED PCONFIG(6)
+
+
+
+          else if (!FIRED && (LP==3 ||(LP==1 && state==0)||(LP==2 && state==1) ) ) {
+
+  #undef LP
+  #undef FIRED
+# 559 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P001_Switch.ino"
+            PCONFIG_LONG(3) = 0;
+
+            const unsigned long deltaLP = timePassedSince(PCONFIG_LONG(2));
+            if (deltaLP >= (unsigned long)lround(PCONFIG_FLOAT(2)))
+            {
+              byte output_value;
+              byte needToSendEvent = false;
+
+              PCONFIG(6) = true;
+
+              switch(PCONFIG(2))
+              {
+                case PLUGIN_001_BUTTON_TYPE_NORMAL_SWITCH:
+                    needToSendEvent = true;
+                  break;
+                case PLUGIN_001_BUTTON_TYPE_PUSH_ACTIVE_LOW:
+                  if (!state)
+                    needToSendEvent = true;
+                  break;
+                case PLUGIN_001_BUTTON_TYPE_PUSH_ACTIVE_HIGH:
+                  if (state)
+                    needToSendEvent = true;
+                  break;
+              }
+
+              if (needToSendEvent) {
+                boolean sendState = state;
+                if (Settings.TaskDevicePin1Inversed[event->TaskIndex])
+                  sendState = !sendState;
+                output_value = sendState ? 11 : 10;
+
+
+                UserVar[event->BaseVarIndex] = output_value;
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  String log = F("SW  : LongPress: GPIO= ");
+                  log += CONFIG_PIN1;
+                  log += F(" State=");
+                  log += state ? '1' : '0';
+                  log += F(" Output value=");
+                  log += output_value;
+                  addLog(LOG_LEVEL_INFO, log);
+                }
+                sendData(event);
+
+
+                UserVar[event->BaseVarIndex] = sendState ? 1 : 0;
+              }
+              savePortStatus(key,currentStatus);
+            }
+          } else {
+            if (PCONFIG_LONG(3)==1) {
+
+              PCONFIG_LONG(3) = 0;
+
+
+              const int tempUserVar = round(UserVar[event->BaseVarIndex]);
+              UserVar[event->BaseVarIndex] = 4;
+              if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                String log = F("SW  : SafeButton: false positive detected. GPIO= ");
+                log += CONFIG_PIN1;
+                log += F(" State=");
+                log += tempUserVar;
+                addLog(LOG_LEVEL_INFO, log);
+              }
+              sendData(event);
+
+
+              UserVar[event->BaseVarIndex] = tempUserVar;
+            }
+          }
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+    {
+      removeTaskFromPort(createKey(PLUGIN_ID_001,CONFIG_PIN1));
+      break;
+    }
+
+    case PLUGIN_READ:
+      {
+
+
+        if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+          String log = F("SW   : State ");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String log = "";
+        String command = parseString(string, 1);
+
+
+
+        if (command == F("gpio"))
+        {
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= PIN_D_MAX)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            if (event->Par2 == 2)
+            {
+
+              pinMode(event->Par1, INPUT_PULLUP);
+              tempStatus.mode=PIN_MODE_INPUT_PULLUP;
+              tempStatus.state = Plugin_001_read_switch_state(event->Par1, tempStatus.mode);
+              tempStatus.output=tempStatus.state;
+            } else {
+
+              pinMode(event->Par1, OUTPUT);
+              digitalWrite(event->Par1, event->Par2);
+              tempStatus.mode=PIN_MODE_OUTPUT;
+
+
+            }
+            tempStatus.command=1;
+            tempStatus.forceEvent=1;
+            (tempStatus.monitor) ? tempStatus.forceMonitor=1 : tempStatus.forceMonitor=0;
+            savePortStatus(key,tempStatus);
+
+            log = String(F("SW   : GPIO ")) + String(event->Par1) + String(F(" Set to ")) + String(event->Par2);
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        } else if (command == F("gpiotoggle")) {
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= PIN_D_MAX)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            if (tempStatus.mode == PIN_MODE_OUTPUT || tempStatus.mode == PIN_MODE_UNDEFINED) {
+              tempStatus.state = !(Plugin_001_read_switch_state(event->Par1, tempStatus.mode));
+              tempStatus.output = tempStatus.state;
+              tempStatus.mode = PIN_MODE_OUTPUT;
+              tempStatus.command=1;
+              tempStatus.forceEvent=1;
+              (tempStatus.monitor) ? tempStatus.forceMonitor=1 : tempStatus.forceMonitor=0;
+
+              pinMode(event->Par1, OUTPUT);
+              digitalWrite(event->Par1, tempStatus.state);
+
+              savePortStatus(key,tempStatus);
+              log = String(F("SW   : Toggle GPIO ")) + String(event->Par1) + String(F(" Set to ")) + String(tempStatus.state);
+              addLog(LOG_LEVEL_INFO, log);
+              SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+            }
+          }
+        } else if (command == F("pwm")) {
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= PIN_D_MAX)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            #if defined(ESP8266)
+              pinMode(event->Par1, OUTPUT);
+            #endif
+            if(event->Par3 != 0)
+            {
+              const byte prev_mode = tempStatus.mode;
+              uint16_t prev_value = tempStatus.state;
+
+              if(prev_mode != PIN_MODE_PWM)
+                prev_value = 0;
+
+              int32_t step_value = ((event->Par2 - prev_value) << 12) / event->Par3;
+              int32_t curr_value = prev_value << 12;
+
+              int i = event->Par3;
+              while(i--){
+                curr_value += step_value;
+                int16_t new_value;
+                new_value = (uint16_t)(curr_value >> 12);
+                #if defined(ESP8266)
+                  analogWrite(event->Par1, new_value);
+                #endif
+                #if defined(ESP32)
+                  analogWriteESP32(event->Par1, new_value);
+                #endif
+                delay(1);
+              }
+            }
+
+            #if defined(ESP8266)
+              analogWrite(event->Par1, event->Par2);
+            #endif
+            #if defined(ESP32)
+              analogWriteESP32(event->Par1, event->Par2);
+            #endif
+
+            tempStatus.mode = PIN_MODE_PWM;
+            tempStatus.state = event->Par2;
+            tempStatus.output = event->Par2;
+            tempStatus.command=1;
+
+            savePortStatus(key,tempStatus);
+            log = F("SW   : GPIO ");
+            log += event->Par1;
+            log += F(" Set PWM to ");
+            log += event->Par2;
+            if (event->Par3 != 0) {
+              log += F(" duration ");
+              log += event->Par3;
+            }
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        } else if (command == F("pulse")) {
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= PIN_D_MAX)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            pinMode(event->Par1, OUTPUT);
+            digitalWrite(event->Par1, event->Par2);
+            delay(event->Par3);
+            digitalWrite(event->Par1, !event->Par2);
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = event->Par2;
+            tempStatus.output = event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+
+            log = String(F("SW   : GPIO ")) + String(event->Par1) + String(F(" Pulsed for ")) + String(event->Par3) + String(F(" mS"));
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        } else if ((command == F("longpulse")) || (command == F("longpulse_ms"))) {
+          boolean time_in_msec = command == F("longpulse_ms");
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= PIN_D_MAX)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            const bool pinStateHigh = event->Par2 != 0;
+            const uint16_t pinStateValue = pinStateHigh ? 1 : 0;
+            const uint16_t inversePinStateValue = pinStateHigh ? 0 : 1;
+            pinMode(event->Par1, OUTPUT);
+            digitalWrite(event->Par1, pinStateValue);
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = event->Par2;
+            tempStatus.output = event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+            unsigned long timer = time_in_msec ? event->Par3 : event->Par3 * 1000;
+
+            setPluginTaskTimer(timer, PLUGIN_ID_001, event->TaskIndex, event->Par1, inversePinStateValue);
+            log = String(F("SW   : GPIO ")) + String(event->Par1) +
+                  String(F(" Pulse set for ")) + String(event->Par3) + String(time_in_msec ? F(" msec") : F(" sec"));
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        } else if (command == F("servo")) {
+
+
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= 2) {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par2);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            switch (event->Par1)
+            {
+              case 1:
+
+                #ifdef USE_SERVO
+
+                  if (event->Par3 >= 9000) {
+                    servo1.detach();
+                  }else{
+                    servo1.attach(event->Par2);
+                    servo1.write(event->Par3);
+                  }
+                #endif
+                break;
+              case 2:
+                #ifdef USE_SERVO
+                if (event->Par3 >= 9000) {
+                  servo2.detach();
+                }else{
+                  servo2.attach(event->Par2);
+                  servo2.write(event->Par3);
+                }
+                #endif
+                break;
+            }
+
+            tempStatus.mode = PIN_MODE_SERVO;
+            tempStatus.state = event->Par3;
+            tempStatus.output = event->Par3;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+            log = String(F("SW   : GPIO ")) + String(event->Par2) + String(F(" Servo set to ")) + String(event->Par3);
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        } else if (command == F("status")) {
+          if (parseString(string, 2) == F("gpio"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par2);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+
+          }
+        } else if (command == F("monitor")) {
+          if (parseString(string, 2) == F("gpio"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par2);
+
+            addMonitorToPort(key);
+
+            globalMapPortStatus[key].state = Plugin_001_read_switch_state(event->Par2, globalMapPortStatus[key].mode);
+
+            log = String(F("SW   : GPIO ")) + String(event->Par2) + String(F(" added to monitor list."));
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+          }
+        } else if (command == F("unmonitor")) {
+          if (parseString(string, 2) == F("gpio"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par2);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+
+            removeMonitorFromPort(key);
+            log = String(F("SW   : GPIO ")) + String(event->Par2) + String(F(" removed from monitor list."));
+            addLog(LOG_LEVEL_INFO, log);
+          }
+        } else if (command == F("inputswitchstate")) {
+          success = true;
+          portStatusStruct tempStatus;
+          const uint32_t key = createKey(PLUGIN_ID_001,Settings.TaskDevicePin1[event->Par1]);
+
+
+          tempStatus = globalMapPortStatus[key];
+
+          UserVar[event->Par1 * VARS_PER_TASK] = event->Par2;
+          tempStatus.output=event->Par2;
+          tempStatus.command=1;
+          savePortStatus(key,tempStatus);
+        } else if (command == F("rtttl")) {
+
+
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= PIN_D_MAX)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            pinMode(event->Par1, OUTPUT);
+
+            String tmpString=string;
+            tmpString.replace('-', '#');
+
+            play_rtttl(event->Par1, tmpString.c_str());
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = event->Par2;
+            tempStatus.output = event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+            log = String(F("SW   : ")) + string;
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        } else if (command == F("tone")) {
+
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= PIN_D_MAX)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            pinMode(event->Par1, OUTPUT);
+            tone_espEasy(event->Par1, event->Par2, event->Par3);
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = event->Par2;
+            tempStatus.output = event->Par2;
+            tempStatus.command = 1;
+            savePortStatus(key,tempStatus);
+            log = String(F("SW   : ")) + string;
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_TIMER_IN:
+      {
+        digitalWrite(event->Par1, event->Par2);
+
+        portStatusStruct tempStatus;
+
+        const uint32_t key = createKey(PLUGIN_ID_001,event->Par1);
+        tempStatus = globalMapPortStatus[key];
+
+        tempStatus.state = event->Par2;
+        tempStatus.mode = PIN_MODE_OUTPUT;
+        savePortStatus(key,tempStatus);
+        break;
+      }
+  }
+  return success;
+}
+
+
+#if defined(ESP32)
+void analogWriteESP32(int pin, int value)
+{
+
+  int8_t ledChannel = -1;
+  for(byte x = 0; x < 16; x++)
+    if (ledChannelPin[x] == pin)
+      ledChannel = x;
+
+  if(ledChannel == -1)
+    {
+      for(byte x = 0; x < 16; x++)
+        if (ledChannelPin[x] == -1)
+          {
+            int freq = 5000;
+            ledChannelPin[x] = pin;
+            ledcSetup(x, freq, 10);
+            ledcAttachPin(pin, x);
+            ledChannel = x;
+            break;
+          }
+    }
+  ledcWrite(ledChannel, value);
+}
+#endif
+
+
+byte P001_getSwitchType(struct EventStruct *event) {
+  byte choice = PCONFIG(0);
+  switch (choice) {
+    case 2:
+    case PLUGIN_001_TYPE_DIMMER:
+      choice = PLUGIN_001_TYPE_DIMMER;
+      break;
+    case 1:
+    case PLUGIN_001_TYPE_SWITCH:
+    default:
+      choice = PLUGIN_001_TYPE_SWITCH;
+      break;
+  }
+  return choice;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P002_ADC.ino"
+#ifdef USES_P002
+
+
+
+
+#define PLUGIN_002 
+#define PLUGIN_ID_002 2
+#define PLUGIN_NAME_002 "Analog input - internal"
+#define PLUGIN_VALUENAME1_002 "Analog"
+
+
+#ifdef ESP32
+  #define P002_MAX_ADC_VALUE 4095
+#endif
+#ifdef ESP8266
+  #define P002_MAX_ADC_VALUE 1023
+#endif
+
+uint32_t Plugin_002_OversamplingValue = 0;
+uint16_t Plugin_002_OversamplingCount = 0;
+uint16_t Plugin_002_OversamplingMinVal = P002_MAX_ADC_VALUE;
+uint16_t Plugin_002_OversamplingMaxVal = 0;
+
+boolean Plugin_002(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_002;
+        Device[deviceCount].Type = DEVICE_TYPE_ANALOG;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_002);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_002));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        #if defined(ESP32)
+          addHtml(F("<TR><TD>Analog Pin:<TD>"));
+          addPinSelect(false, F("taskdevicepin1"), CONFIG_PIN1);
+        #endif
+
+        addFormCheckBox(F("Oversampling"), F("p002_oversampling"), PCONFIG(0));
+
+        addFormSubHeader(F("Two Point Calibration"));
+
+        addFormCheckBox(F("Calibration Enabled"), F("p002_cal"), PCONFIG(3));
+
+        addFormNumericBox(F("Point 1"), F("p002_adc1"), PCONFIG_LONG(0), 0, P002_MAX_ADC_VALUE);
+        html_add_estimate_symbol();
+        addTextBox(F("p002_out1"), String(PCONFIG_FLOAT(0), 3), 10);
+
+        addFormNumericBox(F("Point 2"), F("p002_adc2"), PCONFIG_LONG(1), 0, P002_MAX_ADC_VALUE);
+        html_add_estimate_symbol();
+        addTextBox(F("p002_out2"), String(PCONFIG_FLOAT(1), 3), 10);
+
+        {
+
+          int16_t raw_value = 0;
+          float value = P002_getOutputValue(event, raw_value);
+          P002_formatStatistics(F("Current"), raw_value, value);
+
+          if (PCONFIG(3)) {
+            P002_formatStatistics(F("Minimum"), 0, P002_applyCalibration(event, 0));
+            P002_formatStatistics(F("Maximum"), P002_MAX_ADC_VALUE, P002_applyCalibration(event, P002_MAX_ADC_VALUE));
+
+            float stepsize = P002_applyCalibration(event, 1.0) - P002_applyCalibration(event, 0.0);
+            P002_formatStatistics(F("Step size"), 1, stepsize);
+          }
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = isFormItemChecked(F("p002_oversampling"));
+
+        PCONFIG(3) = isFormItemChecked(F("p002_cal"));
+
+        PCONFIG_LONG(0) = getFormItemInt(F("p002_adc1"));
+        PCONFIG_FLOAT(0) = getFormItemFloat(F("p002_out1"));
+
+        PCONFIG_LONG(1) = getFormItemInt(F("p002_adc2"));
+        PCONFIG_FLOAT(1) = getFormItemFloat(F("p002_out2"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (PCONFIG(0))
+        {
+          uint16_t currentValue = P002_performRead(event);
+          Plugin_002_OversamplingValue += currentValue;
+          ++Plugin_002_OversamplingCount;
+          if (currentValue > Plugin_002_OversamplingMaxVal) {
+            Plugin_002_OversamplingMaxVal = currentValue;
+          }
+          if (currentValue < Plugin_002_OversamplingMinVal) {
+            Plugin_002_OversamplingMinVal = currentValue;
+          }
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        int16_t raw_value = 0;
+        UserVar[event->BaseVarIndex] = P002_getOutputValue(event, raw_value);
+        if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+          String log = F("ADC  : Analog value: ");
+          log += String(raw_value);
+          log += F(" = ");
+          log += String(UserVar[event->BaseVarIndex], 3);
+          if (PCONFIG(0)) {
+            log += F(" (");
+            log += Plugin_002_OversamplingCount;
+            log += F(" samples)");
+          }
+          addLog(LOG_LEVEL_INFO,log);
+        }
+
+        Plugin_002_OversamplingValue = 0;
+        Plugin_002_OversamplingCount = 0;
+        Plugin_002_OversamplingMinVal = P002_MAX_ADC_VALUE;
+        Plugin_002_OversamplingMaxVal = 0;
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+
+float P002_getOutputValue(struct EventStruct *event, int16_t &raw_value) {
+  float float_value = 0.0;
+  if (PCONFIG(0) && Plugin_002_OversamplingCount > 0) {
+    float sum = static_cast<float>(Plugin_002_OversamplingValue);
+    float count = static_cast<float>(Plugin_002_OversamplingCount);
+    if (Plugin_002_OversamplingCount >= 3) {
+      sum -= Plugin_002_OversamplingMaxVal;
+      sum -= Plugin_002_OversamplingMinVal;
+      count -= 2;
+    }
+    float_value = sum / count;
+    raw_value = static_cast<int16_t>(float_value);
+  } else {
+    raw_value = P002_performRead(event);
+    float_value = static_cast<float>(raw_value);
+  }
+  return P002_applyCalibration(event, float_value);
+}
+
+float P002_applyCalibration(struct EventStruct *event, float float_value) {
+  if (PCONFIG(3))
+  {
+    int adc1 = PCONFIG_LONG(0);
+    int adc2 = PCONFIG_LONG(1);
+    float out1 = PCONFIG_FLOAT(0);
+    float out2 = PCONFIG_FLOAT(1);
+    if (adc1 != adc2)
+    {
+      const float normalized = static_cast<float>(float_value - adc1) / static_cast<float>(adc2 - adc1);
+      float_value = normalized * (out2 - out1) + out1;
+    }
+  }
+  return float_value;
+}
+
+uint16_t P002_performRead(struct EventStruct *event) {
+  uint16_t value = 0;
+  #if defined(ESP8266)
+    value = analogRead(A0);
+  #endif
+  #if defined(ESP32)
+    value = analogRead(CONFIG_PIN1);
+  #endif
+  return value;
+}
+
+void P002_formatStatistics(const String& label, int16_t raw, float float_value) {
+  addRowLabel(label);
+  addHtml(String(raw));
+  html_add_estimate_symbol();
+  addHtml(String(float_value, 3));
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P003_Pulse.ino"
+#ifdef USES_P003
+
+
+
+
+#define PLUGIN_003 
+#define PLUGIN_ID_003 3
+#define PLUGIN_NAME_003 "Generic - Pulse counter"
+#define PLUGIN_VALUENAME1_003 "Count"
+#define PLUGIN_VALUENAME2_003 "Total"
+#define PLUGIN_VALUENAME3_003 "Time"
+
+
+void Plugin_003_pulse_interrupt1() ICACHE_RAM_ATTR;
+void Plugin_003_pulse_interrupt2() ICACHE_RAM_ATTR;
+void Plugin_003_pulse_interrupt3() ICACHE_RAM_ATTR;
+void Plugin_003_pulse_interrupt4() ICACHE_RAM_ATTR;
+void Plugin_003_pulsecheck(byte Index) ICACHE_RAM_ATTR;
+
+
+
+
+
+
+
+volatile unsigned long Plugin_003_pulseCounter[TASKS_MAX];
+volatile unsigned long Plugin_003_pulseTotalCounter[TASKS_MAX];
+volatile unsigned long Plugin_003_pulseTime[TASKS_MAX];
+volatile unsigned long Plugin_003_pulseTimePrevious[TASKS_MAX];
+
+boolean Plugin_003(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_003;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_003);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_003));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_003));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_003));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_input(F("Pulse"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+       addFormNumericBox(F("Debounce Time (mSec)"), F("p003")
+         , Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
+
+        byte choice = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
+        byte choice2 = Settings.TaskDevicePluginConfig[event->TaskIndex][2];
+        String options[4] = { F("Delta"), F("Delta/Total/Time"), F("Total"), F("Delta/Total") };
+        addFormSelector(F("Counter Type"), F("p003_countertype"), 4, options, NULL, choice );
+
+        if (choice !=0)
+          addHtml(F("<span style=\"color:red\">Total count is not persistent!</span>"));
+
+        String modeRaise[4];
+        modeRaise[0] = F("LOW");
+        modeRaise[1] = F("CHANGE");
+        modeRaise[2] = F("RISING");
+        modeRaise[3] = F("FALLING");
+        int modeValues[4];
+        modeValues[0] = LOW;
+        modeValues[1] = CHANGE;
+        modeValues[2] = RISING;
+        modeValues[3] = FALLING;
+
+        addFormSelector(F("Mode Type"), F("p003_raisetype"), 4, modeRaise, modeValues, choice2 );
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = getFormItemInt(F("p003"));
+        Settings.TaskDevicePluginConfig[event->TaskIndex][1] = getFormItemInt(F("p003_countertype"));
+        Settings.TaskDevicePluginConfig[event->TaskIndex][2] = getFormItemInt(F("p003_raisetype"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SHOW_VALUES:
+      {
+        string += F("<div class=\"div_l\">");
+        string += ExtraTaskSettings.TaskDeviceValueNames[0];
+        string += F(":</div><div class=\"div_r\">");
+        string += Plugin_003_pulseCounter[event->TaskIndex];
+        string += F("</div><div class=\"div_br\"></div><div class=\"div_l\">");
+        string += ExtraTaskSettings.TaskDeviceValueNames[1];
+        string += F(":</div><div class=\"div_r\">");
+        string += Plugin_003_pulseTotalCounter[event->TaskIndex];
+        string += F("</div><div class=\"div_br\"></div><div class=\"div_l\">");
+        string += ExtraTaskSettings.TaskDeviceValueNames[2];
+        string += F(":</div><div class=\"div_r\">");
+        string += Plugin_003_pulseTime[event->TaskIndex];
+        string += F("</div>");
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        String log = F("INIT : Pulse ");
+        log += Settings.TaskDevicePin1[event->TaskIndex];
+        addLog(LOG_LEVEL_INFO,log);
+        pinMode(Settings.TaskDevicePin1[event->TaskIndex], INPUT_PULLUP);
+        success = Plugin_003_pulseinit(Settings.TaskDevicePin1[event->TaskIndex], event->TaskIndex,Settings.TaskDevicePluginConfig[event->TaskIndex][2]);
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        UserVar[event->BaseVarIndex] = Plugin_003_pulseCounter[event->TaskIndex];
+        UserVar[event->BaseVarIndex+1] = Plugin_003_pulseTotalCounter[event->TaskIndex];
+        UserVar[event->BaseVarIndex+2] = Plugin_003_pulseTime[event->TaskIndex];
+
+        switch (Settings.TaskDevicePluginConfig[event->TaskIndex][1])
+        {
+          case 0:
+          {
+            event->sensorType = SENSOR_TYPE_SINGLE;
+            UserVar[event->BaseVarIndex] = Plugin_003_pulseCounter[event->TaskIndex];
+            break;
+          }
+          case 1:
+          {
+            event->sensorType = SENSOR_TYPE_TRIPLE;
+            UserVar[event->BaseVarIndex] = Plugin_003_pulseCounter[event->TaskIndex];
+            UserVar[event->BaseVarIndex+1] = Plugin_003_pulseTotalCounter[event->TaskIndex];
+            UserVar[event->BaseVarIndex+2] = Plugin_003_pulseTime[event->TaskIndex];
+            break;
+          }
+          case 2:
+          {
+            event->sensorType = SENSOR_TYPE_SINGLE;
+            UserVar[event->BaseVarIndex] = Plugin_003_pulseTotalCounter[event->TaskIndex];
+            break;
+          }
+          case 3:
+          {
+            event->sensorType = SENSOR_TYPE_DUAL;
+            UserVar[event->BaseVarIndex] = Plugin_003_pulseCounter[event->TaskIndex];
+            UserVar[event->BaseVarIndex+1] = Plugin_003_pulseTotalCounter[event->TaskIndex];
+            break;
+          }
+        }
+        Plugin_003_pulseCounter[event->TaskIndex] = 0;
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+
+
+void Plugin_003_pulsecheck(byte Index)
+{
+  noInterrupts();
+
+
+
+  const unsigned long PulseTime=millis() - Plugin_003_pulseTimePrevious[Index];
+
+  if(PulseTime > (unsigned long)Settings.TaskDevicePluginConfig[Index][0])
+    {
+      Plugin_003_pulseCounter[Index]++;
+      Plugin_003_pulseTotalCounter[Index]++;
+      Plugin_003_pulseTime[Index] = PulseTime;
+      Plugin_003_pulseTimePrevious[Index]=millis();
+    }
+  interrupts();
+}
+
+
+
+
+
+void Plugin_003_pulse_interrupt1()
+{
+  Plugin_003_pulsecheck(0);
+}
+void Plugin_003_pulse_interrupt2()
+{
+  Plugin_003_pulsecheck(1);
+}
+void Plugin_003_pulse_interrupt3()
+{
+  Plugin_003_pulsecheck(2);
+}
+void Plugin_003_pulse_interrupt4()
+{
+  Plugin_003_pulsecheck(3);
+}
+void Plugin_003_pulse_interrupt5()
+{
+  Plugin_003_pulsecheck(4);
+}
+void Plugin_003_pulse_interrupt6()
+{
+  Plugin_003_pulsecheck(5);
+}
+void Plugin_003_pulse_interrupt7()
+{
+  Plugin_003_pulsecheck(6);
+}
+void Plugin_003_pulse_interrupt8()
+{
+  Plugin_003_pulsecheck(7);
+}
+
+
+
+
+
+bool Plugin_003_pulseinit(byte Par1, byte Index, byte Mode)
+{
+
+  switch (Index)
+  {
+    case 0:
+      attachInterrupt(Par1, Plugin_003_pulse_interrupt1, Mode);
+      break;
+    case 1:
+      attachInterrupt(Par1, Plugin_003_pulse_interrupt2, Mode);
+      break;
+    case 2:
+      attachInterrupt(Par1, Plugin_003_pulse_interrupt3, Mode);
+      break;
+    case 3:
+      attachInterrupt(Par1, Plugin_003_pulse_interrupt4, Mode);
+      break;
+# 278 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P003_Pulse.ino"
+    default:
+      addLog(LOG_LEVEL_ERROR,F("PULSE: Error, only the first 4 tasks can be pulse counters."));
+      return(false);
+  }
+
+  return(true);
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P004_Dallas.ino"
+#ifdef USES_P004
+
+
+
+
+
+
+
+#if defined(ESP32)
+  # define ESP32noInterrupts() { portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED; portENTER_CRITICAL(&mux)
+  # define ESP32interrupts() portEXIT_CRITICAL(&mux); }
+#endif
+
+#define PLUGIN_004 
+#define PLUGIN_ID_004 4
+#define PLUGIN_NAME_004 "Environment - DS18b20"
+#define PLUGIN_VALUENAME1_004 "Temperature"
+
+#define P004_ERROR_NAN 0
+#define P004_ERROR_MIN_RANGE 1
+#define P004_ERROR_ZERO 2
+#define P004_ERROR_MAX_RANGE 3
+#define P004_ERROR_IGNORE 4
+
+
+uint8_t Plugin_004_reset_time = 0;
+
+boolean Plugin_004(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+    {
+      Device[++deviceCount].Number = PLUGIN_ID_004;
+      Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+      Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+      Device[deviceCount].Ports = 0;
+      Device[deviceCount].PullUpOption = false;
+      Device[deviceCount].InverseLogicOption = false;
+      Device[deviceCount].FormulaOption = true;
+      Device[deviceCount].ValueCount = 1;
+      Device[deviceCount].SendDataOption = true;
+      Device[deviceCount].TimerOption = true;
+      Device[deviceCount].GlobalSyncOption = true;
+      break;
+    }
+
+    case PLUGIN_GET_DEVICENAME:
+    {
+      string = F(PLUGIN_NAME_004);
+      break;
+    }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+    {
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_004));
+      break;
+    }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+    {
+      event->String1 = formatGpioName_bidirectional(F("1-Wire"));
+      break;
+    }
+
+    case PLUGIN_WEBFORM_LOAD:
+    {
+      uint8_t savedAddress[8];
+      byte resolutionChoice = 0;
+
+
+      int8_t Plugin_004_DallasPin = CONFIG_PIN1;
+
+      if (Plugin_004_DallasPin != -1) {
+
+        for (byte i = 0; i < 8; i++) {
+          savedAddress[i] = ExtraTaskSettings.TaskDevicePluginConfigLong[i];
+        }
+
+
+        addRowLabel(F("Device Address"));
+        addSelector_Head(F("p004_dev"), false);
+        addSelector_Item("", -1, false, false, "");
+        uint8_t tmpAddress[8];
+        byte count = 0;
+        Plugin_004_DS_reset(Plugin_004_DallasPin);
+        Plugin_004_DS_reset_search();
+
+        while (Plugin_004_DS_search(tmpAddress, Plugin_004_DallasPin))
+        {
+          String option = "";
+
+          for (byte j = 0; j < 8; j++)
+          {
+            option += String(tmpAddress[j], HEX);
+
+            if (j < 7) { option += '-'; }
+          }
+          bool selected = (memcmp(tmpAddress, savedAddress, 8) == 0) ? true : false;
+          addSelector_Item(option, count, selected, false, "");
+          count++;
+        }
+        addSelector_Foot();
+
+        {
+
+          if (ExtraTaskSettings.TaskDevicePluginConfigLong[0] != 0) {
+            resolutionChoice = Plugin_004_DS_getResolution(savedAddress, Plugin_004_DallasPin);
+          }
+          else {
+            resolutionChoice = 9;
+          }
+          String resultsOptions[4] = { F("9"), F("10"), F("11"), F("12") };
+          int resultsOptionValues[4] = { 9, 10, 11, 12 };
+          addFormSelector(F("Device Resolution"), F("p004_res"), 4, resultsOptions, resultsOptionValues, resolutionChoice);
+          addHtml(F(" Bit"));
+        }
+
+        {
+
+          String resultsOptions[5] = { F("NaN"), F("-127"), F("0"), F("125"), F("Ignore") };
+          int resultsOptionValues[5] = { P004_ERROR_NAN, P004_ERROR_MIN_RANGE, P004_ERROR_ZERO, P004_ERROR_MAX_RANGE, P004_ERROR_IGNORE };
+          addFormSelector(F("Error State Value"), F("p004_err"), 5, resultsOptions, resultsOptionValues, PCONFIG(0));
+        }
+      }
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SAVE:
+    {
+      uint8_t addr[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+
+      int8_t Plugin_004_DallasPin = CONFIG_PIN1;
+
+      if (Plugin_004_DallasPin != -1) {
+        Plugin_004_DS_scan(getFormItemInt(F("p004_dev")), addr, Plugin_004_DallasPin);
+
+        for (byte x = 0; x < 8; x++) {
+          ExtraTaskSettings.TaskDevicePluginConfigLong[x] = addr[x];
+        }
+
+        Plugin_004_DS_setResolution(addr, getFormItemInt(F("p004_res")), Plugin_004_DallasPin);
+        Plugin_004_DS_startConversion(addr, Plugin_004_DallasPin);
+      }
+      PCONFIG(0) = getFormItemInt(F("p004_err"));
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SHOW_CONFIG:
+    {
+      for (byte x = 0; x < 8; x++)
+      {
+        if (x != 0) {
+          string += '-';
+        }
+        string += String(ExtraTaskSettings.TaskDevicePluginConfigLong[x], HEX);
+      }
+      success = true;
+      break;
+    }
+
+    case PLUGIN_INIT:
+    {
+      int8_t Plugin_004_DallasPin = CONFIG_PIN1;
+
+      if (Plugin_004_DallasPin != -1) {
+        uint8_t addr[8];
+        Plugin_004_get_addr(addr, event->TaskIndex);
+        Plugin_004_DS_startConversion(addr, Plugin_004_DallasPin);
+
+
+        delay(800);
+      }
+      success = true;
+      break;
+    }
+
+    case PLUGIN_READ:
+    {
+      if (ExtraTaskSettings.TaskDevicePluginConfigLong[0] != 0) {
+        uint8_t addr[8];
+        Plugin_004_get_addr(addr, event->TaskIndex);
+
+        int8_t Plugin_004_DallasPin = CONFIG_PIN1;
+
+        if (Plugin_004_DallasPin != -1) {
+          float value = 0;
+          String log = F("DS   : Temperature: ");
+
+          if (Plugin_004_DS_readTemp(addr, &value, Plugin_004_DallasPin))
+          {
+            UserVar[event->BaseVarIndex] = value;
+            log += UserVar[event->BaseVarIndex];
+            success = true;
+          }
+          else
+          {
+            if (PCONFIG(0) != P004_ERROR_IGNORE) {
+              float errorValue = NAN;
+
+              switch (PCONFIG(0)) {
+                case P004_ERROR_MIN_RANGE: errorValue = -127; break;
+                case P004_ERROR_ZERO: errorValue = 0; break;
+                case P004_ERROR_MAX_RANGE: errorValue = 125; break;
+                default:
+                  break;
+              }
+              UserVar[event->BaseVarIndex] = errorValue;
+            }
+            log += F("Error!");
+          }
+          Plugin_004_DS_startConversion(addr, Plugin_004_DallasPin);
+
+          log += (" (");
+
+          for (byte x = 0; x < 8; x++)
+          {
+            if (x != 0) {
+              log += '-';
+            }
+            log += String(ExtraTaskSettings.TaskDevicePluginConfigLong[x], HEX);
+          }
+
+          log += ')';
+          addLog(LOG_LEVEL_INFO, log);
+        }
+      }
+      break;
+    }
+  }
+  return success;
+}
+
+void Plugin_004_get_addr(uint8_t addr[], byte TaskIndex)
+{
+
+  LoadTaskSettings(TaskIndex);
+
+  for (byte x = 0; x < 8; x++) {
+    addr[x] = ExtraTaskSettings.TaskDevicePluginConfigLong[x];
+  }
+}
+
+
+
+
+byte Plugin_004_DS_scan(byte getDeviceROM, uint8_t *ROM, int8_t Plugin_004_DallasPin)
+{
+  byte tmpaddr[8];
+  byte devCount = 0;
+
+  Plugin_004_DS_reset(Plugin_004_DallasPin);
+
+  Plugin_004_DS_reset_search();
+
+  while (Plugin_004_DS_search(tmpaddr, Plugin_004_DallasPin))
+  {
+    if (getDeviceROM == devCount) {
+      for (byte i = 0; i < 8; i++) {
+        ROM[i] = tmpaddr[i];
+      }
+    }
+    devCount++;
+  }
+  return devCount;
+}
+
+
+bool Plugin_004_DS_is_parasite(uint8_t ROM[8], int8_t Plugin_004_DallasPin)
+{
+  Plugin_004_DS_address_ROM(ROM, Plugin_004_DallasPin);
+  Plugin_004_DS_write(0xB4, Plugin_004_DallasPin);
+  return !Plugin_004_DS_read_bit(Plugin_004_DallasPin);
+}
+# 288 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P004_Dallas.ino"
+void Plugin_004_DS_startConversion(uint8_t ROM[8], int8_t Plugin_004_DallasPin)
+{
+  Plugin_004_DS_address_ROM(ROM, Plugin_004_DallasPin);
+  Plugin_004_DS_write(0x44, Plugin_004_DallasPin);
+}
+
+
+
+
+boolean Plugin_004_DS_readTemp(uint8_t ROM[8], float *value, int8_t Plugin_004_DallasPin)
+{
+  int16_t DSTemp;
+  byte ScratchPad[12];
+
+  Plugin_004_DS_address_ROM(ROM, Plugin_004_DallasPin);
+  Plugin_004_DS_write(0xBE, Plugin_004_DallasPin);
+
+  for (byte i = 0; i < 9; i++) {
+    ScratchPad[i] = Plugin_004_DS_read(Plugin_004_DallasPin);
+  }
+
+  bool crc_ok = Plugin_004_DS_crc8(ScratchPad);
+
+  if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
+    String log = F("DS: SP: ");
+
+    for (byte x = 0; x < 9; x++)
+    {
+      if (x != 0) {
+        log += ',';
+      }
+      log += String(ScratchPad[x], HEX);
+    }
+
+    if (crc_ok) {
+      log += F(",OK");
+    }
+
+    if (Plugin_004_DS_is_parasite(ROM, Plugin_004_DallasPin)) {
+      log += F(",P");
+    }
+    log += ',';
+    log += String(Plugin_004_reset_time, DEC);
+    addLog(LOG_LEVEL_DEBUG, log);
+  }
+
+  if (!crc_ok)
+  {
+    *value = 0;
+    return false;
+  }
+
+  if ((ROM[0] == 0x28) || (ROM[0] == 0x3b) || (ROM[0] == 0x22))
+  {
+    DSTemp = (ScratchPad[1] << 8) + ScratchPad[0];
+
+    if (DSTemp == 0x550) {
+      return false;
+    }
+    *value = (float(DSTemp) * 0.0625);
+  }
+  else if (ROM[0] == 0x10)
+  {
+    if (ScratchPad[0] == 0xaa) {
+      return false;
+    }
+    DSTemp = (ScratchPad[1] << 11) | ScratchPad[0] << 3;
+    DSTemp = ((DSTemp & 0xfff0) << 3) - 16 +
+             (((ScratchPad[7] - ScratchPad[6]) << 7) / ScratchPad[7]);
+    *value = float(DSTemp) * 0.0078125;
+  }
+  return true;
+}
+
+
+
+
+int Plugin_004_DS_getResolution(uint8_t ROM[8], int8_t Plugin_004_DallasPin)
+{
+
+  if (ROM[0] == 0x10) { return 12; }
+
+  byte ScratchPad[12];
+  Plugin_004_DS_address_ROM(ROM, Plugin_004_DallasPin);
+  Plugin_004_DS_write(0xBE, Plugin_004_DallasPin);
+
+  for (byte i = 0; i < 9; i++) {
+    ScratchPad[i] = Plugin_004_DS_read(Plugin_004_DallasPin);
+  }
+
+  if (!Plugin_004_DS_crc8(ScratchPad)) {
+    return 0;
+  }
+  else
+  {
+    switch (ScratchPad[4])
+    {
+      case 0x7F:
+        return 12;
+
+      case 0x5F:
+        return 11;
+
+      case 0x3F:
+        return 10;
+
+      case 0x1F:
+      default:
+        return 9;
+    }
+  }
+  return 0;
+}
+
+
+
+
+boolean Plugin_004_DS_setResolution(uint8_t ROM[8], byte res, int8_t Plugin_004_DallasPin)
+{
+
+  if (ROM[0] == 0x10) { return true; }
+
+  byte ScratchPad[12];
+  Plugin_004_DS_address_ROM(ROM, Plugin_004_DallasPin);
+  Plugin_004_DS_write(0xBE, Plugin_004_DallasPin);
+
+  for (byte i = 0; i < 9; i++) {
+    ScratchPad[i] = Plugin_004_DS_read(Plugin_004_DallasPin);
+  }
+
+  if (!Plugin_004_DS_crc8(ScratchPad)) {
+    return false;
+  }
+  else
+  {
+    byte old_configuration = ScratchPad[4];
+
+    switch (res)
+    {
+      case 12:
+        ScratchPad[4] = 0x7F;
+        break;
+      case 11:
+        ScratchPad[4] = 0x5F;
+        break;
+      case 10:
+        ScratchPad[4] = 0x3F;
+        break;
+      case 9:
+      default:
+        ScratchPad[4] = 0x1F;
+        break;
+    }
+
+    if (ScratchPad[4] == old_configuration) {
+      return true;
+    }
+
+    Plugin_004_DS_address_ROM(ROM, Plugin_004_DallasPin);
+    Plugin_004_DS_write(0x4E, Plugin_004_DallasPin);
+    Plugin_004_DS_write(ScratchPad[2], Plugin_004_DallasPin);
+    Plugin_004_DS_write(ScratchPad[3], Plugin_004_DallasPin);
+    Plugin_004_DS_write(ScratchPad[4], Plugin_004_DallasPin);
+
+    Plugin_004_DS_address_ROM(ROM, Plugin_004_DallasPin);
+
+
+    Plugin_004_DS_write(0x48, Plugin_004_DallasPin);
+    delay(100);
+    Plugin_004_DS_reset(Plugin_004_DallasPin);
+
+    return true;
+  }
+}
+
+
+
+
+uint8_t Plugin_004_DS_reset(int8_t Plugin_004_DallasPin)
+{
+  uint8_t r = 0;
+  uint8_t retries = 125;
+
+    #if defined(ESP32)
+  ESP32noInterrupts();
+    #endif
+  pinMode(Plugin_004_DallasPin, INPUT);
+
+  do
+  {
+    if (--retries == 0) {
+      return 0;
+    }
+    delayMicroseconds(2);
+  }
+  while (!digitalRead(Plugin_004_DallasPin));
+
+  digitalWrite(Plugin_004_DallasPin, LOW);
+  pinMode(Plugin_004_DallasPin, OUTPUT);
+  delayMicroseconds(500);
+  pinMode(Plugin_004_DallasPin, INPUT);
+
+  for (uint8_t i = 0; i < 45; i++)
+  {
+    delayMicroseconds(15);
+
+    if (!digitalRead(Plugin_004_DallasPin)) {
+      r = 1;
+      Plugin_004_reset_time = i;
+    }
+  }
+    #if defined(ESP32)
+  ESP32interrupts();
+    #endif
+  return r;
+}
+
+#define FALSE 0
+#define TRUE 1
+
+unsigned char ROM_NO[8];
+uint8_t LastDiscrepancy;
+uint8_t LastFamilyDiscrepancy;
+uint8_t LastDeviceFlag;
+
+
+
+
+
+void Plugin_004_DS_reset_search()
+{
+
+  LastDiscrepancy = 0;
+  LastDeviceFlag = FALSE;
+  LastFamilyDiscrepancy = 0;
+
+  for (byte i = 0; i < 8; i++) {
+    ROM_NO[i] = 0;
+  }
+}
+
+
+
+
+uint8_t Plugin_004_DS_search(uint8_t *newAddr, int8_t Plugin_004_DallasPin)
+{
+  uint8_t id_bit_number;
+  uint8_t last_zero, rom_byte_number, search_result;
+  uint8_t id_bit, cmp_id_bit;
+  unsigned char rom_byte_mask, search_direction;
+
+
+  id_bit_number = 1;
+  last_zero = 0;
+  rom_byte_number = 0;
+  rom_byte_mask = 1;
+  search_result = 0;
+
+
+  if (!LastDeviceFlag)
+  {
+
+    if (!Plugin_004_DS_reset(Plugin_004_DallasPin))
+    {
+
+      LastDiscrepancy = 0;
+      LastDeviceFlag = FALSE;
+      LastFamilyDiscrepancy = 0;
+      return FALSE;
+    }
+
+
+    Plugin_004_DS_write(0xF0, Plugin_004_DallasPin);
+
+
+    do
+    {
+
+      id_bit = Plugin_004_DS_read_bit(Plugin_004_DallasPin);
+      cmp_id_bit = Plugin_004_DS_read_bit(Plugin_004_DallasPin);
+
+
+      if ((id_bit == 1) && (cmp_id_bit == 1)) {
+        break;
+      }
+      else
+      {
+
+        if (id_bit != cmp_id_bit) {
+          search_direction = id_bit;
+        }
+        else
+        {
+
+
+          if (id_bit_number < LastDiscrepancy) {
+            search_direction = ((ROM_NO[rom_byte_number] & rom_byte_mask) > 0);
+          }
+          else {
+
+            search_direction = (id_bit_number == LastDiscrepancy);
+          }
+
+
+          if (search_direction == 0)
+          {
+            last_zero = id_bit_number;
+
+
+            if (last_zero < 9) {
+              LastFamilyDiscrepancy = last_zero;
+            }
+          }
+        }
+
+
+
+        if (search_direction == 1) {
+          ROM_NO[rom_byte_number] |= rom_byte_mask;
+        }
+        else {
+          ROM_NO[rom_byte_number] &= ~rom_byte_mask;
+        }
+
+
+        Plugin_004_DS_write_bit(search_direction, Plugin_004_DallasPin);
+
+
+
+        id_bit_number++;
+        rom_byte_mask <<= 1;
+
+
+        if (rom_byte_mask == 0)
+        {
+          rom_byte_number++;
+          rom_byte_mask = 1;
+        }
+      }
+    }
+    while (rom_byte_number < 8);
+
+
+    if (!(id_bit_number < 65))
+    {
+
+      LastDiscrepancy = last_zero;
+
+
+      if (LastDiscrepancy == 0) {
+        LastDeviceFlag = TRUE;
+      }
+
+      search_result = TRUE;
+    }
+  }
+
+
+  if (!search_result || !ROM_NO[0])
+  {
+    LastDiscrepancy = 0;
+    LastDeviceFlag = FALSE;
+    LastFamilyDiscrepancy = 0;
+    search_result = FALSE;
+  }
+
+  for (int i = 0; i < 8; i++) {
+    newAddr[i] = ROM_NO[i];
+  }
+
+  return search_result;
+}
+
+
+
+
+uint8_t Plugin_004_DS_read(int8_t Plugin_004_DallasPin)
+{
+  uint8_t bitMask;
+  uint8_t r = 0;
+
+  for (bitMask = 0x01; bitMask; bitMask <<= 1) {
+    if (Plugin_004_DS_read_bit(Plugin_004_DallasPin)) {
+      r |= bitMask;
+    }
+  }
+
+  return r;
+}
+
+
+
+
+void Plugin_004_DS_write(uint8_t ByteToWrite, int8_t Plugin_004_DallasPin)
+{
+  uint8_t bitMask;
+
+  for (bitMask = 0x01; bitMask; bitMask <<= 1) {
+    Plugin_004_DS_write_bit((bitMask & ByteToWrite) ? 1 : 0, Plugin_004_DallasPin);
+  }
+}
+
+
+
+
+uint8_t Plugin_004_DS_read_bit(int8_t Plugin_004_DallasPin)
+{
+  if (Plugin_004_DallasPin == -1) { return 0; }
+  uint8_t r;
+
+    #if defined(ESP32)
+  ESP32noInterrupts();
+    #endif
+  digitalWrite(Plugin_004_DallasPin, LOW);
+  pinMode(Plugin_004_DallasPin, OUTPUT);
+  delayMicroseconds(2);
+  pinMode(Plugin_004_DallasPin, INPUT);
+  delayMicroseconds(8);
+  r = digitalRead(Plugin_004_DallasPin);
+    #if defined(ESP32)
+  ESP32interrupts();
+    #endif
+  delayMicroseconds(60);
+  return r;
+}
+
+
+
+
+void Plugin_004_DS_write_bit(uint8_t v, int8_t Plugin_004_DallasPin)
+{
+  if (Plugin_004_DallasPin == -1) { return; }
+
+  if (v & 1)
+  {
+        #if defined(ESP32)
+    ESP32noInterrupts();
+        #endif
+    digitalWrite(Plugin_004_DallasPin, LOW);
+    pinMode(Plugin_004_DallasPin, OUTPUT);
+    delayMicroseconds(2);
+    digitalWrite(Plugin_004_DallasPin, HIGH);
+        #if defined(ESP32)
+    ESP32interrupts();
+        #endif
+    delayMicroseconds(70);
+  }
+  else
+  {
+        #if defined(ESP32)
+    ESP32noInterrupts();
+        #endif
+    digitalWrite(Plugin_004_DallasPin, LOW);
+    pinMode(Plugin_004_DallasPin, OUTPUT);
+    delayMicroseconds(90);
+    digitalWrite(Plugin_004_DallasPin, HIGH);
+        #if defined(ESP32)
+    ESP32interrupts();
+        #endif
+    delayMicroseconds(10);
+  }
+}
+
+
+
+
+void Plugin_004_DS_address_ROM(uint8_t ROM[8], int8_t Plugin_004_DallasPin)
+{
+  Plugin_004_DS_reset(Plugin_004_DallasPin);
+  Plugin_004_DS_write(0x55, Plugin_004_DallasPin);
+
+  for (byte i = 0; i < 8; i++) {
+    Plugin_004_DS_write(ROM[i], Plugin_004_DallasPin);
+  }
+}
+
+
+
+
+boolean Plugin_004_DS_crc8(uint8_t *addr)
+{
+  uint8_t crc = 0;
+  uint8_t len = 8;
+
+  while (len--)
+  {
+    uint8_t inbyte = *addr++;
+
+    for (uint8_t i = 8; i; i--)
+    {
+      uint8_t mix = (crc ^ inbyte) & 0x01;
+      crc >>= 1;
+
+      if (mix) { crc ^= 0x8C; }
+      inbyte >>= 1;
+    }
+  }
+  return crc == *addr;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P005_DHT.ino"
+#ifdef USES_P005
+
+
+
+
+#define PLUGIN_005 
+#define PLUGIN_ID_005 5
+#define PLUGIN_NAME_005 "Environment - DHT11/12/22  SONOFF2301/7021"
+#define PLUGIN_VALUENAME1_005 "Temperature"
+#define PLUGIN_VALUENAME2_005 "Humidity"
+
+#define P005_DHT11 11
+#define P005_DHT12 12
+#define P005_DHT22 22
+#define P005_AM2301 23
+#define P005_SI7021 70
+
+#define P005_error_no_reading 1
+#define P005_error_protocol_timeout 2
+#define P005_error_checksum_error 3
+#define P005_error_invalid_NAN_reading 4
+#define P005_info_temperature 5
+#define P005_info_humidity 6
+
+uint8_t Plugin_005_DHT_Pin;
+
+boolean Plugin_005(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_005;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_HUM;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_005);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_005));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_005));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_bidirectional(F("Data"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        const String options[] = { F("DHT 11"), F("DHT 22"), F("DHT 12"), F("Sonoff am2301"), F("Sonoff si7021") };
+        int indices[] = { P005_DHT11, P005_DHT22, P005_DHT12, P005_AM2301, P005_SI7021 };
+
+        addFormSelector(F("Sensor model"), F("p005_dhttype"), 5, options, indices, PCONFIG(0) );
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p005_dhttype"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        success = P005_do_plugin_read(event);
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+
+
+void P005_log(struct EventStruct *event, int logNr)
+{
+  bool isError = true;
+  String text = F("DHT  : ");
+  switch (logNr) {
+    case P005_error_no_reading: text += F("No Reading"); break;
+    case P005_error_protocol_timeout: text += F("Protocol Timeout"); break;
+    case P005_error_checksum_error: text += F("Checksum Error"); break;
+    case P005_error_invalid_NAN_reading: text += F("Invalid NAN reading"); break;
+    case P005_info_temperature:
+      text += F("Temperature: ");
+      text += UserVar[event->BaseVarIndex];
+      isError = false;
+      break;
+    case P005_info_humidity:
+      text += F("Humidity: ");
+      text += UserVar[event->BaseVarIndex + 1];
+      isError = false;
+      break;
+  }
+  addLog(LOG_LEVEL_INFO, text);
+  if (isError) {
+    UserVar[event->BaseVarIndex] = NAN;
+    UserVar[event->BaseVarIndex + 1] = NAN;
+  }
+}
+
+
+
+
+boolean P005_waitState(int state)
+{
+  unsigned long timeout = micros() + 100;
+  while (digitalRead(Plugin_005_DHT_Pin) != state)
+  {
+    if (usecTimeOutReached(timeout)) return false;
+    delayMicroseconds(1);
+  }
+  return true;
+}
+
+
+
+
+bool P005_do_plugin_read(struct EventStruct *event) {
+  byte i;
+
+  byte Par3 = PCONFIG(0);
+  Plugin_005_DHT_Pin = CONFIG_PIN1;
+
+  pinMode(Plugin_005_DHT_Pin, OUTPUT);
+  digitalWrite(Plugin_005_DHT_Pin, LOW);
+  switch (Par3) {
+    case P005_DHT11:
+    case P005_DHT22:
+    case P005_DHT12: delay(18); break;
+    case P005_AM2301: delayMicroseconds(900); break;
+    case P005_SI7021: delayMicroseconds(500); break;
+  }
+  switch (Par3) {
+    case P005_DHT11:
+    case P005_DHT22:
+    case P005_DHT12:
+    case P005_AM2301:
+      pinMode(Plugin_005_DHT_Pin, INPUT);
+      delayMicroseconds(50);
+      break;
+    case P005_SI7021:
+
+      digitalWrite(Plugin_005_DHT_Pin, HIGH);
+      delayMicroseconds(20);
+      pinMode(Plugin_005_DHT_Pin, INPUT);
+      break;
+  }
+  if(!P005_waitState(0)) {P005_log(event, P005_error_no_reading); return false; }
+  if(!P005_waitState(1)) {P005_log(event, P005_error_no_reading); return false; }
+  noInterrupts();
+  if(!P005_waitState(0)) {
+    interrupts();
+    P005_log(event, P005_error_no_reading);
+    return false;
+  }
+  bool readingAborted = false;
+  byte dht_dat[5];
+  for (i = 0; i < 5 && !readingAborted; i++)
+  {
+      byte data = Plugin_005_read_dht_dat();
+      if(data == -1)
+      { P005_log(event, P005_error_protocol_timeout);
+          readingAborted = true;
+      }
+      dht_dat[i] = data;
+  }
+  interrupts();
+  if (readingAborted)
+    return false;
+
+
+  byte dht_check_sum = (dht_dat[0] + dht_dat[1] + dht_dat[2] + dht_dat[3]) & 0xFF;
+  if (dht_dat[4] != dht_check_sum)
+  {
+      P005_log(event, P005_error_checksum_error);
+      return false;
+  }
+
+  float temperature = NAN;
+  float humidity = NAN;
+  switch (Par3) {
+    case P005_DHT11:
+      temperature = float(dht_dat[2]);
+      humidity = float(dht_dat[0]);
+      break;
+    case P005_DHT12:
+      temperature = float(dht_dat[2]*10 + (dht_dat[3] & 0x7f)) / 10.0;
+      if (dht_dat[3] & 0x80) { temperature = -temperature; }
+      humidity = float(dht_dat[0]*10+dht_dat[1]) / 10.0;
+      break;
+    case P005_DHT22:
+    case P005_AM2301:
+    case P005_SI7021:
+      if (dht_dat[2] & 0x80)
+        temperature = -0.1 * word(dht_dat[2] & 0x7F, dht_dat[3]);
+      else
+        temperature = 0.1 * word(dht_dat[2], dht_dat[3]);
+      humidity = 0.1 * word(dht_dat[0], dht_dat[1]);
+      break;
+  }
+
+  if (temperature == NAN || humidity == NAN)
+  { P005_log(event, P005_error_invalid_NAN_reading);
+        return false;
+  }
+
+  UserVar[event->BaseVarIndex] = temperature;
+  UserVar[event->BaseVarIndex + 1] = humidity;
+  P005_log(event, P005_info_temperature);
+  P005_log(event, P005_info_humidity);
+  return true;
+}
+
+
+
+
+
+
+int Plugin_005_read_dht_dat(void)
+{
+  byte i = 0;
+  byte result = 0;
+  for (i = 0; i < 8; i++)
+  {
+    if (!P005_waitState(1)) return -1;
+    delayMicroseconds(35);
+    if (digitalRead(Plugin_005_DHT_Pin))
+      result |= (1 << (7 - i));
+    if (!P005_waitState(0)) return -1;
+  }
+  return result;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P006_BMP085.ino"
+#ifdef USES_P006
+
+
+
+
+#define PLUGIN_006 
+#define PLUGIN_ID_006 6
+#define PLUGIN_NAME_006 "Environment - BMP085/180"
+#define PLUGIN_VALUENAME1_006 "Temperature"
+#define PLUGIN_VALUENAME2_006 "Pressure"
+
+
+
+boolean Plugin_006_init = false;
+
+boolean Plugin_006(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_006;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_BARO;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_006);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_006));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_006));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+       addFormNumericBox(F("Altitude [m]"), F("_p006_bmp085_elev"), PCONFIG(1));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(1) = getFormItemInt(F("_p006_bmp085_elev"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        if (!Plugin_006_init)
+        {
+          if (Plugin_006_bmp085_begin())
+            Plugin_006_init = true;
+        }
+
+        if (Plugin_006_init)
+        {
+          UserVar[event->BaseVarIndex] = Plugin_006_bmp085_readTemperature();
+          int elev = PCONFIG(1);
+          if (elev)
+          {
+             UserVar[event->BaseVarIndex + 1] = Plugin_006_pressureElevation((float)Plugin_006_bmp085_readPressure() / 100, elev);
+          } else {
+             UserVar[event->BaseVarIndex + 1] = ((float)Plugin_006_bmp085_readPressure()) / 100;
+          }
+          String log = F("BMP  : Temperature: ");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO, log);
+          log = F("BMP  : Barometric Pressure: ");
+          log += UserVar[event->BaseVarIndex + 1];
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+
+#define BMP085_I2CADDR 0x77
+#define BMP085_ULTRAHIGHRES 3
+#define BMP085_CAL_AC1 0xAA
+#define BMP085_CAL_AC2 0xAC
+#define BMP085_CAL_AC3 0xAE
+#define BMP085_CAL_AC4 0xB0
+#define BMP085_CAL_AC5 0xB2
+#define BMP085_CAL_AC6 0xB4
+#define BMP085_CAL_B1 0xB6
+#define BMP085_CAL_B2 0xB8
+#define BMP085_CAL_MB 0xBA
+#define BMP085_CAL_MC 0xBC
+#define BMP085_CAL_MD 0xBE
+#define BMP085_CONTROL 0xF4
+#define BMP085_TEMPDATA 0xF6
+#define BMP085_PRESSUREDATA 0xF6
+#define BMP085_READTEMPCMD 0x2E
+#define BMP085_READPRESSURECMD 0x34
+
+uint8_t oversampling = BMP085_ULTRAHIGHRES;
+int16_t ac1, ac2, ac3, b1, b2, mb, mc, md;
+uint16_t ac4, ac5, ac6;
+
+
+boolean Plugin_006_bmp085_begin()
+
+{
+  if (I2C_read8_reg(BMP085_I2CADDR, 0xD0) != 0x55) return false;
+
+
+  ac1 = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_AC1);
+  ac2 = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_AC2);
+  ac3 = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_AC3);
+  ac4 = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_AC4);
+  ac5 = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_AC5);
+  ac6 = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_AC6);
+
+  b1 = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_B1);
+  b2 = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_B2);
+
+  mb = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_MB);
+  mc = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_MC);
+  md = I2C_read16_reg(BMP085_I2CADDR, BMP085_CAL_MD);
+
+  return(true);
+}
+
+
+uint16_t Plugin_006_bmp085_readRawTemperature(void)
+
+{
+  I2C_write8_reg(BMP085_I2CADDR, BMP085_CONTROL, BMP085_READTEMPCMD);
+  delay(5);
+  return I2C_read16_reg(BMP085_I2CADDR, BMP085_TEMPDATA);
+}
+
+
+uint32_t Plugin_006_bmp085_readRawPressure(void)
+
+{
+  uint32_t raw;
+
+  I2C_write8_reg(BMP085_I2CADDR, BMP085_CONTROL, BMP085_READPRESSURECMD + (oversampling << 6));
+
+  delay(26);
+
+  raw = I2C_read16_reg(BMP085_I2CADDR, BMP085_PRESSUREDATA);
+  raw <<= 8;
+  raw |= I2C_read8_reg(BMP085_I2CADDR, BMP085_PRESSUREDATA + 2);
+  raw >>= (8 - oversampling);
+
+  return raw;
+}
+
+
+int32_t Plugin_006_bmp085_readPressure(void)
+
+{
+  int32_t UT, UP, B3, B5, B6, X1, X2, X3, p;
+  uint32_t B4, B7;
+
+  UT = Plugin_006_bmp085_readRawTemperature();
+  UP = Plugin_006_bmp085_readRawPressure();
+
+
+  X1 = (UT - (int32_t)(ac6)) * ((int32_t)(ac5)) / pow(2, 15);
+  X2 = ((int32_t)mc * pow(2, 11)) / (X1 + (int32_t)md);
+  B5 = X1 + X2;
+
+
+  B6 = B5 - 4000;
+  X1 = ((int32_t)b2 * ( (B6 * B6) >> 12 )) >> 11;
+  X2 = ((int32_t)ac2 * B6) >> 11;
+  X3 = X1 + X2;
+  B3 = ((((int32_t)ac1 * 4 + X3) << oversampling) + 2) / 4;
+
+  X1 = ((int32_t)ac3 * B6) >> 13;
+  X2 = ((int32_t)b1 * ((B6 * B6) >> 12)) >> 16;
+  X3 = ((X1 + X2) + 2) >> 2;
+  B4 = ((uint32_t)ac4 * (uint32_t)(X3 + 32768)) >> 15;
+  B7 = ((uint32_t)UP - B3) * (uint32_t)( 50000UL >> oversampling );
+
+  if (B7 < 0x80000000)
+  {
+    p = (B7 * 2) / B4;
+  }
+  else
+  {
+    p = (B7 / B4) * 2;
+  }
+  X1 = (p >> 8) * (p >> 8);
+  X1 = (X1 * 3038) >> 16;
+  X2 = (-7357 * p) >> 16;
+
+  p = p + ((X1 + X2 + (int32_t)3791) >> 4);
+  return p;
+}
+
+
+float Plugin_006_bmp085_readTemperature(void)
+
+{
+  int32_t UT, X1, X2, B5;
+  float temp;
+
+  UT = Plugin_006_bmp085_readRawTemperature();
+
+
+  X1 = (UT - (int32_t)ac6) * ((int32_t)ac5) / pow(2, 15);
+  X2 = ((int32_t)mc * pow(2, 11)) / (X1 + (int32_t)md);
+  B5 = X1 + X2;
+  temp = (B5 + 8) / pow(2, 4);
+  temp /= 10;
+
+  return temp;
+}
+
+
+float Plugin_006_pressureElevation(float atmospheric, int altitude) {
+
+  return atmospheric / pow(1.0 - (altitude/44330.0), 5.255);
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P007_PCF8591.ino"
+#ifdef USES_P007
+
+
+
+
+#define PLUGIN_007 
+#define PLUGIN_ID_007 7
+#define PLUGIN_NAME_007 "Analog input - PCF8591"
+#define PLUGIN_VALUENAME1_007 "Analog"
+
+boolean Plugin_007(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_007;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 4;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_007);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_007));
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        byte unit = (CONFIG_PORT - 1) / 4;
+        byte port = CONFIG_PORT - (unit * 4);
+        uint8_t address = 0x48 + unit;
+
+
+        Wire.beginTransmission(address);
+        Wire.write(port - 1);
+        Wire.endTransmission();
+
+        Wire.requestFrom(address, (uint8_t)0x2);
+        if (Wire.available())
+        {
+          Wire.read();
+          UserVar[event->BaseVarIndex] = (float)Wire.read();
+          String log = F("PCF  : Analog value: ");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO,log);
+          success = true;
+        }
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P008_RFID.ino"
+#ifdef USES_P008
+
+
+
+
+#define PLUGIN_008 
+#define PLUGIN_ID_008 8
+#define PLUGIN_NAME_008 "RFID - Wiegand"
+#define PLUGIN_VALUENAME1_008 "Tag"
+
+void Plugin_008_interrupt1() ICACHE_RAM_ATTR;
+void Plugin_008_interrupt2() ICACHE_RAM_ATTR;
+
+volatile byte Plugin_008_bitCount = 0;
+uint64_t Plugin_008_keyBuffer = 0;
+byte Plugin_008_timeoutCount = 0;
+byte Plugin_008_WiegandSize = 26;
+
+boolean Plugin_008_init = false;
+
+boolean Plugin_008(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_008;
+        Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+        Device[deviceCount].VType = SENSOR_TYPE_LONG;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_008);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_008));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_input(F("D0 (Green, 5V)"));
+        event->String2 = formatGpioName_input(F("D1 (White, 5V)"));
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        Plugin_008_init = true;
+        Plugin_008_WiegandSize = PCONFIG(0);
+        pinMode(CONFIG_PIN1, INPUT_PULLUP);
+        pinMode(CONFIG_PIN2, INPUT_PULLUP);
+        attachInterrupt(CONFIG_PIN1, Plugin_008_interrupt1, FALLING);
+        attachInterrupt(CONFIG_PIN2, Plugin_008_interrupt2, FALLING);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+        if (Plugin_008_init)
+        {
+          if (Plugin_008_bitCount > 0)
+          {
+            if (Plugin_008_bitCount % 4 == 0 && ((Plugin_008_keyBuffer & 0xF) == 11))
+            {
+
+              Plugin_008_keyBuffer = Plugin_008_keyBuffer >> 4;
+              UserVar[event->BaseVarIndex] = (Plugin_008_keyBuffer & 0xFFFF);
+              UserVar[event->BaseVarIndex + 1] = ((Plugin_008_keyBuffer >> 16) & 0xFFFF);
+            }
+            else if (Plugin_008_bitCount == Plugin_008_WiegandSize)
+            {
+
+              Plugin_008_keyBuffer = Plugin_008_keyBuffer >> 1;
+              if (Plugin_008_WiegandSize == 26)
+                Plugin_008_keyBuffer &= 0xFFFFFF;
+              else
+                Plugin_008_keyBuffer &= 0xFFFFFFFF;
+              UserVar[event->BaseVarIndex] = (Plugin_008_keyBuffer & 0xFFFF);
+              UserVar[event->BaseVarIndex + 1] = ((Plugin_008_keyBuffer >> 16) & 0xFFFF);
+            }
+            else
+            {
+
+              Plugin_008_timeoutCount++;
+              if (Plugin_008_timeoutCount > 5)
+              {
+                String log = F("RFID : reset bits: ");
+                log += Plugin_008_bitCount;
+                addLog(LOG_LEVEL_INFO, log );
+
+                Plugin_008_keyBuffer = 0;
+                Plugin_008_bitCount = 0;
+                Plugin_008_timeoutCount = 0;
+              }
+              break;
+            }
+
+            unsigned long bitCount = Plugin_008_bitCount;
+            unsigned long keyBuffer = Plugin_008_keyBuffer;
+            Plugin_008_keyBuffer = 0;
+            Plugin_008_bitCount = 0;
+            Plugin_008_timeoutCount = 0;
+
+            String log = F("RFID : Tag: ");
+            log += keyBuffer;
+            log += F(" Bits: ");
+            log += bitCount;
+            addLog(LOG_LEVEL_INFO, log);
+            sendData(event);
+          }
+        }
+        break;
+      }
+      case PLUGIN_WEBFORM_LOAD:
+        {
+          byte choice = PCONFIG(0);
+          String options[2];
+          options[0] = F("26 Bits");
+          options[1] = F("34 Bits");
+          int optionValues[2];
+          optionValues[0] = 26;
+          optionValues[1] = 34;
+          addFormSelector(F("Wiegand Type"), F("p008_type"), 2, options, optionValues, choice);
+          success = true;
+          break;
+        }
+
+      case PLUGIN_WEBFORM_SAVE:
+        {
+          String plugin1 = WebServer.arg(F("p008_type"));
+          PCONFIG(0) = plugin1.toInt();
+          success = true;
+          break;
+        }
+  }
+  return success;
+}
+
+
+void Plugin_008_interrupt1()
+
+{
+
+  Plugin_008_keyBuffer = Plugin_008_keyBuffer << 1;
+  Plugin_008_keyBuffer += 1;
+  Plugin_008_bitCount++;
+}
+
+
+void Plugin_008_interrupt2()
+
+{
+
+  Plugin_008_keyBuffer = Plugin_008_keyBuffer << 1;
+  Plugin_008_bitCount++;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P009_MCP.ino"
+#ifdef USES_P009
+# 31 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P009_MCP.ino"
+#define PLUGIN_009 
+#define PLUGIN_ID_009 9
+#define PLUGIN_NAME_009 "Switch input - MCP23017"
+#define PLUGIN_VALUENAME1_009 "State"
+#define PLUGIN_009_DOUBLECLICK_MIN_INTERVAL 1000
+#define PLUGIN_009_DOUBLECLICK_MAX_INTERVAL 3000
+#define PLUGIN_009_LONGPRESS_MIN_INTERVAL 1000
+#define PLUGIN_009_LONGPRESS_MAX_INTERVAL 5000
+#define PLUGIN_009_DC_DISABLED 0
+#define PLUGIN_009_DC_LOW 1
+#define PLUGIN_009_DC_HIGH 2
+#define PLUGIN_009_DC_BOTH 3
+#define PLUGIN_009_LONGPRESS_DISABLED 0
+#define PLUGIN_009_LONGPRESS_LOW 1
+#define PLUGIN_009_LONGPRESS_HIGH 2
+#define PLUGIN_009_LONGPRESS_BOTH 3
+
+boolean Plugin_009(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_009;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].Ports = 16;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = true;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_009);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_009));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+        const uint32_t key = createKey(PLUGIN_ID_009,CONFIG_PORT);
+        if (existPortStatus(key)) {
+          globalMapPortStatus[key].previousTask = event->TaskIndex;
+        }
+
+        addFormCheckBox(F("Send Boot state") ,F("p009_boot"), PCONFIG(0));
+
+
+        addFormSubHeader(F("Advanced event management"));
+
+        addFormNumericBox(F("De-bounce (ms)"), F("p009_debounce"), round(PCONFIG_FLOAT(0)), 0, 250);
+
+
+        if (PCONFIG_FLOAT(1) < PLUGIN_009_DOUBLECLICK_MIN_INTERVAL)
+          PCONFIG_FLOAT(1) = PLUGIN_009_DOUBLECLICK_MIN_INTERVAL;
+
+        byte choiceDC = PCONFIG(4);
+        String buttonDC[4];
+        buttonDC[0] = F("Disabled");
+        buttonDC[1] = F("Active only on LOW (EVENT=3)");
+        buttonDC[2] = F("Active only on HIGH (EVENT=3)");
+        buttonDC[3] = F("Active on LOW & HIGH (EVENT=3)");
+        int buttonDCValues[4] = {PLUGIN_009_DC_DISABLED, PLUGIN_009_DC_LOW, PLUGIN_009_DC_HIGH,PLUGIN_009_DC_BOTH};
+        addFormSelector(F("Doubleclick event"), F("p009_dc"), 4, buttonDC, buttonDCValues, choiceDC);
+
+        addFormNumericBox(F("Doubleclick max. interval (ms)"), F("p009_dcmaxinterval"), round(PCONFIG_FLOAT(1)), PLUGIN_009_DOUBLECLICK_MIN_INTERVAL, PLUGIN_009_DOUBLECLICK_MAX_INTERVAL);
+
+
+        if (PCONFIG_FLOAT(2) < PLUGIN_009_LONGPRESS_MIN_INTERVAL)
+          PCONFIG_FLOAT(2) = PLUGIN_009_LONGPRESS_MIN_INTERVAL;
+
+        byte choiceLP = PCONFIG(5);
+        String buttonLP[4];
+        buttonLP[0] = F("Disabled");
+        buttonLP[1] = F("Active only on LOW (EVENT= 10 [NORMAL] or 11 [INVERSED])");
+        buttonLP[2] = F("Active only on HIGH (EVENT= 11 [NORMAL] or 10 [INVERSED])");
+        buttonLP[3] = F("Active on LOW & HIGH (EVENT= 10 or 11)");
+
+        int buttonLPValues[4] = {PLUGIN_009_LONGPRESS_DISABLED, PLUGIN_009_LONGPRESS_LOW, PLUGIN_009_LONGPRESS_HIGH,PLUGIN_009_LONGPRESS_BOTH};
+        addFormSelector(F("Longpress event"), F("p009_lp"), 4, buttonLP, buttonLPValues, choiceLP);
+
+        addFormNumericBox(F("Longpress min. interval (ms)"), F("p009_lpmininterval"), round(PCONFIG_FLOAT(2)), PLUGIN_009_LONGPRESS_MIN_INTERVAL, PLUGIN_009_LONGPRESS_MAX_INTERVAL);
+
+        addFormCheckBox(F("Use Safe Button (slower)"), F("p009_sb"), round(PCONFIG_FLOAT(3)));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = isFormItemChecked(F("p009_boot"));
+
+
+        PCONFIG_FLOAT(0) = getFormItemInt(F("p009_debounce"));
+
+        PCONFIG(4) = getFormItemInt(F("p009_dc"));
+        PCONFIG_FLOAT(1) = getFormItemInt(F("p009_dcmaxinterval"));
+
+        PCONFIG(5) = getFormItemInt(F("p009_lp"));
+        PCONFIG_FLOAT(2) = getFormItemInt(F("p009_lpmininterval"));
+
+        PCONFIG_FLOAT(3) = isFormItemChecked(F("p009_sb"));
+
+
+        for (std::map<uint32_t,portStatusStruct>::iterator it=globalMapPortStatus.begin(); it!=globalMapPortStatus.end(); ++it) {
+          if (it->second.previousTask == event->TaskIndex && getPluginFromKey(it->first)==PLUGIN_ID_009) {
+            globalMapPortStatus[it->first].previousTask = -1;
+            removeTaskFromPort(it->first);
+            break;
+          }
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+
+        Plugin_009_Config(CONFIG_PORT, 1);
+
+
+        if (CONFIG_PORT >= 0)
+        {
+          portStatusStruct newStatus;
+          const uint32_t key = createKey(PLUGIN_ID_009,CONFIG_PORT);
+
+          newStatus = globalMapPortStatus[key];
+
+
+
+          newStatus.state = Plugin_009_Read(CONFIG_PORT);
+          newStatus.output = newStatus.state;
+          (newStatus.state == -1) ? newStatus.mode = PIN_MODE_OFFLINE : newStatus.mode = PIN_MODE_INPUT_PULLUP;
+          newStatus.task++;
+
+
+          if (newStatus.state != -1 && Settings.TaskDevicePin1Inversed[event->TaskIndex]) {
+            UserVar[event->BaseVarIndex] = !newStatus.state;
+          } else {
+            UserVar[event->BaseVarIndex] = newStatus.state;
+          }
+
+
+
+          if (PCONFIG(0))
+            newStatus.state = !newStatus.state;
+
+
+          PCONFIG(7)=0;
+          PCONFIG_LONG(3)=0;
+
+
+          PCONFIG(6)=false;
+
+
+          PCONFIG_LONG(0)=millis();
+          PCONFIG_LONG(1)=millis();
+          PCONFIG_LONG(2)=millis();
+
+
+          if (PCONFIG_FLOAT(1) < PLUGIN_009_DOUBLECLICK_MIN_INTERVAL)
+            PCONFIG_FLOAT(1) = PLUGIN_009_DOUBLECLICK_MIN_INTERVAL;
+
+
+          if (PCONFIG_FLOAT(2) < PLUGIN_009_LONGPRESS_MIN_INTERVAL)
+            PCONFIG_FLOAT(2) = PLUGIN_009_LONGPRESS_MIN_INTERVAL;
+
+
+          savePortStatus(key,newStatus);
+        }
+        success = true;
+        break;
+      }
+# 248 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P009_MCP.ino"
+      case PLUGIN_MONITOR:
+        {
+
+          const uint32_t key = createKey(PLUGIN_ID_009,event->Par1);
+          const portStatusStruct currentStatus = globalMapPortStatus[key];
+
+
+            byte state = Plugin_009_Read(event->Par1);
+            if (currentStatus.state != state || currentStatus.forceMonitor) {
+              if (!currentStatus.task) globalMapPortStatus[key].state = state;
+              if (currentStatus.monitor) {
+                globalMapPortStatus[key].forceMonitor=0;
+                String eventString = F("MCP#");
+                eventString += event->Par1;
+                eventString += '=';
+                eventString += state;
+                rulesProcessing(eventString);
+              }
+            }
+
+
+          break;
+        }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        const int8_t state = Plugin_009_Read(CONFIG_PORT);
+# 289 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P009_MCP.ino"
+        portStatusStruct currentStatus;
+        const uint32_t key = createKey(PLUGIN_ID_009,CONFIG_PORT);
+
+        currentStatus = globalMapPortStatus[key];
+
+
+        if (state != -1 && CONFIG_PORT>=0) {
+
+
+          if (round(PCONFIG_FLOAT(3)) && state != currentStatus.state && PCONFIG_LONG(3)==0)
+          {
+            addLog(LOG_LEVEL_DEBUG,F("MCP :SafeButton 1st click."))
+            PCONFIG_LONG(3) = 1;
+          }
+
+          else if (state != currentStatus.state || currentStatus.forceEvent)
+          {
+
+            currentStatus.forceEvent = 0;
+
+
+            PCONFIG_LONG(3) = 0;
+
+
+            PCONFIG_LONG(2)=millis();
+            PCONFIG(6) = false;
+
+            const unsigned long debounceTime = timePassedSince(PCONFIG_LONG(0));
+            if (debounceTime >= (unsigned long)lround(PCONFIG_FLOAT(0)))
+            {
+              const unsigned long deltaDC = timePassedSince(PCONFIG_LONG(1));
+              if ((deltaDC >= (unsigned long)lround(PCONFIG_FLOAT(1))) ||
+                   PCONFIG(7)==3)
+              {
+
+                PCONFIG(7)=0;
+                PCONFIG_LONG(1)=millis();
+              }
+
+
+#define COUNTER PCONFIG(7)
+#define DC PCONFIG(4)
+
+
+              if ( COUNTER!=0 || ( COUNTER==0 && (DC==3 || (DC==1 && state==0) || (DC==2 && state==1))) )
+                PCONFIG(7)++;
+#undef DC
+#undef COUNTER
+
+
+              if (currentStatus.mode == PIN_MODE_OFFLINE || currentStatus.mode == PIN_MODE_UNDEFINED) currentStatus.mode = PIN_MODE_INPUT_PULLUP;
+              currentStatus.state = state;
+
+              byte output_value;
+
+              boolean sendState = currentStatus.state;
+
+              if (Settings.TaskDevicePin1Inversed[event->TaskIndex])
+                sendState = !sendState;
+
+              if (PCONFIG(7)==3 && PCONFIG(4)>0)
+              {
+                output_value = 3;
+              } else {
+                output_value = sendState ? 1 : 0;
+              }
+
+              UserVar[event->BaseVarIndex] = output_value;
+
+              if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                String log = F("MCP  : Port=");
+                log += CONFIG_PORT;
+                log += F(" State=");
+                log += state;
+                log += output_value==3 ? F(" Doubleclick=") : F(" Output value=");
+                log += output_value;
+                addLog(LOG_LEVEL_INFO, log);
+              }
+              event->sensorType = SENSOR_TYPE_SWITCH;
+              sendData(event);
+
+
+              UserVar[event->BaseVarIndex] = sendState ? 1 : 0;
+
+              PCONFIG_LONG(0) = millis();
+            }
+            savePortStatus(key,currentStatus);
+          }
+
+
+#define LP PCONFIG(5)
+#define FIRED PCONFIG(6)
+
+
+          else if (!FIRED && (LP==3 ||(LP==1 && state==0)||(LP==2 && state==1) ) ) {
+
+#undef LP
+#undef FIRED
+# 402 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P009_MCP.ino"
+            PCONFIG_LONG(3) = 0;
+
+            const unsigned long deltaLP = timePassedSince(PCONFIG_LONG(2));
+            if (deltaLP >= (unsigned long)lround(PCONFIG_FLOAT(2)))
+            {
+              byte output_value;
+              PCONFIG(6) = true;
+
+              boolean sendState = state;
+              if (Settings.TaskDevicePin1Inversed[event->TaskIndex])
+                sendState = !sendState;
+
+              output_value = sendState ? 1 : 0;
+              output_value = output_value + 10;
+
+              UserVar[event->BaseVarIndex] = output_value;
+              if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                String log = F("MCP  : LongPress: Port=");
+                log += CONFIG_PORT;
+                log += F(" State=");
+                log += state ? '1' : '0';
+                log += F(" Output value=");
+                log += output_value;
+                addLog(LOG_LEVEL_INFO, log);
+              }
+              sendData(event);
+
+
+              UserVar[event->BaseVarIndex] = sendState ? 1 : 0;
+            }
+          } else {
+            if (PCONFIG_LONG(3)==1) {
+
+              PCONFIG_LONG(3) = 0;
+
+
+              const int tempUserVar = round(UserVar[event->BaseVarIndex]);
+              UserVar[event->BaseVarIndex] = 4;
+              if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                String log = F("MCP : SafeButton: false positive detected. GPIO= ");
+                log += CONFIG_PIN1;
+                log += F(" State=");
+                log += tempUserVar;
+                addLog(LOG_LEVEL_INFO, log);
+              }
+              sendData(event);
+
+
+              UserVar[event->BaseVarIndex] = tempUserVar;
+            }
+          }
+        } else if (state != currentStatus.state && state == -1) {
+
+          UserVar[event->BaseVarIndex] = state;
+          currentStatus.mode = PIN_MODE_OFFLINE;
+
+          if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+            String log = F("MCP  : Port=");
+            log += CONFIG_PORT;
+            log += F(" is offline (EVENT= -1)");
+            addLog(LOG_LEVEL_INFO, log);
+          }
+          sendData(event);
+          savePortStatus(key,currentStatus);
+        }
+        success = true;
+        break;
+      }
+
+
+      case PLUGIN_EXIT:
+      {
+        removeTaskFromPort(createKey(PLUGIN_ID_009,CONFIG_PORT));
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+
+        if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+          String log = F("MCP   : Port=");
+          log += CONFIG_PORT;
+          log += F(" State=");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_REQUEST:
+      {
+
+
+
+
+
+        if (string.length()>=16 && string.substring(0,16).equalsIgnoreCase(F("mcpgpio,pinstate")))
+        {
+          int par1;
+          if (validIntFromString(parseString(string, 3), par1)) {
+            string = Plugin_009_Read(par1);
+          }
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String log = "";
+        String command = parseString(string, 1);
+
+        if (command == F("mcpgpio"))
+        {
+          success = true;
+          if (event->Par1 > 0 && event->Par1 <= 128)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_009,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            int8_t currentState = Plugin_009_Read(event->Par1);
+
+            if (currentState == -1) {
+              tempStatus.mode=PIN_MODE_OFFLINE;
+              tempStatus.state=-1;
+              log = String(F("MCP  : GPIO ")) + String(event->Par1) + String(F(" is offline (-1). Cannot set value."));
+            } else if (event->Par2 == 2) {
+
+
+              tempStatus.mode=PIN_MODE_INPUT_PULLUP;
+              tempStatus.state = currentState;
+             Plugin_009_Write(event->Par1,1);
+             log = String(F("MCP  : GPIO INPUT ")) + String(event->Par1) + String(F(" Set to 1"));
+            } else {
+
+             Plugin_009_Write(event->Par1, event->Par2);
+              tempStatus.mode=PIN_MODE_OUTPUT;
+              tempStatus.state=event->Par2;
+             log = String(F("MCP  : GPIO OUTPUT ")) + String(event->Par1) + String(F(" Set to ")) + String(event->Par2);
+            }
+            tempStatus.command=1;
+            tempStatus.forceEvent=1;
+            if (tempStatus.monitor) tempStatus.forceMonitor=1;
+
+            savePortStatus(key,tempStatus);
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        } else if (command == F("mcpgpiotoggle")) {
+          success = true;
+          if (event->Par1 > 0 && event->Par1 <= 128)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_009,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+            int8_t currentState = Plugin_009_Read(event->Par1);
+            bool needToSave = false;
+
+            if (currentState == -1) {
+              tempStatus.mode=PIN_MODE_OFFLINE;
+              tempStatus.state=-1;
+              log = String(F("MCP  : GPIO ")) + String(event->Par1) + String(F(" is offline (-1). Cannot set value."));
+              needToSave = true;
+            } else if (tempStatus.mode == PIN_MODE_OUTPUT || tempStatus.mode == PIN_MODE_UNDEFINED) {
+              tempStatus.state = !currentState;
+              tempStatus.mode = PIN_MODE_OUTPUT;
+              Plugin_009_Write(event->Par1, tempStatus.state);
+              log = String(F("MCP  : Toggle GPIO ")) + String(event->Par1) + String(F(" Set to ")) + String(tempStatus.state);
+              needToSave = true;
+            }
+            if (needToSave) {
+              tempStatus.command=1;
+              tempStatus.forceEvent=1;
+              if (tempStatus.monitor) tempStatus.forceMonitor=1;
+
+
+              savePortStatus(key,tempStatus);
+              addLog(LOG_LEVEL_INFO, log);
+
+              SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+            }
+          }
+        } else if (command == F("mcppulse")) {
+          success = true;
+          if (event->Par1 > 0 && event->Par1 <= 128)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_009,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+
+            Plugin_009_Write(event->Par1, event->Par2);
+            delay(event->Par3);
+            Plugin_009_Write(event->Par1, !event->Par2);
+
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+
+            log = String(F("MCP  : GPIO ")) + String(event->Par1) + String(F(" Pulsed for ")) + String(event->Par3) + String(F(" mS"));
+            addLog(LOG_LEVEL_INFO, log);
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+        } else if (command == F("mcplongpulse")) {
+          success = true;
+          if (event->Par1 > 0 && event->Par1 <= 128)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_009,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+
+            Plugin_009_Write(event->Par1, event->Par2);
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+
+            setPluginTaskTimer(event->Par3 * 1000, PLUGIN_ID_009, event->TaskIndex, event->Par1, !event->Par2);
+            log = String(F("MCP  : GPIO ")) + String(event->Par1) + String(F(" Pulse set for ")) + String(event->Par3) + String(F(" S"));
+            addLog(LOG_LEVEL_INFO, log);
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+        } else if (command == F("status")) {
+          if (parseString(string, 2) == F("mcp"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_009,event->Par2);
+
+            if (existPortStatus(key))
+              SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+            else
+           {
+             int state = Plugin_009_Read(event->Par2);
+             if (state != -1)
+               SendStatusOnlyIfNeeded(event->Source, NO_SEARCH_PIN_STATE, key, dummyString, state);
+             }
+           }
+        } else if (command == F("monitor")) {
+          if (parseString(string, 2) == F("mcp"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_009,event->Par2);
+
+            addMonitorToPort(key);
+
+            globalMapPortStatus[key].state = Plugin_009_Read(event->Par2);
+
+            log = String(F("MCP  : GPIO ")) + String(event->Par2) + String(F(" added to monitor list."));
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+          }
+        } else if (command == F("unmonitor")) {
+          if (parseString(string, 2) == F("mcp"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_009,event->Par2);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+
+            removeMonitorFromPort(key);
+            log = String(F("MCP  : GPIO ")) + String(event->Par2) + String(F(" removed from monitor list."));
+            addLog(LOG_LEVEL_INFO, log);
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_TIMER_IN:
+      {
+        Plugin_009_Write(event->Par1, event->Par2);
+
+        portStatusStruct tempStatus;
+
+        const uint32_t key = createKey(PLUGIN_ID_009,event->Par1);
+        tempStatus = globalMapPortStatus[key];
+
+        tempStatus.state = event->Par2;
+        tempStatus.mode = PIN_MODE_OUTPUT;
+        savePortStatus(key,tempStatus);
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+
+
+int8_t Plugin_009_Read(byte Par1)
+{
+  int8_t state = -1;
+  byte unit = (Par1 - 1) / 16;
+  byte port = Par1 - (unit * 16);
+  uint8_t address = 0x20 + unit;
+  byte IOBankValueReg = 0x12;
+  if (port > 8)
+  {
+    port = port - 8;
+    IOBankValueReg++;
+  }
+
+  Wire.beginTransmission(address);
+  Wire.write(IOBankValueReg);
+  Wire.endTransmission();
+  Wire.requestFrom(address, (uint8_t)0x1);
+  if (Wire.available())
+  {
+    state = ((Wire.read() & _BV(port - 1)) >> (port - 1));
+  }
+  return state;
+}
+
+
+
+
+
+boolean Plugin_009_Write(byte Par1, byte Par2)
+{
+  boolean success = false;
+  byte portvalue = 0;
+  byte unit = (Par1 - 1) / 16;
+  byte port = Par1 - (unit * 16);
+  uint8_t address = 0x20 + unit;
+  byte IOBankConfigReg = 0;
+  byte IOBankValueReg = 0x12;
+  if (port > 8)
+  {
+    port = port - 8;
+    IOBankConfigReg++;
+    IOBankValueReg++;
+  }
+
+  Wire.beginTransmission(address);
+  Wire.write(IOBankConfigReg);
+  Wire.endTransmission();
+  Wire.requestFrom(address, (uint8_t)0x1);
+  if (Wire.available())
+  {
+    portvalue = Wire.read();
+    portvalue &= ~(1 << (port - 1));
+
+
+    Wire.beginTransmission(address);
+    Wire.write(IOBankConfigReg);
+    Wire.write(portvalue);
+    Wire.endTransmission();
+  }
+
+  Wire.beginTransmission(address);
+  Wire.write(IOBankValueReg);
+  Wire.endTransmission();
+  Wire.requestFrom(address, (uint8_t)0x1);
+  if (Wire.available())
+  {
+    portvalue = Wire.read();
+    if (Par2 == 1)
+      portvalue |= (1 << (port - 1));
+    else
+      portvalue &= ~(1 << (port - 1));
+
+
+    Wire.beginTransmission(address);
+    Wire.write(IOBankValueReg);
+    Wire.write(portvalue);
+    Wire.endTransmission();
+    success = true;
+  }
+  return(success);
+}
+
+
+
+
+
+void Plugin_009_Config(byte Par1, byte Par2)
+{
+
+  byte portvalue = 0;
+  byte unit = (Par1 - 1) / 16;
+  byte port = Par1 - (unit * 16);
+  uint8_t address = 0x20 + unit;
+  byte IOBankConfigReg = 0xC;
+  if (port > 8)
+  {
+    port = port - 8;
+    IOBankConfigReg++;
+  }
+
+  Wire.beginTransmission(address);
+  Wire.write(IOBankConfigReg);
+  Wire.endTransmission();
+  Wire.requestFrom(address, (uint8_t)0x1);
+  if (Wire.available())
+  {
+    portvalue = Wire.read();
+    if (Par2 == 1)
+      portvalue |= (1 << (port - 1));
+    else
+      portvalue &= ~(1 << (port - 1));
+
+
+    Wire.beginTransmission(address);
+    Wire.write(IOBankConfigReg);
+    Wire.write(portvalue);
+    Wire.endTransmission();
+  }
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P010_BH1750.ino"
+#ifdef USES_P010
+
+
+
+
+#ifdef ESP8266
+#include "AS_BH1750.h"
+#endif
+
+#define PLUGIN_010 
+#define PLUGIN_ID_010 10
+#define PLUGIN_NAME_010 "Light/Lux - BH1750"
+#define PLUGIN_VALUENAME1_010 "Lux"
+
+
+boolean Plugin_010(byte function, struct EventStruct *event, String& string)
+  {
+  boolean success=false;
+
+  switch(function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_010;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_010);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_010));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choice = PCONFIG(0);
+
+
+
+
+
+        int optionValues[2];
+        optionValues[0] = BH1750_DEFAULT_I2CADDR;
+        optionValues[1] = BH1750_SECOND_I2CADDR;
+        addFormSelectorI2C(F("p010"), 2, optionValues, choice);
+        addFormNote(F("ADDR Low=0x23, High=0x5c"));
+
+        byte choiceMode = PCONFIG(1);
+        String optionsMode[4];
+        optionsMode[0] = F("RESOLUTION_LOW");
+        optionsMode[1] = F("RESOLUTION_NORMAL");
+        optionsMode[2] = F("RESOLUTION_HIGH");
+        optionsMode[3] = F("RESOLUTION_AUTO_HIGH");
+        int optionValuesMode[4];
+        optionValuesMode[0] = RESOLUTION_LOW;
+        optionValuesMode[1] = RESOLUTION_NORMAL;
+        optionValuesMode[2] = RESOLUTION_HIGH;
+        optionValuesMode[3] = RESOLUTION_AUTO_HIGH;
+        addFormSelector(F("Measurement mode"), F("p010_mode"), 4, optionsMode, optionValuesMode, choiceMode);
+
+        addFormCheckBox(F("Send sensor to sleep"), F("p010_sleep"), PCONFIG(2));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p010"));
+        PCONFIG(1) = getFormItemInt(F("p010_mode"));
+        PCONFIG(2) = isFormItemChecked(F("p010_sleep"));
+        success = true;
+        break;
+      }
+
+  case PLUGIN_READ:
+    {
+     uint8_t address = PCONFIG(0);
+
+
+      AS_BH1750 sensor = AS_BH1750(address);
+
+
+      sensors_resolution_t mode = static_cast<sensors_resolution_t>(PCONFIG(1));
+# 111 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P010_BH1750.ino"
+      bool autoPowerDown = PCONFIG(2);
+      sensor.begin(mode, autoPowerDown);
+
+      float lux = sensor.readLightLevel();
+      if (lux != -1) {
+       UserVar[event->BaseVarIndex] = lux;
+     String log = F("BH1750 Address: 0x");
+     log += String(address,HEX);
+     log += F(" Mode: 0x");
+     log += String(mode);
+     log += F(" : Light intensity: ");
+     log += UserVar[event->BaseVarIndex];
+     addLog(LOG_LEVEL_INFO,log);
+       success=true;
+      }
+      break;
+    }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P011_PME.ino"
+#ifdef USES_P011
+
+
+
+
+#define PLUGIN_011 
+#define PLUGIN_ID_011 11
+#define PLUGIN_NAME_011 "Extra IO - ProMini Extender"
+#define PLUGIN_VALUENAME1_011 "Value"
+
+#define PLUGIN_011_I2C_ADDRESS 0x7f
+
+boolean Plugin_011(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_011;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].Ports = 14;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_011);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_011));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choice = PCONFIG(0);
+        String options[2] = { F("Digital"), F("Analog") };
+        addFormSelector(F("Port Type"), F("p011"), 2, options, NULL, choice);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p011"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        UserVar[event->BaseVarIndex] = Plugin_011_Read(PCONFIG(0), CONFIG_PORT);
+        String log = F("PME  : PortValue: ");
+        log += UserVar[event->BaseVarIndex];
+        addLog(LOG_LEVEL_INFO, log);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String log = "";
+        String command = parseString(string, 1);
+
+        if (command == F("extgpio"))
+        {
+          success = true;
+          portStatusStruct tempStatus;
+          const uint32_t key = createKey(PLUGIN_ID_011,event->Par1);
+
+
+          tempStatus = globalMapPortStatus[key];
+
+          tempStatus.mode=PIN_MODE_OUTPUT;
+          tempStatus.state=event->Par2;
+          tempStatus.command=1;
+          savePortStatus(key,tempStatus);
+
+          Plugin_011_Write(event->Par1, event->Par2);
+
+          log = String(F("PME  : GPIO ")) + String(event->Par1) + String(F(" Set to ")) + String(event->Par2);
+          addLog(LOG_LEVEL_INFO, log);
+
+          SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+        }
+
+        if (command == F("extpwm"))
+        {
+          success = true;
+          uint8_t address = PLUGIN_011_I2C_ADDRESS;
+          Wire.beginTransmission(address);
+          Wire.write(3);
+          Wire.write(event->Par1);
+          Wire.write(event->Par2 & 0xff);
+          Wire.write((event->Par2 >> 8));
+          Wire.endTransmission();
+
+          portStatusStruct tempStatus;
+          const uint32_t key = createKey(PLUGIN_ID_011,event->Par1);
+
+
+          tempStatus = globalMapPortStatus[key];
+          tempStatus.mode=PIN_MODE_PWM;
+          tempStatus.state=event->Par2;
+          tempStatus.command=1;
+          savePortStatus(key,tempStatus);
+
+
+          log = String(F("PME  : GPIO ")) + String(event->Par1) + String(F(" Set PWM to ")) + String(event->Par2);
+          addLog(LOG_LEVEL_INFO, log);
+
+          SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+        }
+
+        if (command == F("extpulse"))
+        {
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= 13)
+          {
+            Plugin_011_Write(event->Par1, event->Par2);
+            delay(event->Par3);
+            Plugin_011_Write(event->Par1, !event->Par2);
+
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_011,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+            tempStatus.mode=PIN_MODE_OUTPUT;
+            tempStatus.state=event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+
+
+            log = String(F("PME  : GPIO ")) + String(event->Par1) + String(F(" Pulsed for ")) + String(event->Par3) + String(F(" mS"));
+            addLog(LOG_LEVEL_INFO, log);
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+        }
+
+        if (command == F("extlongpulse"))
+        {
+          success = true;
+          if (event->Par1 >= 0 && event->Par1 <= 13)
+          {
+            Plugin_011_Write(event->Par1, event->Par2);
+            setPluginTaskTimer(event->Par3 * 1000, PLUGIN_ID_011, event->TaskIndex, event->Par1, !event->Par2);
+
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_011,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+            tempStatus.mode=PIN_MODE_OUTPUT;
+            tempStatus.state=event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+
+
+            log = String(F("PME  : GPIO ")) + String(event->Par1) + String(F(" Pulse set for ")) + String(event->Par3) + String(F(" S"));
+            addLog(LOG_LEVEL_INFO, log);
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+        }
+
+        if (command == F("status")) {
+          if (parseString(string, 2) == F("ext"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_011,event->Par2);
+
+            if (!existPortStatus(key))
+              SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+            else
+            {
+              byte port = event->Par2;
+              byte type = 0;
+              if (port > 13)
+              {
+                type = 1;
+                port -= 20;
+              }
+              int state = Plugin_011_Read(type, port);
+              if (state != -1)
+                SendStatusOnlyIfNeeded(event->Source, NO_SEARCH_PIN_STATE, key, dummyString, state);
+
+            }
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_TIMER_IN:
+      {
+        Plugin_011_Write(event->Par1, event->Par2);
+        portStatusStruct tempStatus;
+
+        const uint32_t key = createKey(PLUGIN_ID_011,event->Par1);
+        tempStatus = globalMapPortStatus[key];
+
+        tempStatus.state = event->Par2;
+        tempStatus.mode = PIN_MODE_OUTPUT;
+        savePortStatus(key,tempStatus);
+
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+
+
+int Plugin_011_Read(byte Par1, byte Par2)
+{
+  int value = -1;
+  uint8_t address = PLUGIN_011_I2C_ADDRESS;
+  Wire.beginTransmission(address);
+  if (Par1 == 0)
+    Wire.write(2);
+  else
+    Wire.write(4);
+  Wire.write(Par2);
+  Wire.write(0);
+  Wire.write(0);
+  Wire.endTransmission();
+  delay(1);
+  Wire.requestFrom(address, (uint8_t)0x4);
+  byte buffer[4];
+  if (Wire.available() == 4)
+  {
+    for (byte x = 0; x < 4; x++)
+      buffer[x] = Wire.read();
+    value = buffer[0] + 256 * buffer[1];
+  }
+  return value;
+}
+
+
+
+
+
+void Plugin_011_Write(byte Par1, byte Par2)
+{
+  uint8_t address = 0x7f;
+  Wire.beginTransmission(address);
+  Wire.write(1);
+  Wire.write(Par1);
+  Wire.write(Par2 & 0xff);
+  Wire.write((Par2 >> 8));
+  Wire.endTransmission();
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P012_LCD.ino"
+#ifdef USES_P012
+# 12 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P012_LCD.ino"
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C *lcd=NULL;
+int Plugin_012_cols = 16;
+int Plugin_012_rows = 2;
+int Plugin_012_mode = 1;
+
+#define PLUGIN_012 
+#define PLUGIN_ID_012 12
+#define PLUGIN_NAME_012 "Display - LCD2004"
+#define PLUGIN_VALUENAME1_012 "LCD"
+
+#define P12_Nlines 4
+#define P12_Nchars 80
+
+boolean Plugin_012(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+  static byte displayTimer = 0;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_012;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_012);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_012));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choice = PCONFIG(0);
+
+        int optionValues[16];
+        for (byte x = 0; x < 16; x++)
+        {
+          if (x < 8)
+            optionValues[x] = 0x20 + x;
+          else
+            optionValues[x] = 0x30 + x;
+
+
+        }
+        addFormSelectorI2C(F("p012_adr"), 16, optionValues, choice);
+
+
+        byte choice2 = PCONFIG(1);
+        String options2[2];
+        options2[0] = F("2 x 16");
+        options2[1] = F("4 x 20");
+        int optionValues2[2] = { 1, 2 };
+        addFormSelector(F("Display Size"), F("p012_size"), 2, options2, optionValues2, choice2);
+
+
+        char deviceTemplate[P12_Nlines][P12_Nchars];
+        LoadCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+        for (byte varNr = 0; varNr < P12_Nlines; varNr++)
+        {
+          addFormTextBox(String(F("Line ")) + (varNr + 1), String(F("p012_template")) + (varNr + 1), deviceTemplate[varNr], P12_Nchars);
+        }
+
+        addRowLabel(F("Display button"));
+        addPinSelect(false, F("taskdevicepin3"), CONFIG_PIN3);
+
+        addFormNumericBox(F("Display Timeout"), F("p012_timer"), PCONFIG(2));
+
+        String options3[3];
+        options3[0] = F("Continue to next line (as in v1.4)");
+        options3[1] = F("Truncate exceeding message");
+        options3[2] = F("Clear then truncate exceeding message");
+        int optionValues3[3] = { 0,1,2 };
+        addFormSelector(F("LCD command Mode"), F("p012_mode"), 3, options3, optionValues3, PCONFIG(3));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p012_adr"));
+        PCONFIG(1) = getFormItemInt(F("p012_size"));
+        PCONFIG(2) = getFormItemInt(F("p012_timer"));
+        PCONFIG(3) = getFormItemInt(F("p012_mode"));
+
+        char deviceTemplate[P12_Nlines][P12_Nchars];
+        String error;
+        for (byte varNr = 0; varNr < P12_Nlines; varNr++)
+        {
+          String argName = F("p012_template");
+          argName += varNr + 1;
+          if (!safe_strncpy(deviceTemplate[varNr], WebServer.arg(argName), P12_Nchars)) {
+            error += getCustomTaskSettingsError(varNr);
+          }
+        }
+        if (error.length() > 0) {
+          addHtmlError(error);
+        }
+        SaveCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        if (PCONFIG(1) == 2) {
+          Plugin_012_rows = 4;
+          Plugin_012_cols = 20;
+        } else if (PCONFIG(1) == 1) {
+          Plugin_012_rows = 2;
+          Plugin_012_cols = 16;
+        }
+
+        Plugin_012_mode = PCONFIG(3);
+
+
+
+        if (!lcd)
+          lcd = new LiquidCrystal_I2C(PCONFIG(0), 20, 4);
+
+
+        lcd->init();
+        lcd->backlight();
+        lcd->print(F("ESP Easy"));
+        displayTimer = PCONFIG(2);
+        if (CONFIG_PIN3 != -1)
+          pinMode(CONFIG_PIN3, INPUT_PULLUP);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (CONFIG_PIN3 != -1)
+        {
+          if (!digitalRead(CONFIG_PIN3))
+          {
+            if (lcd) {
+              lcd->backlight();
+            }
+            displayTimer = PCONFIG(2);
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+        if ( displayTimer > 0)
+        {
+          displayTimer--;
+          if (lcd && displayTimer == 0)
+            lcd->noBacklight();
+        }
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        char deviceTemplate[P12_Nlines][P12_Nchars];
+        LoadCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+
+        for (byte x = 0; x < Plugin_012_rows; x++)
+        {
+          String tmpString = deviceTemplate[x];
+          if (lcd && tmpString.length())
+          {
+            String newString = P012_parseTemplate(tmpString, Plugin_012_cols);
+            lcd->setCursor(0, x);
+            lcd->print(newString);
+          }
+        }
+        success = false;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String tmpString = string;
+        int argIndex = tmpString.indexOf(',');
+        if (argIndex)
+          tmpString = tmpString.substring(0, argIndex);
+
+        if (lcd && tmpString.equalsIgnoreCase(F("LCDCMD")))
+        {
+          success = true;
+          argIndex = string.lastIndexOf(',');
+          tmpString = string.substring(argIndex + 1);
+          if (tmpString.equalsIgnoreCase(F("Off"))){
+              lcd->noBacklight();
+          }
+          else if (tmpString.equalsIgnoreCase(F("On"))){
+              lcd->backlight();
+          }
+          else if (tmpString.equalsIgnoreCase(F("Clear"))){
+              lcd->clear();
+          }
+        }
+        else if (lcd && tmpString.equalsIgnoreCase(F("LCD")))
+        {
+          success = true;
+          tmpString = P012_parseTemplate(string, Plugin_012_cols);
+          argIndex = tmpString.lastIndexOf(',');
+          tmpString = tmpString.substring(argIndex + 1);
+
+          int colPos = event->Par2 - 1;
+          int rowPos = event->Par1 - 1;
+
+
+          if (Plugin_012_mode == 2){
+              lcd->setCursor(colPos, rowPos);
+              for (byte i = colPos; i < Plugin_012_cols; i++) {
+                  lcd->print(" ");
+              }
+          }
+
+
+          lcd->setCursor(colPos, rowPos);
+          if(Plugin_012_mode == 1 || Plugin_012_mode == 2){
+              lcd->setCursor(colPos, rowPos);
+              for (byte i = 0; i < Plugin_012_cols - colPos; i++) {
+                  if(tmpString[i]){
+                     lcd->print(tmpString[i]);
+                  }
+              }
+          }
+
+
+          else{
+
+              boolean stillProcessing = 1;
+              byte charCount = 1;
+              while(stillProcessing) {
+                   if (++colPos > Plugin_012_cols) {
+                        rowPos += 1;
+                        lcd->setCursor(0,rowPos);
+                        colPos = 1;
+                   }
+
+
+                   if(rowPos < Plugin_012_rows ){
+                       lcd->print(tmpString[charCount - 1]);
+                   }
+
+                   if (!tmpString[charCount]) {
+                        stillProcessing = 0;
+                   }
+                   charCount += 1;
+              }
+
+
+          }
+
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+
+String P012_parseTemplate(String &tmpString, byte lineSize) {
+  String result = parseTemplate(tmpString, lineSize);
+  const char degree[3] = {0xc2, 0xb0, 0};
+  const char degree_lcd[2] = {0xdf, 0};
+  result.replace(degree, degree_lcd);
+
+  char unicodePrefix = 0xc3;
+  if (result.indexOf(unicodePrefix) != -1) {
+
+
+    const char umlautAE_uni[3] = {0xc3, 0x84, 0};
+    const char umlautAE_lcd[2] = {0xe1, 0};
+    result.replace(umlautAE_uni, umlautAE_lcd);
+
+    const char umlaut_ae_uni[3] = {0xc3, 0xa4, 0};
+    result.replace(umlaut_ae_uni, umlautAE_lcd);
+
+    const char umlautOE_uni[3] = {0xc3, 0x96, 0};
+    const char umlautOE_lcd[2] = {0xef, 0};
+    result.replace(umlautOE_uni, umlautOE_lcd);
+
+    const char umlaut_oe_uni[3] = {0xc3, 0xb6, 0};
+    result.replace(umlaut_oe_uni, umlautOE_lcd);
+
+    const char umlautUE_uni[3] = {0xc3, 0x9c, 0};
+    const char umlautUE_lcd[2] = {0xf5, 0};
+    result.replace(umlautUE_uni, umlautUE_lcd);
+
+    const char umlaut_ue_uni[3] = {0xc3, 0xbc, 0};
+    result.replace(umlaut_ue_uni, umlautUE_lcd);
+
+    const char umlaut_sz_uni[3] = {0xc3, 0x9f, 0};
+    const char umlaut_sz_lcd[2] = {0xe2, 0};
+    result.replace(umlaut_sz_uni, umlaut_sz_lcd);
+  }
+  return result;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P013_HCSR04.ino"
+#ifdef USES_P013
+
+
+
+
+#define PLUGIN_013 
+#define PLUGIN_ID_013 13
+#define PLUGIN_NAME_013 "Position - HC-SR04, RCW-0001, etc."
+#define PLUGIN_VALUENAME1_013 "Distance"
+
+#include <Arduino.h>
+#include <map>
+#include <NewPingESP8266.h>
+
+
+
+#define OPMODE_VALUE (0)
+#define OPMODE_STATE (1)
+
+
+#define UNIT_CM (0)
+#define UNIT_INCH (1)
+
+
+#define FILTER_NONE (0)
+#define FILTER_MEDIAN (1)
+
+
+std::map<unsigned int, std::shared_ptr<NewPingESP8266> > P_013_sensordefs;
+
+boolean Plugin_013(byte function, struct EventStruct *event, String& string)
+{
+  static byte switchstate[TASKS_MAX];
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_013;
+        Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_013);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_013));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output(F("Trigger"));
+        event->String2 = formatGpioName_input(F("Echo, 5V"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        int16_t operatingMode = PCONFIG(0);
+        int16_t threshold = PCONFIG(1);
+        int16_t max_distance = PCONFIG(2);
+        int16_t measuringUnit = PCONFIG(3);
+        int16_t filterType = PCONFIG(4);
+        int16_t filterSize = PCONFIG(5);
+
+
+        if (filterSize == 0) {
+          filterSize = 5;
+          PCONFIG(5) = filterSize;
+        }
+
+
+        String strUnit = (measuringUnit == UNIT_CM) ? F("cm") : F("inch");
+
+        String optionsOpMode[2];
+        int optionValuesOpMode[2] = { 0, 1 };
+        optionsOpMode[0] = F("Value");
+        optionsOpMode[1] = F("State");
+        addFormSelector(F("Mode"), F("p013_mode"), 2, optionsOpMode, optionValuesOpMode, operatingMode);
+
+        if (operatingMode == OPMODE_STATE)
+        {
+         addFormNumericBox(F("Threshold"), F("p013_threshold"), threshold);
+          addUnit(strUnit);
+        }
+        addFormNumericBox(F("Max Distance"), F("p013_max_distance"), max_distance, 0, 500);
+        addUnit(strUnit);
+
+        String optionsUnit[2];
+        int optionValuesUnit[2] = { 0, 1 };
+        optionsUnit[0] = F("Metric");
+        optionsUnit[1] = F("Imperial");
+        addFormSelector(F("Unit"), F("p013_Unit"), 2, optionsUnit, optionValuesUnit, measuringUnit);
+
+        String optionsFilter[2];
+        int optionValuesFilter[2] = { 0, 1 };
+        optionsFilter[0] = F("None");
+        optionsFilter[1] = F("Median");
+        addFormSelector(F("Filter"), F("p013_FilterType"), 2, optionsFilter, optionValuesFilter, filterType);
+
+
+        if (filterType != FILTER_NONE)
+         addFormNumericBox(F("Filter size"), F("p013_FilterSize"), filterSize, 2, 20);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        int16_t operatingMode = PCONFIG(0);
+        int16_t filterType = PCONFIG(4);
+
+        PCONFIG(0) = getFormItemInt(F("p013_mode"));
+        if (operatingMode == OPMODE_STATE)
+          PCONFIG(1) = getFormItemInt(F("p013_threshold"));
+        PCONFIG(2) = getFormItemInt(F("p013_max_distance"));
+
+        PCONFIG(3) = getFormItemInt(F("p013_Unit"));
+        PCONFIG(4) = getFormItemInt(F("p013_FilterType"));
+        if (filterType != FILTER_NONE)
+          PCONFIG(5) = getFormItemInt(F("p013_FilterSize"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        int16_t max_distance = PCONFIG(2);
+        int16_t measuringUnit = PCONFIG(3);
+        int16_t filterType = PCONFIG(4);
+        int16_t filterSize = PCONFIG(5);
+
+        int8_t Plugin_013_TRIG_Pin = CONFIG_PIN1;
+        int8_t Plugin_013_IRQ_Pin = CONFIG_PIN2;
+        int16_t max_distance_cm = (measuringUnit == UNIT_CM) ? max_distance : (float)max_distance * 2.54f;
+
+
+        P_013_sensordefs.erase(event->TaskIndex);
+        P_013_sensordefs[event->TaskIndex] =
+          std::shared_ptr<NewPingESP8266> (new NewPingESP8266(Plugin_013_TRIG_Pin, Plugin_013_IRQ_Pin, max_distance_cm));
+
+        String log = F("ULTRASONIC : TaskNr: ");
+        log += event->TaskIndex +1;
+        log += F(" TrigPin: ");
+        log += Plugin_013_TRIG_Pin;
+        log += F(" IRQ_Pin: ");
+        log += Plugin_013_IRQ_Pin;
+        log += F(" max dist ");
+        log += (measuringUnit == UNIT_CM) ? F("[cm]: ") : F("[inch]: ");
+        log += max_distance;
+        log += F(" max echo: ");
+        log += P_013_sensordefs[event->TaskIndex]->getMaxEchoTime();
+        log += F(" Filter: ");
+        if (filterType == FILTER_NONE)
+          log += F("none");
+        else
+          if (filterType == FILTER_MEDIAN) {
+            log += F("Median size: ");
+            log += filterSize;
+          }
+          else
+            log += F("invalid!");
+        log += F(" nr_tasks: ");
+        log += P_013_sensordefs.size();
+        addLog(LOG_LEVEL_INFO, log);
+
+        unsigned long tmpmillis = millis();
+        unsigned long tmpmicros = micros();
+        delay(100);
+        long millispassed = timePassedSince(tmpmillis);
+        long microspassed = usecPassedSince(tmpmicros);
+
+        log = F("ULTRASONIC : micros() test: ");
+        log += millispassed;
+        log += F(" msec, ");
+        log += microspassed;
+        log += F(" usec, ");
+        addLog(LOG_LEVEL_INFO, log);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+        P_013_sensordefs.erase(event->TaskIndex);
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        int16_t operatingMode = PCONFIG(0);
+        int16_t measuringUnit = PCONFIG(3);
+
+        if (operatingMode == OPMODE_VALUE)
+        {
+          float value = Plugin_013_read(event->TaskIndex);
+          String log = F("ULTRASONIC : TaskNr: ");
+          log += event->TaskIndex +1;
+          log += F(" Distance: ");
+          UserVar[event->BaseVarIndex] = value;
+          log += UserVar[event->BaseVarIndex];
+          log += (measuringUnit == UNIT_CM) ? F(" cm ") : F(" inch ");
+          if (value == NO_ECHO)
+          {
+             log += F(" Error: ");
+             log += Plugin_013_getErrorStatusString(event->TaskIndex);
+          }
+
+          addLog(LOG_LEVEL_INFO,log);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        int16_t operatingMode = PCONFIG(0);
+        int16_t threshold = PCONFIG(1);
+
+        if (operatingMode == OPMODE_STATE)
+        {
+          byte state = 0;
+          float value = Plugin_013_read(event->TaskIndex);
+          if (value != NO_ECHO)
+          {
+            if (value < threshold)
+              state = 1;
+            if (state != switchstate[event->TaskIndex])
+            {
+              String log = F("ULTRASONIC : TaskNr: ");
+              log += event->TaskIndex +1;
+              log += F(" state: ");
+              log += state;
+              addLog(LOG_LEVEL_INFO,log);
+              switchstate[event->TaskIndex] = state;
+              UserVar[event->BaseVarIndex] = state;
+              event->sensorType = SENSOR_TYPE_SWITCH;
+              sendData(event);
+            }
+          }
+          else {
+            String log = F("ULTRASONIC : TaskNr: ");
+            log += event->TaskIndex +1;
+            log += F(" Error: ");
+            log += Plugin_013_getErrorStatusString(event->TaskIndex);
+            addLog(LOG_LEVEL_INFO,log);
+          }
+
+        }
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+
+
+float Plugin_013_read(unsigned int taskIndex)
+
+{
+  if (P_013_sensordefs.count(taskIndex) == 0)
+    return 0;
+
+  int16_t max_distance = Settings.TaskDevicePluginConfig[taskIndex][2];
+  int16_t measuringUnit = Settings.TaskDevicePluginConfig[taskIndex][3];
+  int16_t filterType = Settings.TaskDevicePluginConfig[taskIndex][4];
+  int16_t filterSize = Settings.TaskDevicePluginConfig[taskIndex][5];
+  int16_t max_distance_cm = (measuringUnit == UNIT_CM) ? max_distance : (float)max_distance * 2.54f;
+
+  unsigned int echoTime = 0;
+
+  switch (filterType) {
+    case FILTER_NONE:
+      echoTime = (P_013_sensordefs[taskIndex])->ping();
+      break;
+    case FILTER_MEDIAN:
+      echoTime = (P_013_sensordefs[taskIndex])->ping_median(filterSize, max_distance_cm);
+      break;
+    default:
+      addLog(LOG_LEVEL_INFO, F("invalid Filter Type setting!"));
+  }
+
+  if (measuringUnit == UNIT_CM)
+    return NewPingESP8266::convert_cm_F(echoTime);
+  else
+    return NewPingESP8266::convert_in_F(echoTime);
+}
+
+
+String Plugin_013_getErrorStatusString(unsigned int taskIndex)
+
+{
+  if (P_013_sensordefs.count(taskIndex) == 0)
+    return String(F("invalid taskindex"));
+
+  switch ((P_013_sensordefs[taskIndex])->getErrorState()) {
+    case NewPingESP8266::STATUS_SENSOR_READY: {
+      return String(F("Sensor ready"));
+      break;
+    }
+
+    case NewPingESP8266::STATUS_MEASUREMENT_VALID: {
+      return String(F("no error, measurement valid"));
+      break;
+    }
+
+    case NewPingESP8266::STATUS_ECHO_TRIGGERED: {
+      return String(F("Echo triggered, waiting for Echo end"));
+      break;
+    }
+
+    case NewPingESP8266::STATUS_ECHO_STATE_ERROR: {
+      return String(F("Echo pulse error, Echopin not low on trigger"));
+      break;
+    }
+
+    case NewPingESP8266::STATUS_ECHO_START_TIMEOUT_50ms: {
+      return String(F("Echo timeout error, no echo start whithin 50 ms"));
+      break;
+    }
+
+    case NewPingESP8266::STATUS_ECHO_START_TIMEOUT_DISTANCE: {
+      return String(F("Echo timeout error, no echo start whithin time for max. distance"));
+      break;
+    }
+
+    case NewPingESP8266::STATUS_MAX_DISTANCE_EXCEEDED: {
+      return String(F("Echo too late, maximum distance exceeded"));
+      break;
+    }
+
+    default: {
+      return String(F("unknown error"));
+      break;
+    }
+
+  }
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+#ifdef USES_P014
+
+
+
+
+
+#define PLUGIN_014 
+#define PLUGIN_ID_014 14
+#define PLUGIN_NAME_014 "Environment - SI7021/HTU21D"
+#define PLUGIN_VALUENAME1_014 "Temperature"
+#define PLUGIN_VALUENAME2_014 "Humidity"
+
+boolean Plugin_014_init = false;
+
+
+
+
+#define SI7021_I2C_ADDRESS 0x40
+#define SI7021_MEASURE_TEMP_HUM 0xE0
+#define SI7021_MEASURE_TEMP_HM 0xE3
+#define SI7021_MEASURE_HUM_HM 0xE5
+#define SI7021_MEASURE_TEMP 0xF3
+#define SI7021_MEASURE_HUM 0xF5
+#define SI7021_WRITE_REG 0xE6
+#define SI7021_READ_REG 0xE7
+#define SI7021_SOFT_RESET 0xFE
+
+
+
+#define SI7021_RESOLUTION_14T_12RH 0x00
+#define SI7021_RESOLUTION_13T_10RH 0x80
+#define SI7021_RESOLUTION_12T_08RH 0x01
+#define SI7021_RESOLUTION_11T_11RH 0x81
+#define SI7021_RESOLUTION_MASK 0B01111110
+
+uint16_t si7021_humidity;
+int16_t si7021_temperature;
+
+boolean Plugin_014(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_014;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_HUM;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_014);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_014));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_014));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        #define SI7021_RESOLUTION_OPTION 4
+
+        byte choice = PCONFIG(0);
+        String options[SI7021_RESOLUTION_OPTION];
+        int optionValues[SI7021_RESOLUTION_OPTION];
+        optionValues[0] = SI7021_RESOLUTION_14T_12RH;
+        options[0] = F("Temp 14 bits / RH 12 bits");
+        optionValues[1] = SI7021_RESOLUTION_13T_10RH;
+        options[1] = F("Temp 13 bits / RH 10 bits");
+        optionValues[2] = SI7021_RESOLUTION_12T_08RH;
+        options[2] = F("Temp 12 bits / RH  8 bits");
+        optionValues[3] = SI7021_RESOLUTION_11T_11RH;
+        options[3] = F("Temp 11 bits / RH 11 bits");
+        addFormSelector(F("Resolution"), F("p014_res"), SI7021_RESOLUTION_OPTION, options, optionValues, choice);
+
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p014_res"));
+        Plugin_014_init = false;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+        uint8_t res = PCONFIG(0);
+
+        if (!Plugin_014_init) {
+          Plugin_014_init = Plugin_014_si7021_begin(res);
+        }
+
+
+        if (Plugin_014_init && Plugin_014_si7021_readValues(res) == 0) {
+          UserVar[event->BaseVarIndex] = si7021_temperature/100.0;
+          UserVar[event->BaseVarIndex + 1] = si7021_humidity / 10.0;
+          success = true;
+# 126 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+        } else {
+          addLog(LOG_LEVEL_INFO,F("SI7021 : Read Error!"));
+        }
+
+        break;
+      }
+
+  }
+  return success;
+}
+# 144 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+boolean Plugin_014_si7021_begin(uint8_t resolution)
+{
+  uint8_t ret;
+
+
+  ret = Plugin_014_si7021_setResolution(resolution);
+  if ( ret == 0 ) {
+    ret = true;
+  } else {
+    String log = F("SI7021 : Res=0x");
+    log += String(resolution,HEX);
+    log += F(" => Error 0x");
+    log += String(ret,HEX);
+    addLog(LOG_LEVEL_INFO,log);
+    ret = false;
+  }
+
+  return ret;
+}
+# 171 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+uint8_t Plugin_014_si7021_checkCRC(uint16_t data, uint8_t check)
+{
+  uint32_t remainder, divisor;
+
+
+  remainder = (uint32_t)data << 8;
+
+
+
+
+  divisor = (uint32_t) 0x988000;
+
+
+  remainder |= check;
+
+
+
+  for (uint8_t i = 0 ; i < 16 ; i++) {
+
+    if( remainder & (uint32_t)1<<(23 - i) )
+      remainder ^= divisor;
+
+
+    divisor >>= 1;
+  }
+  return ((uint8_t) remainder);
+}
+# 206 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+int8_t Plugin_014_si7021_readRegister(uint8_t * value)
+{
+
+
+  Wire.beginTransmission(SI7021_I2C_ADDRESS);
+  Wire.write(SI7021_READ_REG);
+  Wire.endTransmission();
+
+
+  Wire.requestFrom(SI7021_I2C_ADDRESS, 1);
+  if (Wire.available()>=1) {
+      *value = Wire.read();
+      return 0;
+  }
+
+  return 1;
+}
+# 232 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+int8_t Plugin_014_si7021_startConv(uint8_t datatype, uint8_t resolution)
+{
+  long data;
+  uint16_t raw ;
+  uint8_t checksum,tmp;
+
+
+  Wire.beginTransmission(SI7021_I2C_ADDRESS);
+  Wire.write(datatype);
+  Wire.endTransmission();
+# 258 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+  if (resolution == SI7021_RESOLUTION_11T_11RH)
+    tmp = 7;
+  else if (resolution == SI7021_RESOLUTION_12T_08RH)
+    tmp = 13;
+  else if (resolution == SI7021_RESOLUTION_13T_10RH)
+    tmp = 25;
+  else
+    tmp = 50;
+
+
+
+  if (datatype == SI7021_MEASURE_HUM)
+    tmp *=2;
+
+  delay(tmp);
+# 289 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+  if ( Wire.requestFrom(SI7021_I2C_ADDRESS, 3) < 3 ) {
+    return -1;
+  }
+
+
+  raw = ((uint16_t) Wire.read()) << 8;
+  raw |= Wire.read();
+  checksum = Wire.read();
+
+
+  if(Plugin_014_si7021_checkCRC(raw, checksum) != 0) {
+    addLog(LOG_LEVEL_INFO,F("SI7021 : checksum error!"));
+    return -1;
+  }
+
+
+  if (datatype == SI7021_MEASURE_HUM || datatype == SI7021_MEASURE_HUM_HM) {
+
+
+    data = ((1250 * (long)raw) >> 16) - 60;
+
+
+    if (data>1000) data = 1000;
+    if (data<0) data = 0;
+
+
+    if (resolution == SI7021_RESOLUTION_12T_08RH) {
+      data = (data + 5) / 10;
+      data *= 10;
+    }
+
+    si7021_humidity = (uint16_t) data;
+
+
+  } else if (datatype == SI7021_MEASURE_TEMP ||datatype == SI7021_MEASURE_TEMP_HM || datatype == SI7021_MEASURE_TEMP_HUM) {
+
+
+    data = ((17572 * (long)raw) >> 16) - 4685;
+# 341 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+    si7021_temperature = (int16_t) data;
+  }
+
+  return 0;
+}
+# 355 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+int8_t Plugin_014_si7021_readValues(uint8_t resolution)
+{
+  int8_t error = 0;
+
+
+  error |= Plugin_014_si7021_startConv(SI7021_MEASURE_HUM, resolution);
+
+
+  error |= Plugin_014_si7021_startConv(SI7021_MEASURE_TEMP, resolution);
+
+  return error;
+}
+# 375 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P014_SI7021.ino"
+int8_t Plugin_014_si7021_setResolution(uint8_t res)
+{
+  uint8_t reg;
+  uint8_t error;
+
+
+  error = Plugin_014_si7021_readRegister(&reg);
+  if ( error == 0) {
+
+    reg &= SI7021_RESOLUTION_MASK ;
+
+
+    Wire.beginTransmission(SI7021_I2C_ADDRESS);
+    Wire.write(SI7021_WRITE_REG);
+
+
+    Wire.write(reg | ( res &= ~SI7021_RESOLUTION_MASK) );
+    return (int8_t) Wire.endTransmission();
+  }
+
+  return error;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P015_TSL2561.ino"
+#ifdef USES_P015
+# 12 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P015_TSL2561.ino"
+#define PLUGIN_015 
+#define PLUGIN_ID_015 15
+#define PLUGIN_NAME_015 "Light/Lux - TSL2561"
+#define PLUGIN_VALUENAME1_015 "Lux"
+#define PLUGIN_VALUENAME2_015 "Infrared"
+#define PLUGIN_VALUENAME3_015 "Broadband"
+#define PLUGIN_VALUENAME4_015 "Ratio"
+
+bool Plugin_015_init = false;
+
+
+#define TSL2561_ADDR_0 0x29
+#define TSL2561_ADDR 0x39
+#define TSL2561_ADDR_1 0x49
+
+#define TSL2561_CMD 0x80
+#define TSL2561_REG_CONTROL 0x00
+#define TSL2561_REG_TIMING 0x01
+#define TSL2561_REG_DATA_0 0x0C
+#define TSL2561_REG_DATA_1 0x0E
+
+#define P015_NO_GAIN 0
+#define P015_16X_GAIN 1
+#define P015_AUTO_GAIN 2
+#define P015_EXT_AUTO_GAIN 3
+
+
+byte plugin_015_i2caddr;
+byte _error;
+
+bool plugin_015_begin()
+{
+
+  return true;
+}
+
+bool plugin_015_readByte(unsigned char address, unsigned char& value)
+
+
+
+
+
+{
+
+  Wire.beginTransmission(plugin_015_i2caddr);
+  Wire.write((address & 0x0F) | TSL2561_CMD);
+  _error = Wire.endTransmission();
+
+
+  if (_error == 0)
+  {
+    Wire.requestFrom(plugin_015_i2caddr, (byte)1);
+
+    if (Wire.available() == 1)
+    {
+      value = Wire.read();
+      return true;
+    }
+  }
+  return false;
+}
+
+bool plugin_015_writeByte(unsigned char address, unsigned char value)
+
+
+
+
+
+
+{
+
+  Wire.beginTransmission(plugin_015_i2caddr);
+  Wire.write((address & 0x0F) | TSL2561_CMD);
+
+
+  Wire.write(value);
+  _error = Wire.endTransmission();
+
+  if (_error == 0) {
+    return true;
+  }
+
+  return false;
+}
+
+bool plugin_015_readUInt(unsigned char address, unsigned int& value)
+
+
+
+
+
+
+{
+
+  Wire.beginTransmission(plugin_015_i2caddr);
+  Wire.write((address & 0x0F) | TSL2561_CMD);
+  _error = Wire.endTransmission();
+
+
+  if (_error == 0)
+  {
+    Wire.requestFrom(plugin_015_i2caddr, (byte)2);
+
+    if (Wire.available() == 2)
+    {
+      char high, low;
+      low = Wire.read();
+      high = Wire.read();
+
+
+      value = word(high, low);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool plugin_015_writeUInt(unsigned char address, unsigned int value)
+
+
+
+
+
+
+{
+
+  if (plugin_015_writeByte(address, lowByte(value))
+      && plugin_015_writeByte(address + 1, highByte(value))) {
+    return true;
+  }
+
+  return false;
+}
+
+bool plugin_015_setTiming(bool gain, unsigned char time)
+# 156 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P015_TSL2561.ino"
+{
+  unsigned char timing;
+
+
+  if (plugin_015_readByte(TSL2561_REG_TIMING, timing))
+  {
+
+    if (gain) {
+      timing |= 0x10;
+    }
+    else {
+      timing &= ~0x10;
+    }
+
+
+    timing &= ~0x03;
+    timing |= (time & 0x03);
+
+
+    if (plugin_015_writeByte(TSL2561_REG_TIMING, timing)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool plugin_015_setTiming(bool gain, unsigned char time, float& ms)
+# 193 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P015_TSL2561.ino"
+{
+
+  switch (time)
+  {
+    case 0: ms = 13.7; break;
+    case 1: ms = 101; break;
+    case 2: ms = 402; break;
+    default: ms = 402;
+  }
+
+
+  return plugin_015_setTiming(gain, time);
+}
+
+
+
+bool plugin_015_ADC_saturated(unsigned char time, unsigned int value) {
+  unsigned int max_ADC_count = 65535;
+
+  switch (time)
+  {
+    case 0: max_ADC_count = 5047; break;
+    case 1: max_ADC_count = 37177; break;
+    case 2:
+    default: break;
+  }
+  return value >= max_ADC_count;
+}
+
+bool plugin_015_setPowerUp(void)
+
+
+
+
+{
+
+  return plugin_015_writeByte(TSL2561_REG_CONTROL, 0x03);
+}
+
+bool plugin_015_setPowerDown(void)
+
+
+
+
+{
+
+  return plugin_015_writeByte(TSL2561_REG_CONTROL, 0x00);
+}
+
+bool plugin_015_getData(unsigned int& data0, unsigned int& data1)
+
+
+
+
+
+{
+
+  if (plugin_015_readUInt(TSL2561_REG_DATA_0, data0) && plugin_015_readUInt(TSL2561_REG_DATA_1, data1)) {
+    return true;
+  }
+
+  return false;
+}
+
+void plugin_015_getLux(unsigned char gain,
+                       float ms,
+                       unsigned int CH0,
+                       unsigned int CH1,
+                       double & lux,
+                       double & infrared,
+                       double & broadband)
+# 272 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P015_TSL2561.ino"
+{
+  double ratio, d0, d1;
+
+
+  d0 = CH0; d1 = CH1;
+
+
+  ratio = d1 / d0;
+
+
+  infrared = d1;
+  broadband = d0;
+
+
+  d0 *= (402.0 / ms);
+  d1 *= (402.0 / ms);
+
+
+  if (!gain)
+  {
+    d0 *= 16;
+    d1 *= 16;
+  }
+
+
+  if (ratio < 0.5)
+  {
+    lux = 0.0304 * d0 - 0.062 * d0 * pow(ratio, 1.4);
+  } else if (ratio < 0.61)
+  {
+    lux = 0.0224 * d0 - 0.031 * d1;
+  } else if (ratio < 0.80)
+  {
+    lux = 0.0128 * d0 - 0.0153 * d1;
+  } else if (ratio < 1.30)
+  {
+    lux = 0.00146 * d0 - 0.00112 * d1;
+  } else {
+
+    lux = 0.0;
+  }
+}
+
+boolean Plugin_015(byte function, struct EventStruct *event, String& string)
+{
+  bool success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+    {
+      Device[++deviceCount].Number = PLUGIN_ID_015;
+      Device[deviceCount].Type = DEVICE_TYPE_I2C;
+      Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
+      Device[deviceCount].Ports = 0;
+      Device[deviceCount].PullUpOption = false;
+      Device[deviceCount].InverseLogicOption = false;
+      Device[deviceCount].FormulaOption = true;
+      Device[deviceCount].ValueCount = 3;
+      Device[deviceCount].SendDataOption = true;
+      Device[deviceCount].TimerOption = true;
+      Device[deviceCount].GlobalSyncOption = true;
+      break;
+    }
+
+    case PLUGIN_GET_DEVICENAME:
+    {
+      string = F(PLUGIN_NAME_015);
+      break;
+    }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+    {
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_015));
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_015));
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_015));
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3], PSTR(PLUGIN_VALUENAME4_015));
+      break;
+    }
+
+    case PLUGIN_WEBFORM_LOAD:
+    {
+      {
+
+
+
+
+
+
+        int optionValues[3];
+        optionValues[0] = TSL2561_ADDR;
+        optionValues[1] = TSL2561_ADDR_1;
+        optionValues[2] = TSL2561_ADDR_0;
+        addFormSelectorI2C(F("p015_tsl2561_i2c"), 3, optionValues, PCONFIG(0));
+      }
+
+
+      {
+        #define TSL2561_INTEGRATION_OPTION 3
+        String options[TSL2561_INTEGRATION_OPTION];
+        int optionValues[TSL2561_INTEGRATION_OPTION];
+        optionValues[0] = 0x00;
+        options[0] = F("13.7 ms");
+        optionValues[1] = 0x01;
+        options[1] = F("101 ms");
+        optionValues[2] = 0x02;
+        options[2] = F("402 ms");
+        addFormSelector(F("Integration time"), F("p015_integration"), TSL2561_INTEGRATION_OPTION, options, optionValues, PCONFIG(1));
+      }
+
+      addFormCheckBox(F("Send sensor to sleep:"), F("p015_sleep"),
+                      PCONFIG(2));
+
+      {
+        #define TSL2561_GAIN_OPTION 4
+        String options[TSL2561_GAIN_OPTION];
+        int optionValues[TSL2561_GAIN_OPTION];
+        optionValues[0] = P015_NO_GAIN;
+        options[0] = F("No Gain");
+        optionValues[1] = P015_16X_GAIN;
+        options[1] = F("16x Gain");
+        optionValues[2] = P015_AUTO_GAIN;
+        options[2] = F("Auto Gain");
+        optionValues[3] = P015_EXT_AUTO_GAIN;
+        options[3] = F("Extended Auto Gain");
+        addFormSelector(F("Gain"), F("p015_gain"), TSL2561_GAIN_OPTION, options, optionValues, PCONFIG(3));
+      }
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SAVE:
+    {
+      PCONFIG(0) = getFormItemInt(F("p015_tsl2561_i2c"));
+      PCONFIG(1) = getFormItemInt(F("p015_integration"));
+      PCONFIG(2) = isFormItemChecked(F("p015_sleep"));
+      PCONFIG(3) = getFormItemInt(F("p015_gain"));
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_READ:
+    {
+      plugin_015_i2caddr = PCONFIG(0);
+
+      unsigned int gain;
+      float ms;
+
+      plugin_015_begin();
+
+
+
+      gain = PCONFIG(3);
+      const bool autoGain = gain == P015_AUTO_GAIN || gain == P015_EXT_AUTO_GAIN;
+      static bool gain16xActive = gain == 1;
+
+      if (!autoGain) {
+        gain16xActive = gain == 1;
+      }
+
+      int attempt = autoGain ? 2 : 1;
+
+      while (!success && attempt > 0) {
+        --attempt;
+
+
+
+
+        unsigned char time = PCONFIG(1);
+        plugin_015_setTiming(gain16xActive, time, ms);
+        plugin_015_setPowerUp();
+        delayBackground(ms);
+        unsigned int data0, data1;
+
+        if (plugin_015_getData(data0, data1))
+        {
+          double lux;
+          double infrared;
+          double broadband;
+
+
+
+          success = !plugin_015_ADC_saturated(time, data0) && !plugin_015_ADC_saturated(time, data1);
+          plugin_015_getLux(gain16xActive, ms, data0, data1, lux, infrared, broadband);
+
+          if (autoGain) {
+            if (gain16xActive) {
+
+
+              if (plugin_015_ADC_saturated(time, data0 * 16)) {
+                gain16xActive = false;
+              }
+            } else {
+
+              if (lux < 40) {
+                gain16xActive = true;
+              }
+            }
+          }
+
+          if (success) {
+            if (broadband > 0.0) {
+
+
+
+
+              if (!plugin_015_ADC_saturated(time, data0 * 2) && !plugin_015_ADC_saturated(time, data1 * 2)) {
+                UserVar[event->BaseVarIndex + 3] = infrared / broadband;
+              }
+            }
+          } else {
+
+
+            if ((UserVar[event->BaseVarIndex + 3] > 0.0) && (gain == P015_EXT_AUTO_GAIN)) {
+              data0 = static_cast<double>(data1) / UserVar[event->BaseVarIndex + 3];
+              plugin_015_getLux(gain16xActive, ms, data0, data1, lux, infrared, broadband);
+              success = true;
+            }
+          }
+          UserVar[event->BaseVarIndex] = lux;
+          UserVar[event->BaseVarIndex + 1] = infrared;
+          UserVar[event->BaseVarIndex + 2] = broadband;
+
+          if (!success)
+          {
+            addLog(LOG_LEVEL_INFO, F("TSL2561: Sensor saturated!"));
+            break;
+          }
+
+          if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+            String log = F("TSL2561: Address: 0x");
+            log += String(plugin_015_i2caddr, HEX);
+            log += F(": Mode: ");
+            log += String(time, HEX);
+            log += F(": Gain: ");
+            log += String(gain, HEX);
+            log += F(": Lux: ");
+            log += UserVar[event->BaseVarIndex];
+            log += F(": Infrared: ");
+            log += UserVar[event->BaseVarIndex + 1];
+            log += F(": Broadband: ");
+            log += UserVar[event->BaseVarIndex + 2];
+            log += F(": Ratio: ");
+            log += UserVar[event->BaseVarIndex + 3];
+            addLog(LOG_LEVEL_INFO, log);
+          }
+        }
+        else
+        {
+
+          addLog(LOG_LEVEL_ERROR, F("TSL2561: i2c error"));
+          success = false;
+          attempt = 0;
+        }
+      }
+
+      if (PCONFIG(2)) {
+        addLog(LOG_LEVEL_DEBUG_MORE, F("TSL2561: sleeping..."));
+        plugin_015_setPowerDown();
+      }
+
+      break;
+    }
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P016_IR.ino"
+#ifdef USES_P016
+# 20 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P016_IR.ino"
+#include <IRremoteESP8266.h>
+#include <IRutils.h>
+#include <IRrecv.h>
+
+#ifdef P016_P035_Extended_AC
+#include <IRac.h>
+#endif
+
+#define PLUGIN_016 
+#define PLUGIN_ID_016 16
+#define PLUGIN_NAME_016 "Communication - TSOP4838"
+#define PLUGIN_VALUENAME1_016 "IR"
+
+
+
+
+
+
+
+const uint16_t kCaptureBufferSize = 1024;
+# 59 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P016_IR.ino"
+const uint8_t P016_TIMEOUT = 50;
+# 89 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P016_IR.ino"
+const uint16_t kMinUnknownSize = 12;
+
+
+IRrecv *irReceiver = NULL;
+decode_results results;
+
+boolean Plugin_016(byte function, struct EventStruct *event, String &string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+  case PLUGIN_DEVICE_ADD:
+  {
+    Device[++deviceCount].Number = PLUGIN_ID_016;
+    Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+    Device[deviceCount].VType = SENSOR_TYPE_LONG;
+    Device[deviceCount].Ports = 0;
+    Device[deviceCount].PullUpOption = true;
+    Device[deviceCount].InverseLogicOption = true;
+    Device[deviceCount].FormulaOption = false;
+    Device[deviceCount].ValueCount = 1;
+    Device[deviceCount].SendDataOption = true;
+    Device[deviceCount].TimerOption = false;
+    Device[deviceCount].GlobalSyncOption = true;
+    break;
+  }
+
+  case PLUGIN_GET_DEVICENAME:
+  {
+    string = F(PLUGIN_NAME_016);
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES:
+  {
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_016));
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEGPIONAMES:
+  {
+    event->String1 = formatGpioName_input(F("IR"));
+    break;
+  }
+
+  case PLUGIN_INIT:
+  {
+    int irPin = CONFIG_PIN1;
+    if (irReceiver == 0 && irPin != -1)
+    {
+      serialPrintln(F("INIT: IR RX"));
+      irReceiver = new IRrecv(irPin, kCaptureBufferSize, P016_TIMEOUT, true);
+      irReceiver->setUnknownThreshold(kMinUnknownSize);
+      irReceiver->enableIRIn();
+    }
+    if (irReceiver != 0 && irPin == -1)
+    {
+      irReceiver->disableIRIn();
+      delete irReceiver;
+      irReceiver = 0;
+    }
+    success = true;
+    break;
+  }
+  case PLUGIN_EXIT:
+  {
+    {
+      if (irReceiver != 0)
+      {
+        irReceiver->disableIRIn();
+        delete irReceiver;
+        irReceiver = 0;
+      }
+    }
+    success = true;
+    break;
+  }
+  case PLUGIN_WEBFORM_LOAD:
+  {
+    addRowLabel(F("Info"));
+    addHtml(F("Check serial or web log for replay solutions via Communication - IR Transmit plugin"));
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_TEN_PER_SECOND:
+  {
+    if (irReceiver->decode(&results))
+    {
+      yield();
+      if (results.overflow)
+      {
+        addLog(LOG_LEVEL_INFO, F("IR: WARNING, IR code is too big for buffer. Try pressing the transmiter button only momenteraly"));
+        success = false;
+        break;
+      }
+
+
+      if (results.decode_type != decode_type_t::UNKNOWN)
+      {
+        addLog(LOG_LEVEL_INFO, String(F("IRSEND,")) + typeToString(results.decode_type, results.repeat) + ',' + resultToHexidecimal(&results) + ',' + uint64ToString(results.bits));
+      }
+
+      if (results.decode_type == decode_type_t::UNKNOWN && !displayRawToReadableB32Hex())
+      {
+        addLog(LOG_LEVEL_INFO, F("IR: No replay solutions found! Press button again or try RAW encoding (timmings are in the serial output)"));
+        serialPrint(String(F("IR: RAW TIMINGS: ")) + resultToSourceCode(&results));
+        yield();
+
+      }
+
+#ifdef P016_P035_Extended_AC
+
+
+      stdAc::state_t state;
+
+      state.protocol = decode_type_t::UNKNOWN;
+      state.model = -1;
+      state.power = false;
+      state.mode = stdAc::opmode_t::kAuto;
+      state.celsius = true;
+      state.degrees = 22;
+      state.fanspeed = stdAc::fanspeed_t::kAuto;
+      state.swingv = stdAc::swingv_t::kAuto;
+      state.swingh = stdAc::swingh_t::kAuto;
+      state.quiet = false;
+      state.turbo = false;
+      state.econo = false;
+      state.light = false;
+      state.filter = false;
+      state.clean = false;
+      state.beep = false;
+      state.sleep = -1;
+      state.clock = -1;
+
+      String description = IRAcUtils::resultAcToString(&results);
+      if (description != "")
+        addLog(LOG_LEVEL_INFO, String(F("AC State: ")) + description);
+      if (IRac::isProtocolSupported(results.decode_type))
+      {
+        IRAcUtils::decodeToState(&results, &state);
+        StaticJsonDocument<300> doc;
+
+        doc[F("protocol")] = typeToString(state.protocol);
+        if (state.model >= 0)
+          doc[F("model")] = IRac::strToModel(String(state.model).c_str());
+        doc[F("power")] = IRac::boolToString(state.power);
+        doc[F("mode")] = IRac::opmodeToString(state.mode);
+        doc[F("temp")] = state.degrees;
+        if (!state.celsius)
+          doc[F("use_celsius")] = state.celsius;
+        if (state.fanspeed != stdAc::fanspeed_t::kAuto)
+          doc[F("fanspeed")] = IRac::fanspeedToString(state.fanspeed);
+        if (state.swingv != stdAc::swingv_t::kAuto)
+          doc[F("swingv")] = IRac::swingvToString(state.swingv);
+        if (state.swingh != stdAc::swingh_t::kAuto)
+          doc[F("swingh")] = IRac::swinghToString(state.swingh);
+        if (state.quiet)
+          doc[F("quiet")] = IRac::boolToString(state.quiet);
+        if (state.turbo)
+          doc[F("turbo")] = IRac::boolToString(state.turbo);
+        if (state.econo)
+          doc[F("econo")] = IRac::boolToString(state.econo);
+        if (state.light)
+          doc[F("light")] = IRac::boolToString(state.light);
+        if (state.filter)
+          doc[F("filter")] = IRac::boolToString(state.filter);
+        if (state.clean)
+          doc[F("clean")] = IRac::boolToString(state.clean);
+        if (state.beep)
+          doc[F("beep")] = IRac::boolToString(state.beep);
+        if (state.sleep > 0)
+          doc[F("sleep")] = state.sleep;
+        if (state.clock > 0)
+          doc[F("clock")] = state.clock;
+        String output = F("IRSENDAC,");
+        serializeJson(doc, output);
+        addLog(LOG_LEVEL_INFO, output);
+      }
+#endif
+
+      unsigned long IRcode = results.value;
+      UserVar[event->BaseVarIndex] = (IRcode & 0xFFFF);
+      UserVar[event->BaseVarIndex + 1] = ((IRcode >> 16) & 0xFFFF);
+      sendData(event);
+    }
+    success = true;
+    break;
+  }
+  }
+  return success;
+}
+
+#define PCT_TOLERANCE 8u
+#define pct_tolerance(v) ((v) / (100u / PCT_TOLERANCE))
+
+
+#define get_tolerance(v) (pct_tolerance(v))
+#define MIN_VIABLE_DIV 40u
+#define to_32hex(c) ((c) < 10 ? (c) + '0' : (c) + 'A' - 10)
+# 301 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P016_IR.ino"
+boolean displayRawToReadableB32Hex()
+{
+  String line;
+  uint16_t div[2];
+
+
+  for (uint16_t i = 1; i < results.rawlen; i++)
+    line += uint64ToString(results.rawbuf[i] * RAWTICK, 10) + ",";
+  addLog(LOG_LEVEL_DEBUG, line);
+
+
+  for (uint16_t p = 0; p < 2; p++)
+  {
+    uint16_t cd = 0xFFFFU;
+
+    for (uint16_t i = 1 + p; i < results.rawlen; i += 2)
+    {
+      uint16_t val = results.rawbuf[i] * RAWTICK;
+      if (cd > val)
+        cd = val;
+    }
+
+    uint16_t bstDiv = -1, bstAvg = 0xFFFFU;
+    float bstMul = 5000;
+    cd += get_tolerance(cd) + 1;
+
+
+    while (--cd >= MIN_VIABLE_DIV)
+    {
+      uint32_t avg = 0;
+      uint16_t totTms = 0;
+
+      for (uint16_t i = 1 + p; i < results.rawlen; i += 2)
+      {
+        uint16_t val = results.rawbuf[i] * RAWTICK;
+        uint16_t rmdr = val >= cd ? val % cd : cd - val;
+        if (rmdr > get_tolerance(val))
+        {
+          avg = 0xFFFFU;
+          break;
+        }
+        avg += rmdr;
+        totTms += val / cd + (cd > val ? 1 : 0);
+      }
+      if (avg == 0xFFFFU)
+        continue;
+      avg /= results.rawlen / 2;
+      float avgTms = (float)totTms / (results.rawlen / 2);
+      if (avgTms <= bstMul && avg < bstAvg)
+      {
+        bstMul = avgTms;
+        bstAvg = avg;
+        bstDiv = cd;
+
+      }
+    }
+    if (bstDiv == 0xFFFFU)
+    {
+
+      return false;
+    }
+    div[p] = bstDiv;
+
+    line = String(p ? String(F("Blank: ")) : String(F("Pulse: "))) + String(F(" divisor=")) + uint64ToString(bstDiv, 10) + String(F("  avgErr=")) + uint64ToString(bstAvg, 10) + String(F(" avgMul=")) + uint64ToString((uint16_t)bstMul, 10) + '.' + ((char)((bstMul - (uint16_t)bstMul) * 10) + '0');
+    addLog(LOG_LEVEL_DEBUG, line);
+  }
+
+
+  uint16_t total = results.rawlen - 1, tmOut[total];
+
+
+  for (unsigned int i = 0; i < total; i++)
+  {
+    uint16_t val = results.rawbuf[i + 1] * RAWTICK;
+    unsigned int dv = div[(i)&1];
+    unsigned int tm = val / dv + (val % dv > dv / 2 ? 1 : 0);
+    tmOut[i] = tm;
+
+  }
+
+
+  char out[total];
+  unsigned int iOut = 0, s = 2, d = 0;
+  for (; s + 1 < total; d = s, s += 2)
+  {
+    unsigned int vals = 2;
+    while (s + 1 < total && tmOut[s] == tmOut[d] && tmOut[s + 1] == tmOut[d + 1])
+    {
+      vals += 2;
+      s += 2;
+    }
+    if (iOut + 5 > sizeof(out) || tmOut[d] >= 32 * 32 || tmOut[d + 1] >= 32 * 32 || vals >= 64)
+    {
+
+      return false;
+    }
+
+    if (vals > 4 || (vals == 4 && (tmOut[d] >= 32 || tmOut[d + 1] >= 32)))
+    {
+      out[iOut++] = '*';
+      out[iOut++] = to_32hex(vals / 2);
+      vals = 2;
+    }
+    while (vals--)
+      iOut = storeB32Hex(out, iOut, tmOut[d++]);
+  }
+  while (d < total)
+    iOut = storeB32Hex(out, iOut, tmOut[d++]);
+
+  out[iOut] = 0;
+  line = String(F("IRSEND,RAW2,")) + String(out) + String(F(",38,")) + uint64ToString(div[0], 10) + ',' + uint64ToString(div[1], 10);
+  addLog(LOG_LEVEL_INFO, line);
+  return true;
+}
+
+unsigned int storeB32Hex(char out[], unsigned int iOut, unsigned int val)
+{
+  if (val >= 32)
+  {
+    out[iOut++] = '^';
+    out[iOut++] = to_32hex(val / 32);
+    val %= 32;
+  }
+  out[iOut++] = to_32hex(val);
+  return iOut;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P017_PN532.ino"
+#ifdef USES_P017
+
+
+
+
+#define PLUGIN_017 
+#define PLUGIN_ID_017 17
+#define PLUGIN_NAME_017 "RFID - PN532"
+#define PLUGIN_VALUENAME1_017 "Tag"
+
+#define PN532_I2C_ADDRESS 0x24
+
+#define PN532_PREAMBLE (0x00)
+#define PN532_STARTCODE1 (0x00)
+#define PN532_STARTCODE2 (0xFF)
+#define PN532_POSTAMBLE (0x00)
+#define PN532_HOSTTOPN532 (0xD4)
+#define PN532_PN532TOHOST (0xD5)
+#define PN532_ACK_WAIT_TIME (3)
+#define PN532_INVALID_ACK (-1)
+#define PN532_TIMEOUT (-2)
+#define PN532_INVALID_FRAME (-3)
+#define PN532_NO_SPACE (-4)
+
+#define PN532_COMMAND_GETFIRMWAREVERSION (0x02)
+#define PN532_COMMAND_SAMCONFIGURATION (0x14)
+#define PN532_COMMAND_INLISTPASSIVETARGET (0x4A)
+#define PN532_RESPONSE_INLISTPASSIVETARGET (0x4B)
+#define PN532_MIFARE_ISO14443A (0x00)
+#define PN532_COMMAND_POWERDOWN (0x16)
+
+uint8_t Plugin_017_pn532_packetbuffer[64];
+uint8_t Plugin_017_command;
+
+boolean Plugin_017(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_017;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_LONG;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_017);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_017));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+       addFormPinSelect(F("Reset Pin"), F("taskdevicepin3"), CONFIG_PIN3);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+
+
+
+
+
+        for(byte x=0; x < 3; x++)
+        {
+          if(Plugin_017_Init(CONFIG_PIN3))
+            break;
+          delay(1000);
+        }
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        static unsigned long tempcounter = 0;
+        static byte counter;
+        static byte errorCount=0;
+
+        counter++;
+        if (counter == 3 )
+        {
+          if (digitalRead(4) == 0 || digitalRead(5) == 0)
+          {
+            addLog(LOG_LEVEL_ERROR, F("PN532: BUS error"));
+            Plugin_017_Init(CONFIG_PIN3);
+
+          }
+          counter = 0;
+          uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };
+          uint8_t uidLength;
+          byte error = Plugin_017_readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+
+          if (error == 1)
+          {
+            errorCount++;
+            String log = F("PN532: Read error: ");
+            log += errorCount;
+            addLog(LOG_LEVEL_ERROR, log);
+          }
+          else
+            errorCount=0;
+
+          if (errorCount > 2)
+          {
+            Plugin_017_Init(CONFIG_PIN3);
+          }
+
+
+          if (error == 0) {
+            unsigned long key = uid[0];
+            for (uint8_t i = 1; i < 4; i++) {
+              key <<= 8;
+              key += uid[i];
+            }
+            UserVar[event->BaseVarIndex] = (key & 0xFFFF);
+            UserVar[event->BaseVarIndex + 1] = ((key >> 16) & 0xFFFF);
+            String log = F("PN532: Tag: ");
+            log += key;
+            tempcounter++;
+            log += ' ';
+            log += tempcounter;
+            addLog(LOG_LEVEL_INFO, log);
+            sendData(event);
+          }
+        }
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+
+
+boolean Plugin_017_Init(int8_t resetPin)
+{
+  if (resetPin != -1)
+  {
+    String log = F("PN532: Reset on pin: ");
+    log += resetPin;
+    addLog(LOG_LEVEL_INFO, log);
+    pinMode(resetPin, OUTPUT);
+    digitalWrite(resetPin, LOW);
+    delay(100);
+    digitalWrite(resetPin, HIGH);
+    pinMode(resetPin, INPUT_PULLUP);
+    delay(10);
+  }
+
+  Wire.beginTransmission(PN532_I2C_ADDRESS);
+  Wire.endTransmission();
+  delay(5);
+
+  uint32_t versiondata = getFirmwareVersion();
+  if (versiondata) {
+    String log = F("PN532: Found chip PN5");
+    log += String((versiondata >> 24) & 0xFF, HEX);
+    log += F(" FW: ");
+    log += String((versiondata >> 16) & 0xFF, HEX);
+    log += '.';
+    log += String((versiondata >> 8) & 0xFF, HEX);
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  else
+    return false;
+
+  Plugin_017_pn532_packetbuffer[0] = PN532_COMMAND_SAMCONFIGURATION;
+  Plugin_017_pn532_packetbuffer[1] = 0x01;
+  Plugin_017_pn532_packetbuffer[2] = 0x2;
+  Plugin_017_pn532_packetbuffer[3] = 0x01;
+
+  if (Plugin_017_writeCommand(Plugin_017_pn532_packetbuffer, 4))
+    return false;
+
+
+  Wire.beginTransmission(PN532_I2C_ADDRESS);
+  Wire.endTransmission();
+  delay(5);
+
+  return true;
+}
+
+
+
+
+
+uint32_t getFirmwareVersion(void)
+{
+  uint32_t response;
+
+  Plugin_017_pn532_packetbuffer[0] = PN532_COMMAND_GETFIRMWAREVERSION;
+
+  if (Plugin_017_writeCommand(Plugin_017_pn532_packetbuffer, 1)) {
+    return 0;
+  }
+
+  delay(50);
+
+
+  int16_t status = Plugin_017_readResponse(Plugin_017_pn532_packetbuffer, sizeof(Plugin_017_pn532_packetbuffer));
+  if (0 > status) {
+    return 0;
+  }
+
+  response = Plugin_017_pn532_packetbuffer[0];
+  response <<= 8;
+  response |= Plugin_017_pn532_packetbuffer[1];
+  response <<= 8;
+  response |= Plugin_017_pn532_packetbuffer[2];
+  response <<= 8;
+  response |= Plugin_017_pn532_packetbuffer[3];
+
+  return response;
+}
+
+
+void Plugin_017_powerDown(void)
+{
+
+  Plugin_017_pn532_packetbuffer[0] = PN532_COMMAND_POWERDOWN;
+  Plugin_017_pn532_packetbuffer[1] = 1 << 7;
+
+  if (Plugin_017_writeCommand(Plugin_017_pn532_packetbuffer, 2)) {
+    return;
+  }
+
+
+
+
+  Plugin_017_readResponse(Plugin_017_pn532_packetbuffer, sizeof(Plugin_017_pn532_packetbuffer));
+}
+
+
+
+
+
+byte Plugin_017_readPassiveTargetID(uint8_t cardbaudrate, uint8_t *uid, uint8_t *uidLength)
+{
+  Plugin_017_pn532_packetbuffer[0] = PN532_COMMAND_INLISTPASSIVETARGET;
+  Plugin_017_pn532_packetbuffer[1] = 1;
+  Plugin_017_pn532_packetbuffer[2] = cardbaudrate;
+
+  if (Plugin_017_writeCommand(Plugin_017_pn532_packetbuffer, 3)) {
+    return 0x1;
+  }
+
+  delay(50);
+
+
+  if (Plugin_017_readResponse(Plugin_017_pn532_packetbuffer, sizeof(Plugin_017_pn532_packetbuffer)) < 0) {
+
+
+
+
+
+    Wire.beginTransmission(PN532_I2C_ADDRESS);
+    Wire.endTransmission();
+    return 0x2;
+  }
+
+  if (Plugin_017_pn532_packetbuffer[0] != 1)
+    return 0x3;
+
+  uint16_t sens_res = Plugin_017_pn532_packetbuffer[2];
+  sens_res <<= 8;
+  sens_res |= Plugin_017_pn532_packetbuffer[3];
+
+
+  *uidLength = Plugin_017_pn532_packetbuffer[5];
+
+  for (uint8_t i = 0; i < Plugin_017_pn532_packetbuffer[5]; i++) {
+    uid[i] = Plugin_017_pn532_packetbuffer[6 + i];
+  }
+
+
+  Plugin_017_powerDown();
+
+
+  return 0;
+}
+
+
+
+
+
+int8_t Plugin_017_writeCommand(const uint8_t *header, uint8_t hlen)
+{
+  Plugin_017_command = header[0];
+  Wire.beginTransmission(PN532_I2C_ADDRESS);
+
+  Wire.write(PN532_PREAMBLE);
+  Wire.write(PN532_STARTCODE1);
+  Wire.write(PN532_STARTCODE2);
+
+  uint8_t length = hlen + 1;
+  Wire.write(length);
+  Wire.write(~length + 1);
+
+  Wire.write(PN532_HOSTTOPN532);
+  uint8_t sum = PN532_HOSTTOPN532;
+
+  for (uint8_t i = 0; i < hlen; i++) {
+    if (Wire.write(header[i])) {
+      sum += header[i];
+
+    } else {
+      return PN532_INVALID_FRAME;
+    }
+  }
+
+  uint8_t checksum = ~sum + 1;
+  Wire.write(checksum);
+  Wire.write(PN532_POSTAMBLE);
+  byte status = Wire.endTransmission();
+
+  if (status != 0)
+    return PN532_INVALID_FRAME;
+
+  return Plugin_017_readAckFrame();
+}
+
+
+
+
+
+int16_t Plugin_017_readResponse(uint8_t buf[], uint8_t len)
+{
+  if (!Wire.requestFrom(PN532_I2C_ADDRESS, len + 2))
+    return -1;
+
+
+  if (!(Wire.read() & 1))
+    return -1;
+
+  if (0x00 != Wire.read() ||
+      0x00 != Wire.read() ||
+      0xFF != Wire.read()
+     ) {
+
+    return PN532_INVALID_FRAME;
+  }
+
+  uint8_t length = Wire.read();
+  if (0 != (uint8_t)(length + Wire.read())) {
+    return PN532_INVALID_FRAME;
+  }
+
+  uint8_t cmd = Plugin_017_command + 1;
+  if (PN532_PN532TOHOST != Wire.read() || (cmd) != Wire.read()) {
+    return PN532_INVALID_FRAME;
+  }
+
+  length -= 2;
+  if (length > len) {
+    return PN532_NO_SPACE;
+  }
+
+  uint8_t sum = PN532_PN532TOHOST + cmd;
+  for (uint8_t i = 0; i < length; i++) {
+    buf[i] = Wire.read();
+    sum += buf[i];
+
+  }
+
+  uint8_t checksum = Wire.read();
+  if (0 != (uint8_t)(sum + checksum)) {
+    return PN532_INVALID_FRAME;
+  }
+  Wire.read();
+
+  return length;
+}
+
+
+
+
+
+int8_t Plugin_017_readAckFrame()
+{
+  const uint8_t PN532_ACK[] = {0, 0, 0xFF, 0, 0xFF, 0};
+  uint8_t ackBuf[sizeof(PN532_ACK)];
+
+  uint16_t time = 0;
+  do {
+    if (Wire.requestFrom(PN532_I2C_ADDRESS, sizeof(PN532_ACK) + 1)) {
+      if (Wire.read() & 1) {
+        break;
+      }
+    }
+
+    delay(5);
+    time++;
+    if (time > PN532_ACK_WAIT_TIME) {
+      return PN532_TIMEOUT;
+    }
+  } while (1);
+
+
+  for (uint8_t i = 0; i < sizeof(PN532_ACK); i++) {
+    ackBuf[i] = Wire.read();
+  }
+
+  if (memcmp(ackBuf, PN532_ACK, sizeof(PN532_ACK))) {
+    return PN532_INVALID_ACK;
+  }
+
+  return 0;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P018_Dust.ino"
+#ifdef USES_P018
+
+
+
+
+#define PLUGIN_018 
+#define PLUGIN_ID_018 18
+#define PLUGIN_NAME_018 "Dust - Sharp GP2Y10"
+#define PLUGIN_VALUENAME1_018 "Dust"
+
+boolean Plugin_018_init = false;
+byte Plugin_GP2Y10_LED_Pin = 0;
+
+boolean Plugin_018(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_018;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_018);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_018));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output(F("LED"));
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        Plugin_018_init = true;
+        pinMode(CONFIG_PIN1, OUTPUT);
+        Plugin_GP2Y10_LED_Pin = CONFIG_PIN1;
+        digitalWrite(Plugin_GP2Y10_LED_Pin, HIGH);
+        success = true;
+        break;
+      }
+
+
+    case PLUGIN_READ:
+      {
+        Plugin_GP2Y10_LED_Pin = CONFIG_PIN1;
+        noInterrupts();
+        byte x;
+        int value;
+        value = 0;
+        for (x = 0; x < 25; x++)
+        {
+          digitalWrite(Plugin_GP2Y10_LED_Pin, LOW);
+          delayMicroseconds(280);
+          value = value + analogRead(A0);
+          delayMicroseconds(40);
+          digitalWrite(Plugin_GP2Y10_LED_Pin, HIGH);
+          delayMicroseconds(9680);
+        }
+        interrupts();
+        UserVar[event->BaseVarIndex] = (float)value;
+        String log = F("GPY  : Dust value: ");
+        log += value;
+        addLog(LOG_LEVEL_INFO, log);
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P019_PCF8574.ino"
+#ifdef USES_P019
+# 31 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P019_PCF8574.ino"
+#define PLUGIN_019 
+#define PLUGIN_ID_019 19
+#define PLUGIN_NAME_019 "Switch input - PCF8574"
+#define PLUGIN_VALUENAME1_019 "State"
+#define PLUGIN_019_DOUBLECLICK_MIN_INTERVAL 1000
+#define PLUGIN_019_DOUBLECLICK_MAX_INTERVAL 3000
+#define PLUGIN_019_LONGPRESS_MIN_INTERVAL 1000
+#define PLUGIN_019_LONGPRESS_MAX_INTERVAL 5000
+#define PLUGIN_019_DC_DISABLED 0
+#define PLUGIN_019_DC_LOW 1
+#define PLUGIN_019_DC_HIGH 2
+#define PLUGIN_019_DC_BOTH 3
+#define PLUGIN_019_LONGPRESS_DISABLED 0
+#define PLUGIN_019_LONGPRESS_LOW 1
+#define PLUGIN_019_LONGPRESS_HIGH 2
+#define PLUGIN_019_LONGPRESS_BOTH 3
+
+boolean Plugin_019(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_019;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].Ports = 8;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = true;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_019);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_019));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+        const uint32_t key = createKey(PLUGIN_ID_019,CONFIG_PORT);
+        if (existPortStatus(key)) {
+          globalMapPortStatus[key].previousTask = event->TaskIndex;
+        }
+
+        addFormCheckBox(F("Send Boot state"), F("p019_boot"), PCONFIG(0));
+
+
+        addFormSubHeader(F("Advanced event management"));
+
+        addFormNumericBox(F("De-bounce (ms)"), F("p019_debounce"), round(PCONFIG_FLOAT(0)), 0, 250);
+
+
+        if (PCONFIG_FLOAT(1) < PLUGIN_019_DOUBLECLICK_MIN_INTERVAL)
+          PCONFIG_FLOAT(1) = PLUGIN_019_DOUBLECLICK_MIN_INTERVAL;
+
+        byte choiceDC = PCONFIG(4);
+        String buttonDC[4];
+        buttonDC[0] = F("Disabled");
+        buttonDC[1] = F("Active only on LOW (EVENT=3)");
+        buttonDC[2] = F("Active only on HIGH (EVENT=3)");
+        buttonDC[3] = F("Active on LOW & HIGH (EVENT=3)");
+        int buttonDCValues[4] = {PLUGIN_019_DC_DISABLED, PLUGIN_019_DC_LOW, PLUGIN_019_DC_HIGH,PLUGIN_019_DC_BOTH};
+        addFormSelector(F("Doubleclick event"), F("p019_dc"), 4, buttonDC, buttonDCValues, choiceDC);
+
+        addFormNumericBox(F("Doubleclick max. interval (ms)"), F("p019_dcmaxinterval"), round(PCONFIG_FLOAT(1)), PLUGIN_019_DOUBLECLICK_MIN_INTERVAL, PLUGIN_019_DOUBLECLICK_MAX_INTERVAL);
+
+
+        if (PCONFIG_FLOAT(2) < PLUGIN_019_LONGPRESS_MIN_INTERVAL)
+          PCONFIG_FLOAT(2) = PLUGIN_019_LONGPRESS_MIN_INTERVAL;
+
+        byte choiceLP = PCONFIG(5);
+        String buttonLP[4];
+        buttonLP[0] = F("Disabled");
+        buttonLP[1] = F("Active only on LOW (EVENT= 10 [NORMAL] or 11 [INVERSED])");
+        buttonLP[2] = F("Active only on HIGH (EVENT= 11 [NORMAL] or 10 [INVERSED])");
+        buttonLP[3] = F("Active on LOW & HIGH (EVENT= 10 or 11)");
+        int buttonLPValues[4] = {PLUGIN_019_LONGPRESS_DISABLED, PLUGIN_019_LONGPRESS_LOW, PLUGIN_019_LONGPRESS_HIGH,PLUGIN_019_LONGPRESS_BOTH};
+        addFormSelector(F("Longpress event"), F("p019_lp"), 4, buttonLP, buttonLPValues, choiceLP);
+
+        addFormNumericBox(F("Longpress min. interval (ms)"), F("p019_lpmininterval"), round(PCONFIG_FLOAT(2)), PLUGIN_019_LONGPRESS_MIN_INTERVAL, PLUGIN_019_LONGPRESS_MAX_INTERVAL);
+
+        addFormCheckBox(F("Use Safe Button (slower)"), F("p019_sb"), round(PCONFIG_FLOAT(3)));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = isFormItemChecked(F("p019_boot"));
+
+
+        PCONFIG_FLOAT(0) = getFormItemInt(F("p019_debounce"));
+
+        PCONFIG(4) = getFormItemInt(F("p019_dc"));
+        PCONFIG_FLOAT(1) = getFormItemInt(F("p019_dcmaxinterval"));
+
+        PCONFIG(5) = getFormItemInt(F("p019_lp"));
+        PCONFIG_FLOAT(2) = getFormItemInt(F("p019_lpmininterval"));
+
+        PCONFIG_FLOAT(3) = isFormItemChecked(F("p019_sb"));
+
+
+        for (std::map<uint32_t,portStatusStruct>::iterator it=globalMapPortStatus.begin(); it!=globalMapPortStatus.end(); ++it) {
+          if (it->second.previousTask == event->TaskIndex && getPluginFromKey(it->first)==PLUGIN_ID_019) {
+            globalMapPortStatus[it->first].previousTask = -1;
+            removeTaskFromPort(it->first);
+            break;
+          }
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+
+        if (CONFIG_PORT >= 0)
+        {
+          portStatusStruct newStatus;
+          const uint32_t key = createKey(PLUGIN_ID_019,CONFIG_PORT);
+
+          newStatus = globalMapPortStatus[key];
+
+
+
+          newStatus.state = Plugin_019_Read(CONFIG_PORT);
+          newStatus.output = newStatus.state;
+          (newStatus.state == -1) ? newStatus.mode = PIN_MODE_OFFLINE : newStatus.mode = PIN_MODE_INPUT;
+          newStatus.task++;
+
+
+          if (newStatus.state != -1 && Settings.TaskDevicePin1Inversed[event->TaskIndex]) {
+            UserVar[event->BaseVarIndex] = !newStatus.state;
+          } else {
+            UserVar[event->BaseVarIndex] = newStatus.state;
+          }
+
+
+
+          if (PCONFIG(0))
+            newStatus.state = !newStatus.state;
+
+
+          PCONFIG(7)=0;
+          PCONFIG_LONG(3)=0;
+
+
+          PCONFIG(6)=false;
+
+
+          PCONFIG_LONG(0)=millis();
+          PCONFIG_LONG(1)=millis();
+          PCONFIG_LONG(2)=millis();
+
+
+          if (PCONFIG_FLOAT(1) < PLUGIN_019_DOUBLECLICK_MIN_INTERVAL)
+            PCONFIG_FLOAT(1) = PLUGIN_019_DOUBLECLICK_MIN_INTERVAL;
+
+
+          if (PCONFIG_FLOAT(2) < PLUGIN_019_LONGPRESS_MIN_INTERVAL)
+            PCONFIG_FLOAT(2) = PLUGIN_019_LONGPRESS_MIN_INTERVAL;
+
+
+          savePortStatus(key,newStatus);
+
+        }
+        success = true;
+        break;
+      }
+# 245 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P019_PCF8574.ino"
+      case PLUGIN_MONITOR:
+        {
+
+          const uint32_t key = createKey(PLUGIN_ID_019,event->Par1);
+          const portStatusStruct currentStatus = globalMapPortStatus[key];
+
+
+            byte state = Plugin_019_Read(event->Par1);
+            if (currentStatus.state != state || currentStatus.forceMonitor) {
+              if (!currentStatus.task) globalMapPortStatus[key].state = state;
+              if (currentStatus.monitor) {
+                globalMapPortStatus[key].forceMonitor=0;
+                String eventString = F("PCF#");
+                eventString += event->Par1;
+                eventString += '=';
+                eventString += state;
+                rulesProcessing(eventString);
+              }
+            }
+
+
+          break;
+        }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        const int8_t state = Plugin_019_Read(CONFIG_PORT);
+# 286 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P019_PCF8574.ino"
+        portStatusStruct currentStatus;
+        const uint32_t key = createKey(PLUGIN_ID_019,CONFIG_PORT);
+
+        currentStatus = globalMapPortStatus[key];
+
+
+        if (state != -1 && CONFIG_PORT>=0) {
+
+
+
+          if (round(PCONFIG_FLOAT(3)) && state != currentStatus.state && PCONFIG_LONG(3)==0)
+          {
+            addLog(LOG_LEVEL_DEBUG,F("PCF :SafeButton 1st click."))
+            PCONFIG_LONG(3) = 1;
+          }
+
+          else if (state != currentStatus.state || currentStatus.forceEvent)
+          {
+
+            currentStatus.forceEvent = 0;
+
+
+            PCONFIG_LONG(3) = 0;
+
+
+            PCONFIG_LONG(2)=millis();
+            PCONFIG(6) = false;
+
+            const unsigned long debounceTime = timePassedSince(PCONFIG_LONG(0));
+            if (debounceTime >= (unsigned long)lround(PCONFIG_FLOAT(0)))
+            {
+              const unsigned long deltaDC = timePassedSince(PCONFIG_LONG(1));
+              if ((deltaDC >= (unsigned long)lround(PCONFIG_FLOAT(1))) ||
+                   PCONFIG(7)==3)
+              {
+
+                PCONFIG(7)=0;
+                PCONFIG_LONG(1)=millis();
+              }
+
+
+#define COUNTER PCONFIG(7)
+#define DC PCONFIG(4)
+
+
+              if ( COUNTER!=0 || ( COUNTER==0 && (DC==3 || (DC==1 && state==0) || (DC==2 && state==1))) )
+                PCONFIG(7)++;
+#undef DC
+#undef COUNTER
+
+
+              if (currentStatus.mode == PIN_MODE_OFFLINE || currentStatus.mode == PIN_MODE_UNDEFINED) currentStatus.mode = PIN_MODE_INPUT;
+              currentStatus.state = state;
+
+              byte output_value;
+
+              boolean sendState = currentStatus.state;
+
+              if (Settings.TaskDevicePin1Inversed[event->TaskIndex])
+                sendState = !sendState;
+
+              if (PCONFIG(7)==3 && PCONFIG(4)>0)
+              {
+                output_value = 3;
+              } else {
+                output_value = sendState ? 1 : 0;
+              }
+
+              UserVar[event->BaseVarIndex] = output_value;
+
+              if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                String log = F("PCF  : Port=");
+                log += CONFIG_PORT;
+                log += F(" State=");
+                log += state;
+                log += output_value==3 ? F(" Doubleclick=") : F(" Output value=");
+                log += output_value;
+                addLog(LOG_LEVEL_INFO, log);
+              }
+              event->sensorType = SENSOR_TYPE_SWITCH;
+              sendData(event);
+
+
+              UserVar[event->BaseVarIndex] = sendState ? 1 : 0;
+
+              PCONFIG_LONG(0) = millis();
+            }
+            savePortStatus(key,currentStatus);
+          }
+
+
+#define LP PCONFIG(5)
+#define FIRED PCONFIG(6)
+
+
+          else if (!FIRED && (LP==3 ||(LP==1 && state==0)||(LP==2 && state==1) ) ) {
+
+#undef LP
+#undef FIRED
+# 399 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P019_PCF8574.ino"
+            PCONFIG_LONG(3) = 0;
+
+            const unsigned long deltaLP = timePassedSince(PCONFIG_LONG(2));
+            if (deltaLP >= (unsigned long)lround(PCONFIG_FLOAT(2)))
+            {
+              byte output_value;
+              PCONFIG(6) = true;
+
+              boolean sendState = state;
+              if (Settings.TaskDevicePin1Inversed[event->TaskIndex])
+                sendState = !sendState;
+
+              output_value = sendState ? 1 : 0;
+              output_value = output_value + 10;
+
+              UserVar[event->BaseVarIndex] = output_value;
+              if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                String log = F("PCF  : LongPress: Port= ");
+                log += CONFIG_PORT;
+                log += F(" State=");
+                log += state ? '1' : '0';
+                log += F(" Output value=");
+                log += output_value;
+                addLog(LOG_LEVEL_INFO, log);
+              }
+              sendData(event);
+
+
+              UserVar[event->BaseVarIndex] = sendState ? 1 : 0;
+            }
+          } else {
+            if (PCONFIG_LONG(3)==1) {
+
+              PCONFIG_LONG(3) = 0;
+
+
+              const int tempUserVar = round(UserVar[event->BaseVarIndex]);
+              UserVar[event->BaseVarIndex] = 4;
+              if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                String log = F("PCF : SafeButton: false positive detected. GPIO= ");
+                log += CONFIG_PIN1;
+                log += F(" State=");
+                log += tempUserVar;
+                addLog(LOG_LEVEL_INFO, log);
+              }
+              sendData(event);
+
+
+              UserVar[event->BaseVarIndex] = tempUserVar;
+            }
+          }
+        } else if (state != currentStatus.state && state == -1) {
+
+          UserVar[event->BaseVarIndex] = state;
+
+          currentStatus.state = state;
+          currentStatus.mode = PIN_MODE_OFFLINE;
+          if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+            String log = F("PCF  : Port=");
+            log += CONFIG_PORT;
+            log += F(" is offline (EVENT= -1)");
+            addLog(LOG_LEVEL_INFO, log);
+          }
+          sendData(event);
+          savePortStatus(key,currentStatus);
+        }
+        success = true;
+        break;
+      }
+
+
+      case PLUGIN_EXIT:
+      {
+        removeTaskFromPort(createKey(PLUGIN_ID_019,CONFIG_PORT));
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+
+        if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+          String log = F("PCF  : Port= ");
+          log += CONFIG_PORT;
+          log += F(" State=");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_REQUEST:
+      {
+
+
+
+
+
+        if (string.length()>=16 && string.substring(0,16).equalsIgnoreCase(F("pcfgpio,pinstate")))
+        {
+          int par1;
+          if (validIntFromString(parseString(string, 3), par1)) {
+            string = Plugin_019_Read(par1);
+          }
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String log = "";
+        String command = parseString(string, 1);
+
+        if (command == F("pcfgpio"))
+        {
+          success = true;
+          if (event->Par1 > 0 && event->Par1 <= 128)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_019,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+            int8_t currentState = Plugin_019_Read(event->Par1);
+
+            if (currentState == -1) {
+              tempStatus.mode=PIN_MODE_OFFLINE;
+              tempStatus.state=-1;
+              tempStatus.command=1;
+              tempStatus.forceEvent=1;
+              if (tempStatus.monitor) tempStatus.forceMonitor=1;
+              savePortStatus(key,tempStatus);
+              log = String(F("PCF  : GPIO ")) + String(event->Par1) + String(F(" is offline (-1). Cannot set value."));
+            } else if (event->Par2 == 2) {
+
+
+              tempStatus.mode=PIN_MODE_INPUT;
+              tempStatus.state = currentState;
+              tempStatus.command=1;
+              tempStatus.forceEvent=1;
+              if (tempStatus.monitor) tempStatus.forceMonitor=1;
+              savePortStatus(key,tempStatus);
+             Plugin_019_Write(event->Par1,1);
+             log = String(F("PCF  : GPIO INPUT ")) + String(event->Par1) + String(F(" Set to 1"));
+            } else {
+
+              tempStatus.mode=PIN_MODE_OUTPUT;
+              tempStatus.state=event->Par2;
+              tempStatus.command=1;
+              tempStatus.forceEvent=1;
+              if (tempStatus.monitor) tempStatus.forceMonitor=1;
+              savePortStatus(key,tempStatus);
+              Plugin_019_Write(event->Par1, event->Par2);
+             log = String(F("PCF  : GPIO OUTPUT ")) + String(event->Par1) + String(F(" Set to ")) + String(event->Par2);
+            }
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+
+          }
+        } else if (command == F("pcfgpiotoggle")) {
+          success = true;
+          if (event->Par1 > 0 && event->Par1 <= 128)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_019,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+            int8_t currentState = Plugin_019_Read(event->Par1);
+            bool needToSave = false;
+
+            if (currentState == -1) {
+              tempStatus.mode=PIN_MODE_OFFLINE;
+              tempStatus.state=-1;
+              tempStatus.command=1;
+              tempStatus.forceEvent=1;
+              if (tempStatus.monitor) tempStatus.forceMonitor=1;
+              savePortStatus(key,tempStatus);
+              log = String(F("PCF  : GPIO ")) + String(event->Par1) + String(F(" is offline (-1). Cannot set value."));
+              needToSave = true;
+            } else if (tempStatus.mode == PIN_MODE_OUTPUT || tempStatus.mode == PIN_MODE_UNDEFINED) {
+              tempStatus.state = !currentState;
+              tempStatus.mode = PIN_MODE_OUTPUT;
+              tempStatus.command=1;
+              tempStatus.forceEvent=1;
+              if (tempStatus.monitor) tempStatus.forceMonitor=1;
+              savePortStatus(key,tempStatus);
+              Plugin_019_Write(event->Par1, tempStatus.state);
+              log = String(F("PCF  : Toggle GPIO ")) + String(event->Par1) + String(F(" Set to ")) + String(tempStatus.state);
+              needToSave = true;
+            }
+            if (needToSave) {
+
+              addLog(LOG_LEVEL_INFO, log);
+
+              SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+            }
+          }
+        } else if (command == F("pcfpulse")) {
+          success = true;
+          if (event->Par1 > 0 && event->Par1 <= 128)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_019,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = event->Par2;
+            savePortStatus(key,tempStatus);
+            Plugin_019_Write(event->Par1, event->Par2);
+            delay(event->Par3);
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = !event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+            Plugin_019_Write(event->Par1, !event->Par2);
+
+
+            log = String(F("PCF  : GPIO ")) + String(event->Par1) + String(F(" Pulsed for ")) + String(event->Par3) + String(F(" mS"));
+            addLog(LOG_LEVEL_INFO, log);
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+        } else if (command == F("pcflongpulse")) {
+          success = true;
+          if (event->Par1 > 0 && event->Par1 <= 128)
+          {
+            portStatusStruct tempStatus;
+            const uint32_t key = createKey(PLUGIN_ID_019,event->Par1);
+
+
+            tempStatus = globalMapPortStatus[key];
+
+
+            tempStatus.mode = PIN_MODE_OUTPUT;
+            tempStatus.state = event->Par2;
+            tempStatus.command=1;
+            savePortStatus(key,tempStatus);
+            Plugin_019_Write(event->Par1, event->Par2);
+            setPluginTaskTimer(event->Par3 * 1000, PLUGIN_ID_019, event->TaskIndex, event->Par1, !event->Par2);
+            log = String(F("PCF  : GPIO ")) + String(event->Par1) + String(F(" Pulse set for ")) + String(event->Par3) + String(F(" S"));
+            addLog(LOG_LEVEL_INFO, log);
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+        } else if (command == F("status")) {
+          if (parseString(string, 2) == F("pcf"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_019,event->Par2);
+
+            if (existPortStatus(key))
+              SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+            else
+            {
+              int state = Plugin_019_Read(event->Par2);
+              if (state != -1)
+                SendStatusOnlyIfNeeded(event->Source, NO_SEARCH_PIN_STATE, key, dummyString, state);
+            }
+          }
+        } else if (command == F("monitor")) {
+          if (parseString(string, 2) == F("pcf"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_019,event->Par2);
+
+            addMonitorToPort(key);
+
+            globalMapPortStatus[key].state = Plugin_019_Read(event->Par2);
+
+            log = String(F("PCF  : PORT ")) + String(event->Par2) + String(F(" added to monitor list."));
+            addLog(LOG_LEVEL_INFO, log);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+          }
+        } else if (command == F("unmonitor")) {
+          if (parseString(string, 2) == F("pcf"))
+          {
+            success = true;
+            const uint32_t key = createKey(PLUGIN_ID_019,event->Par2);
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, dummyString, 0);
+
+            removeMonitorFromPort(key);
+            log = String(F("PCF  : PORT ")) + String(event->Par2) + String(F(" removed from monitor list."));
+            addLog(LOG_LEVEL_INFO, log);
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_TIMER_IN:
+      {
+
+        portStatusStruct tempStatus;
+
+        const uint32_t key = createKey(PLUGIN_ID_019,event->Par1);
+        tempStatus = globalMapPortStatus[key];
+
+        tempStatus.state = event->Par2;
+        tempStatus.mode = PIN_MODE_OUTPUT;
+        savePortStatus(key,tempStatus);
+        Plugin_019_Write(event->Par1, event->Par2);
+
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+
+
+
+int8_t Plugin_019_Read(byte Par1)
+{
+  int8_t state = -1;
+  byte unit = (Par1 - 1) / 8;
+  byte port = Par1 - (unit * 8);
+  uint8_t address = 0x20 + unit;
+  if (unit > 7) address += 0x10;
+
+
+  Wire.requestFrom(address, (uint8_t)0x1);
+  if (Wire.available())
+  {
+    state = ((Wire.read() & _BV(port - 1)) >> (port - 1));
+  }
+  return state;
+}
+
+uint8_t Plugin_019_ReadAllPins(uint8_t address)
+{
+  uint8_t rawState = 0;
+
+  Wire.requestFrom(address, (uint8_t)0x1);
+  if (Wire.available())
+  {
+    rawState =Wire.read();
+  }
+  return rawState;
+}
+
+
+
+
+boolean Plugin_019_Write(byte Par1, byte Par2)
+{
+  uint8_t unit = (Par1 - 1) / 8;
+  uint8_t port = Par1 - (unit * 8);
+  uint8_t address = 0x20 + unit;
+  if (unit > 7) address += 0x10;
+
+
+  int i = 0;
+  uint8_t portmask = 255;
+  unit = unit * 8 + 1;
+
+  uint32_t key;
+
+  for(i=0; i<8; i++){
+    key = createKey(PLUGIN_ID_019,unit+i);
+
+    if (existPortStatus(key) && globalMapPortStatus[key].mode == PIN_MODE_OUTPUT && globalMapPortStatus[key].state == 0)
+      portmask &= ~(1 << i);
+  }
+
+  key = createKey(PLUGIN_ID_019,Par1);
+
+  if (Par2 == 1)
+    portmask |= (1 << (port-1));
+  else
+    portmask &= ~(1 << (port-1));
+
+  Wire.beginTransmission(address);
+  Wire.write(portmask);
+  Wire.endTransmission();
+
+  return true;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P020_Ser2Net.ino"
+#ifdef USES_P020
+
+
+
+
+#define PLUGIN_020 
+#define PLUGIN_ID_020 20
+#define PLUGIN_NAME_020 "Communication - Serial Server"
+#define PLUGIN_VALUENAME1_020 "Ser2Net"
+
+#define P020_BUFFER_SIZE 128
+boolean Plugin_020_init = false;
+byte Plugin_020_SerialProcessing = 0;
+
+WiFiServer *ser2netServer;
+WiFiClient ser2netClient;
+
+boolean Plugin_020(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+  static byte connectionState = 0;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_020;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].Custom = true;
+        Device[deviceCount].TimerOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_020);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_020));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_bidirectional(F("Reset"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+       addFormNumericBox(F("TCP Port"), F("p020_port"), ExtraTaskSettings.TaskDevicePluginConfigLong[0]);
+       addFormNumericBox(F("Baud Rate"), F("p020_baud"), ExtraTaskSettings.TaskDevicePluginConfigLong[1]);
+       addFormNumericBox(F("Data bits"), F("p020_data"), ExtraTaskSettings.TaskDevicePluginConfigLong[2]);
+
+        byte choice = ExtraTaskSettings.TaskDevicePluginConfigLong[3];
+        String options[3];
+        options[0] = F("No parity");
+        options[1] = F("Even");
+        options[2] = F("Odd");
+        int optionValues[3];
+        optionValues[0] = 0;
+        optionValues[1] = 2;
+        optionValues[2] = 3;
+        addFormSelector(F("Parity"), F("p020_parity"), 3, options, optionValues, choice);
+
+       addFormNumericBox(F("Stop bits"), F("p020_stop"), ExtraTaskSettings.TaskDevicePluginConfigLong[4]);
+
+       addFormPinSelect(F("Reset target after boot"), F("taskdevicepin1"), Settings.TaskDevicePin1[event->TaskIndex]);
+
+       addFormNumericBox(F("RX Receive Timeout (mSec)"), F("p020_rxwait"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
+
+
+        byte choice2 = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
+        String options2[3];
+        options2[0] = F("None");
+        options2[1] = F("Generic");
+        options2[2] = F("RFLink");
+        addFormSelector(F("Event processing"), F("p020_events"), 3, options2, NULL, choice2);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        ExtraTaskSettings.TaskDevicePluginConfigLong[0] = getFormItemInt(F("p020_port"));
+        ExtraTaskSettings.TaskDevicePluginConfigLong[1] = getFormItemInt(F("p020_baud"));
+        ExtraTaskSettings.TaskDevicePluginConfigLong[2] = getFormItemInt(F("p020_data"));
+        ExtraTaskSettings.TaskDevicePluginConfigLong[3] = getFormItemInt(F("p020_parity"));
+        ExtraTaskSettings.TaskDevicePluginConfigLong[4] = getFormItemInt(F("p020_stop"));
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = getFormItemInt(F("p020_rxwait"));
+        Settings.TaskDevicePluginConfig[event->TaskIndex][1] = getFormItemInt(F("p020_events"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        LoadTaskSettings(event->TaskIndex);
+        if ((ExtraTaskSettings.TaskDevicePluginConfigLong[0] != 0) && (ExtraTaskSettings.TaskDevicePluginConfigLong[1] != 0))
+        {
+          #if defined(ESP8266)
+            byte serialconfig = 0x10;
+          #endif
+          #if defined(ESP32)
+            uint32_t serialconfig = 0x8000010;
+          #endif
+          serialconfig += ExtraTaskSettings.TaskDevicePluginConfigLong[3];
+          serialconfig += (ExtraTaskSettings.TaskDevicePluginConfigLong[2] - 5) << 2;
+          if (ExtraTaskSettings.TaskDevicePluginConfigLong[4] == 2)
+            serialconfig += 0x20;
+          #if defined(ESP8266)
+            Serial.begin(ExtraTaskSettings.TaskDevicePluginConfigLong[1], (SerialConfig)serialconfig);
+          #endif
+          #if defined(ESP32)
+            Serial.begin(ExtraTaskSettings.TaskDevicePluginConfigLong[1], serialconfig);
+          #endif
+          ser2netServer = new WiFiServer(ExtraTaskSettings.TaskDevicePluginConfigLong[0]);
+          ser2netServer->begin();
+
+          if (Settings.TaskDevicePin1[event->TaskIndex] != -1)
+          {
+            pinMode(Settings.TaskDevicePin1[event->TaskIndex], OUTPUT);
+            digitalWrite(Settings.TaskDevicePin1[event->TaskIndex], LOW);
+            delay(500);
+            digitalWrite(Settings.TaskDevicePin1[event->TaskIndex], HIGH);
+            pinMode(Settings.TaskDevicePin1[event->TaskIndex], INPUT_PULLUP);
+          }
+
+          Plugin_020_init = true;
+        }
+        Plugin_020_SerialProcessing = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (Plugin_020_init)
+        {
+          size_t bytes_read;
+          if (ser2netServer->hasClient())
+          {
+            if (ser2netClient) ser2netClient.stop();
+            ser2netClient = ser2netServer->available();
+            addLog(LOG_LEVEL_ERROR, F("Ser2N: Client connected!"));
+          }
+
+          if (ser2netClient.connected())
+          {
+            connectionState = 1;
+            uint8_t net_buf[P020_BUFFER_SIZE];
+            int count = ser2netClient.available();
+            if (count > 0)
+            {
+              if (count > P020_BUFFER_SIZE)
+                count = P020_BUFFER_SIZE;
+              bytes_read = ser2netClient.read(net_buf, count);
+              Serial.write(net_buf, bytes_read);
+              Serial.flush();
+
+              if (count == P020_BUFFER_SIZE)
+              {
+                count--;
+                addLog(LOG_LEVEL_ERROR, F("Ser2N: network buffer full!"));
+              }
+              net_buf[count] = 0;
+              char log[P020_BUFFER_SIZE + 40];
+              sprintf_P(log, PSTR("Ser2N: N>: %s"), (char*)net_buf);
+              addLog(LOG_LEVEL_DEBUG, log);
+            }
+          }
+          else
+          {
+            if (connectionState == 1)
+            {
+              connectionState = 0;
+
+              ser2netClient = WiFiClient();
+              ser2netClient.setTimeout(CONTROLLER_CLIENTTIMEOUT_DFLT);
+              addLog(LOG_LEVEL_ERROR, F("Ser2N: Client disconnected!"));
+            }
+
+            while (Serial.available())
+              Serial.read();
+          }
+
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_SERIAL_IN:
+      {
+        if (Plugin_020_init)
+        {
+        uint8_t serial_buf[P020_BUFFER_SIZE];
+        int RXWait = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
+        if (RXWait == 0)
+          RXWait = 1;
+        int timeOut = RXWait;
+        size_t bytes_read = 0;
+        while (timeOut > 0)
+        {
+          while (Serial.available()) {
+            if (bytes_read < P020_BUFFER_SIZE) {
+              serial_buf[bytes_read] = Serial.read();
+              bytes_read++;
+            }
+            else
+              Serial.read();
+
+            timeOut = RXWait;
+          }
+          delay(1);
+          timeOut--;
+        }
+
+        if (bytes_read != P020_BUFFER_SIZE)
+        {
+          if (bytes_read > 0) {
+            if (Plugin_020_init && ser2netClient.connected())
+            {
+              ser2netClient.write((const uint8_t*)serial_buf, bytes_read);
+              ser2netClient.flush();
+            }
+          }
+        }
+        else
+        {
+          while (Serial.available())
+            Serial.read();
+          bytes_read--;
+
+          addLog(LOG_LEVEL_ERROR, F("Ser2N: serial buffer full!"));
+        }
+        serial_buf[bytes_read] = 0;
+        char log[P020_BUFFER_SIZE + 40];
+        sprintf_P(log, PSTR("Ser2N: S>: %s"), (char*)serial_buf);
+        addLog(LOG_LEVEL_DEBUG, log);
+
+
+        if (Settings.UseRules)
+        {
+          String message = (char*)serial_buf;
+          int NewLinePos = message.indexOf("\r\n");
+          if (NewLinePos > 0)
+            message = message.substring(0, NewLinePos);
+          String eventString = "";
+
+          switch (Plugin_020_SerialProcessing)
+          {
+            case 0:
+              {
+                break;
+              }
+
+            case 1:
+              {
+                eventString = F("!Serial#");
+                eventString += message;
+                break;
+              }
+
+            case 2:
+              {
+                message = message.substring(6);
+                if (message.startsWith("ESPEASY"))
+                {
+                  message = message.substring(8);
+                  eventString = F("RFLink#");
+                }
+                else
+                  eventString = F("!RFLink#");
+                eventString += message;
+                break;
+              }
+          }
+
+          if (eventString.length() > 0)
+            rulesProcessing(eventString);
+
+        }
+        success = true;
+        break;
+      }
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String command = parseString(string, 1);
+        if (command == F("serialsend"))
+        {
+          success = true;
+          String tmpString = string.substring(11);
+          Serial.println(tmpString);
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P021_Level.ino"
+#ifdef USES_P021
+
+
+
+
+#define PLUGIN_021 
+#define PLUGIN_ID_021 21
+#define PLUGIN_NAME_021 "Regulator - Level Control"
+#define PLUGIN_VALUENAME1_021 "Output"
+
+boolean Plugin_021(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+  static byte switchstate[TASKS_MAX];
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_021;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_021);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_021));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output(F("Level low"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+
+        addHtml(F("<TR><TD>Check Task:<TD>"));
+        addTaskSelect(F("p021_task"), PCONFIG(0));
+
+        LoadTaskSettings(PCONFIG(0));
+        addHtml(F("<TR><TD>Check Value:<TD>"));
+        addTaskValueSelect(F("p021_value"), PCONFIG(1), PCONFIG(0));
+
+       addFormTextBox(F("Set Level"), F("p021_setvalue"), String(PCONFIG_FLOAT(0)), 8);
+
+       addFormTextBox(F("Hysteresis"), F("p021_hyst"), String(PCONFIG_FLOAT(1)), 8);
+
+        LoadTaskSettings(event->TaskIndex);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p021_task"));
+        PCONFIG(1) = getFormItemInt(F("p021_value"));
+        PCONFIG_FLOAT(0) = getFormItemFloat(F("p021_setvalue"));
+        PCONFIG_FLOAT(1) = getFormItemFloat(F("p021_hyst"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_SET_CONFIG:
+      {
+        String command = parseString(string, 1);
+        if (command == F("setlevel"))
+        {
+          String value = parseString(string, 2);
+          float result=0;
+          Calculate(value.c_str(), &result);
+          PCONFIG_FLOAT(0) = result;
+          SaveSettings();
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_GET_CONFIG:
+      {
+        String command = parseString(string, 1);
+        if (command == F("getlevel"))
+        {
+          string = PCONFIG_FLOAT(0);
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        pinMode(CONFIG_PIN1, OUTPUT);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+
+        byte TaskIndex = PCONFIG(0);
+        byte BaseVarIndex = TaskIndex * VARS_PER_TASK + PCONFIG(1);
+        float value = UserVar[BaseVarIndex];
+        byte state = switchstate[event->TaskIndex];
+
+        float valueLowThreshold = PCONFIG_FLOAT(0) - (PCONFIG_FLOAT(1) / 2);
+        float valueHighThreshold = PCONFIG_FLOAT(0) + (PCONFIG_FLOAT(1) / 2);
+        if (value <= valueLowThreshold)
+          state = 1;
+        if (value >= valueHighThreshold)
+          state = 0;
+        if (state != switchstate[event->TaskIndex])
+        {
+          String log = F("LEVEL: State ");
+          log += state;
+          addLog(LOG_LEVEL_INFO, log);
+          switchstate[event->TaskIndex] = state;
+          digitalWrite(CONFIG_PIN1,state);
+          UserVar[event->BaseVarIndex] = state;
+          sendData(event);
+        }
+
+        success = true;
+        break;
+      }
+
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P022_PCA9685.ino"
+#ifdef USES_P022
+
+
+
+
+
+
+#define PLUGIN_022 
+#define PLUGIN_ID_022 22
+#define PLUGIN_NAME_022 "Extra IO - PCA9685"
+#define PLUGIN_VALUENAME1_022 "PWM"
+
+#define PLUGIN_022_PCA9685_MODE1 0x00
+#define PCA9685_MODE2 0x01
+#define PCA9685_MODE2_VALUES 0x20
+#define PCA9685_LED0 0x06
+#define PCA9685_ADDRESS 0x40
+#define PCA9685_MAX_ADDRESS 0x7F
+#define PCA9685_NUMS_ADDRESS PCA9685_MAX_ADDRESS - PCA9685_ADDRESS
+#define PCA9685_MAX_PINS 15
+#define PCA9685_MAX_PWM 4095
+#define PCA9685_MIN_FREQUENCY 23.0
+#define PCA9685_MAX_FREQUENCY 1500.0
+#define PCA9685_ALLLED_REG (byte)0xFA
+
+
+
+
+
+#define IS_INIT(state,bit) ((state & 1 << bit) == 1 << bit)
+#define SET_INIT(state,bit) (state|= 1 << bit)
+long long initializeState;
+
+boolean Plugin_022(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+  int address = 0;
+  int mode2 = 0x10;
+  uint16_t freq = PCA9685_MAX_FREQUENCY;
+  uint16_t range = PCA9685_MAX_PWM;
+  if(event != NULL && event->TaskIndex >- 1)
+  {
+    address = CONFIG_PORT;
+    mode2 = PCONFIG(0);
+    freq = PCONFIG(1);
+    range = PCONFIG(2);
+  }
+  if (freq == 0)
+    freq = PCA9685_MAX_FREQUENCY;
+  if (range == 0)
+    range = PCA9685_MAX_PWM;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_022;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 1;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].Custom = true;
+        Device[deviceCount].TimerOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_022);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_022));
+        break;
+      }
+
+   case PLUGIN_WEBFORM_LOAD:
+      {
+        int optionValues[PCA9685_NUMS_ADDRESS];
+        for (int i=0;i < PCA9685_NUMS_ADDRESS; i++)
+        {
+          optionValues[i] = PCA9685_ADDRESS + i;
+        }
+        addFormSelectorI2C(F("i2c_addr"), PCA9685_NUMS_ADDRESS, optionValues, address);
+
+        String m2Options[PCA9685_MODE2_VALUES];
+        int m2Values[PCA9685_MODE2_VALUES];
+        for (int i=0;i < PCA9685_MODE2_VALUES; i++)
+        {
+          m2Values[i] = i;
+          m2Options[i] = formatToHex_decimal(i);
+          if (i == 0x10)
+            m2Options[i] += F(" - (default)");
+        }
+        addFormSelector(F("MODE2"), F("p022_mode2"), PCA9685_MODE2_VALUES, m2Options, m2Values, mode2);
+
+        String freqString = F("Frequency (");
+        freqString += PCA9685_MIN_FREQUENCY;
+        freqString += '-';
+        freqString += PCA9685_MAX_FREQUENCY;
+        freqString += ')';
+        addFormNumericBox(freqString, F("p022_freq"), freq, PCA9685_MIN_FREQUENCY, PCA9685_MAX_FREQUENCY);
+        String funitString = F("default ");
+        funitString += PCA9685_MAX_FREQUENCY;
+        addUnit(funitString);
+
+        addFormNumericBox(F("Range (1-10000)"), F("p022_range"), range, 1, 10000);
+        String runitString = F("default ");
+        runitString += PCA9685_MAX_PWM;
+        addUnit(runitString);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        CONFIG_PORT = getFormItemInt(F("i2c_addr"));
+        PCONFIG(0) = getFormItemInt(F("p022_mode2"));
+        PCONFIG(1) = getFormItemInt(F("p022_freq"));
+        PCONFIG(2) = getFormItemInt(F("p022_range"));
+        if (!IS_INIT(initializeState, (CONFIG_PORT - PCA9685_ADDRESS)))
+        {
+          if (PCONFIG(0) != mode2)
+            Plugin_022_writeRegister(address, PCA9685_MODE2, PCONFIG(0));
+          if (PCONFIG(1) != freq)
+            Plugin_022_Frequency(address, PCONFIG(1));
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String log = "";
+        String line = String(string);
+        String command = "";
+        int dotPos = line.indexOf('.');
+        bool istanceCommand = false;
+        if(dotPos > -1)
+        {
+          LoadTaskSettings(event->TaskIndex);
+          String name = line.substring(0,dotPos);
+          name.replace("[","");
+          name.replace("]","");
+          if(name.equalsIgnoreCase(getTaskDeviceName(event->TaskIndex)) == true)
+          {
+            line = line.substring(dotPos + 1);
+            istanceCommand = true;
+          }
+          else
+          {
+             break;
+          }
+        }
+        command = parseString(line, 1);
+
+        if (command == F("pcapwm") || (istanceCommand && command == F("pwm")))
+        {
+          success = true;
+          log = String(F("PCA 0x")) + String(address, HEX) + String(F(": PWM ")) + String(event->Par1);
+          if(event->Par1 >= 0 && event->Par1 <= PCA9685_MAX_PINS)
+          {
+            if(event->Par2 >=0 && event->Par2 <= range)
+            {
+              if (!IS_INIT(initializeState, (address - PCA9685_ADDRESS)))
+              {
+                Plugin_022_initialize(address);
+                Plugin_022_writeRegister(address, PCA9685_MODE2, mode2);
+                Plugin_022_Frequency(address, freq);
+              }
+              Plugin_022_Write(address, event->Par1, map(event->Par2, 0, range, 0, PCA9685_MAX_PWM));
+
+
+              portStatusStruct newStatus;
+              const uint32_t key = createKey(PLUGIN_ID_022,event->Par1);
+
+              newStatus = globalMapPortStatus[key];
+              newStatus.command=1;
+              newStatus.mode = PIN_MODE_PWM;
+              newStatus.state = event->Par2;
+              savePortStatus(key,newStatus);
+
+              addLog(LOG_LEVEL_INFO, log);
+
+              SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+            }
+            else{
+              addLog(LOG_LEVEL_ERROR, log + String(F(" the pwm value ")) + String(event->Par2) + String(F(" is invalid value.")));
+            }
+          }
+          else{
+            addLog(LOG_LEVEL_ERROR, log + String(F(" is invalid value.")));
+          }
+        }
+
+        if (command == F("pcafrq") || (istanceCommand && command == F("frq")))
+        {
+          success = true;
+          if(event->Par1 >= PCA9685_MIN_FREQUENCY && event->Par1 <= PCA9685_MAX_FREQUENCY)
+          {
+            if (!IS_INIT(initializeState, (address - PCA9685_ADDRESS)))
+            {
+              Plugin_022_initialize(address);
+              Plugin_022_writeRegister(address, PCA9685_MODE2, mode2);
+            }
+            Plugin_022_Frequency(address, event->Par1);
+
+
+            portStatusStruct newStatus;
+            const uint32_t key = createKey(PLUGIN_ID_022,99);
+
+            newStatus = globalMapPortStatus[key];
+            newStatus.command=1;
+            newStatus.mode = PIN_MODE_UNDEFINED;
+            newStatus.state = event->Par1;
+            savePortStatus(key,newStatus);
+
+            log = String(F("PCA 0x")) + String(address, HEX) + String(F(": FREQ ")) + String(event->Par1);
+            addLog(LOG_LEVEL_INFO, log);
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+          else{
+            addLog(LOG_LEVEL_ERROR,String(F("PCA 0x")) + String(address, HEX) + String(F(" The frequency ")) + String(event->Par1) + String(F(" is out of range.")));
+          }
+        }
+
+        if (istanceCommand && command == F("mode2"))
+        {
+          success = true;
+          if(event->Par1 >= 0 && event->Par1 < PCA9685_MODE2_VALUES)
+          {
+            if (!IS_INIT(initializeState, (address - PCA9685_ADDRESS)))
+            {
+              Plugin_022_initialize(address);
+              Plugin_022_Frequency(address, freq);
+            }
+            Plugin_022_writeRegister(address, PCA9685_MODE2, event->Par1);
+            log = String(F("PCA 0x")) + String(address, HEX) + String(F(": MODE2 0x")) + String(event->Par1, HEX);
+            addLog(LOG_LEVEL_INFO, log);
+          }
+          else{
+            addLog(LOG_LEVEL_ERROR,String(F("PCA 0x")) + String(address, HEX) + String(F(" MODE2 0x")) + String(event->Par1, HEX) + String(F(" is out of range.")));
+          }
+        }
+
+        if (command == F("status"))
+        {
+          if (parseString(line, 2) == F("pca"))
+          {
+            if (!IS_INIT(initializeState, (address - PCA9685_ADDRESS)))
+            {
+              Plugin_022_initialize(address);
+              Plugin_022_writeRegister(address, PCA9685_MODE2, mode2);
+              Plugin_022_Frequency(address, freq);
+            }
+            success = true;
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE,createKey(PLUGIN_ID_022,event->Par2), dummyString, 0);
+          }
+        }
+
+        if(istanceCommand && command == F("gpio"))
+        {
+          success = true;
+          log = String(F("PCA 0x")) + String(address, HEX) + String(F(": GPIO "));
+          if(event->Par1>=0 && event->Par1 <= PCA9685_MAX_PINS)
+          {
+            if (!IS_INIT(initializeState, (address - PCA9685_ADDRESS)))
+            {
+              Plugin_022_initialize(address);
+              Plugin_022_writeRegister(address, PCA9685_MODE2, mode2);
+              Plugin_022_Frequency(address, freq);
+            }
+            int pin = event->Par1;
+            if(parseString(line,2) == "all")
+            {
+              pin = -1;
+              log += String(F("all"));
+            }
+            else
+            {
+               log += String(pin);
+            }
+            if(event->Par2 == 0)
+            {
+              log += F(" off");
+              Plugin_022_Off(address, pin);
+            }
+            else
+            {
+              log += F(" on");
+              Plugin_022_On(address, pin);
+            }
+            addLog(LOG_LEVEL_INFO, log);
+
+            portStatusStruct newStatus;
+            const uint32_t key = createKey(PLUGIN_ID_022,pin);
+
+            newStatus = globalMapPortStatus[key];
+            newStatus.command=1;
+            newStatus.mode = PIN_MODE_OUTPUT;
+            newStatus.state = event->Par2;
+            savePortStatus(key,newStatus);
+
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+          else{
+            addLog(LOG_LEVEL_ERROR, log + String(F(" is invalid value.")));
+          }
+        }
+
+        if(istanceCommand && command == F("pulse"))
+        {
+          success = true;
+          log = String(F("PCA 0x")) + String(address, HEX) + String(F(": GPIO ")) + String(event->Par1);
+          if(event->Par1>=0 && event->Par1 <= PCA9685_MAX_PINS)
+          {
+            if (!IS_INIT(initializeState, (address - PCA9685_ADDRESS)))
+            {
+              Plugin_022_initialize(address);
+              Plugin_022_writeRegister(address, PCA9685_MODE2, mode2);
+              Plugin_022_Frequency(address, freq);
+            }
+
+            if(event->Par2 == 0)
+            {
+              log += F(" off");
+              Plugin_022_Off(address, event->Par1);
+            }
+            else
+            {
+              log += F(" on");
+              Plugin_022_On(address, event->Par1);
+            }
+            log += String(F(" Pulse set for ")) + event->Par3;
+            log += String(F("ms"));
+            int autoreset = 0;
+            if(event->Par3 > 0)
+            {
+              if(parseString(line, 5) == F("auto"))
+              {
+                autoreset = -1;
+                log += String(F(" with autoreset infinity"));
+              }
+              else
+              {
+                autoreset = event->Par4;
+                if(autoreset > 0)
+                {
+                  log += String(F(" for "));
+                  log += String(autoreset);
+                }
+              }
+
+            }
+            setPluginTaskTimer(event->Par3 , PLUGIN_ID_022
+              , event->TaskIndex
+              , event->Par1
+              , !event->Par2
+              , event->Par3
+              , autoreset);
+
+            portStatusStruct newStatus;
+            const uint32_t key = createKey(PLUGIN_ID_022,event->Par1);
+
+            newStatus = globalMapPortStatus[key];
+            newStatus.command=1;
+            newStatus.mode = PIN_MODE_OUTPUT;
+            newStatus.state = event->Par2;
+            savePortStatus(key,newStatus);
+
+            addLog(LOG_LEVEL_INFO, log);
+
+            SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+          }
+          else{
+            addLog(LOG_LEVEL_ERROR, log + String(F(" is invalid value.")));
+          }
+        }
+
+        break;
+      }
+      case PLUGIN_TIMER_IN:
+      {
+        String log = String(F("PCA 0x")) + String(address, HEX) + String(F(": GPIO ")) + String(event->Par1);
+        int autoreset = event->Par4;
+        if(event->Par2 == 0)
+        {
+          log += F(" off");
+          Plugin_022_Off(address, event->Par1);
+        }
+        else
+        {
+          log += F(" on");
+          Plugin_022_On(address, event->Par1);
+        }
+        if(autoreset > 0 || autoreset == -1)
+        {
+          if(autoreset > -1)
+          {
+            log += String(F(" Pulse auto restart for "));
+            log += String(autoreset);
+            autoreset--;
+          }
+          setPluginTaskTimer(event->Par3, PLUGIN_ID_022
+            , event->TaskIndex
+            , event->Par1
+            , !event->Par2
+            , event->Par3
+            , autoreset);
+        }
+
+        portStatusStruct newStatus;
+        const uint32_t key = createKey(PLUGIN_ID_022,event->Par1);
+
+        newStatus = globalMapPortStatus[key];
+        newStatus.command=1;
+        newStatus.mode = PIN_MODE_OUTPUT;
+        newStatus.state = event->Par2;
+        savePortStatus(key,newStatus);
+
+
+        SendStatusOnlyIfNeeded(event->Source, SEARCH_PIN_STATE, key, log, 0);
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+
+
+void Plugin_022_writeRegister(int i2cAddress, int regAddress, byte data) {
+  Wire.beginTransmission(i2cAddress);
+  Wire.write(regAddress);
+  Wire.write(data);
+  Wire.endTransmission();
+}
+
+uint8_t Plugin_022_readRegister(int i2cAddress, int regAddress) {
+  uint8_t res = 0;
+  Wire.requestFrom(i2cAddress,1,1);
+  while (Wire.available()) {
+    res = Wire.read();
+  }
+  return res;
+}
+
+
+
+
+
+void Plugin_022_Off(int address, int pin)
+{
+  Plugin_022_Write(address, pin, 0);
+}
+
+void Plugin_022_On(int address, int pin)
+{
+  Plugin_022_Write(address, pin, PCA9685_MAX_PWM);
+}
+
+void Plugin_022_Write(int address, int Par1, int Par2)
+{
+  int i2cAddress = address;
+
+  int regAddress = Par1 == -1
+    ? PCA9685_ALLLED_REG
+    : PCA9685_LED0 + 4 * Par1;
+  uint16_t LED_ON = 0;
+  uint16_t LED_OFF = Par2;
+  Wire.beginTransmission(i2cAddress);
+  Wire.write(regAddress);
+  Wire.write(lowByte(LED_ON));
+  Wire.write(highByte(LED_ON));
+  Wire.write(lowByte(LED_OFF));
+  Wire.write(highByte(LED_OFF));
+  Wire.endTransmission();
+}
+
+void Plugin_022_Frequency(int address, uint16_t freq)
+{
+  int i2cAddress = address;
+  Plugin_022_writeRegister(i2cAddress, PLUGIN_022_PCA9685_MODE1, (byte)0x0);
+  freq *= 0.9;
+
+  uint16_t prescale = 6103;
+  prescale /= freq;
+  prescale -= 1;
+  uint8_t oldmode = Plugin_022_readRegister(i2cAddress, 0);
+  uint8_t newmode = (oldmode&0x7f) | 0x10;
+  Plugin_022_writeRegister(i2cAddress, PLUGIN_022_PCA9685_MODE1, (byte)newmode);
+  Plugin_022_writeRegister(i2cAddress, 0xfe, (byte)prescale);
+  Plugin_022_writeRegister(i2cAddress, PLUGIN_022_PCA9685_MODE1, (byte)oldmode);
+  delayMicroseconds(5000);
+  Plugin_022_writeRegister(i2cAddress, PLUGIN_022_PCA9685_MODE1, (byte)oldmode | 0xa1);
+}
+
+void Plugin_022_initialize(int address)
+{
+  int i2cAddress = address;
+
+  Plugin_022_writeRegister(i2cAddress, PLUGIN_022_PCA9685_MODE1, (byte)0x01);
+  delay(1);
+  Plugin_022_writeRegister(i2cAddress, PLUGIN_022_PCA9685_MODE1, (byte)B10100000);
+
+  SET_INIT(initializeState, (address - PCA9685_ADDRESS));
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P023_OLED.ino"
+#ifdef USES_P023
+# 12 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P023_OLED.ino"
+#define PLUGIN_023 
+#define PLUGIN_ID_023 23
+#define PLUGIN_NAME_023 "Display - OLED SSD1306"
+#define PLUGIN_VALUENAME1_023 "OLED"
+#define PLUGIN_023_MAX_DYSPALY 2
+
+#define P23_Nlines 8
+#define P23_Nchars 64
+
+struct Plugin_023_OLED_SettingStruct
+{
+  Plugin_023_OLED_SettingStruct(): address(0)
+  , type(0),font_width(0),displayTimer(0){}
+  byte address;
+  byte type;
+  byte font_width;
+  byte displayTimer;
+} OLED_Settings[PLUGIN_023_MAX_DYSPALY];
+
+enum
+{
+  OLED_64x48 = 0x01,
+  OLED_rotated = 0x02,
+  OLED_128x32 = 0x04
+};
+
+enum
+{
+  Size_normal = 0x01,
+  Size_optimized = 0x02
+};
+
+boolean Plugin_023(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_023;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_023);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_023));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choice = PCONFIG(0);
+
+        int optionValues[2] = { 0x3C, 0x3D };
+        addFormSelectorI2C(F("p023_adr"), 2, optionValues, choice);
+
+        byte choice2 = PCONFIG(1);
+        String options2[2] = { F("Normal"), F("Rotated") };
+        int optionValues2[2] = { 1, 2 };
+        addFormSelector(F("Rotation"), F("p023_rotate"), 2, options2, optionValues2, choice2);
+
+        byte choice3 = PCONFIG(3);
+        String options3[3] = { F("128x64"), F("128x32"), F("64x48") };
+        int optionValues3[3] = { 1, 3, 2 };
+        addFormSelector(F("Display Size"), F("p023_size"), 3, options3, optionValues3, choice3);
+
+        byte choice4 = PCONFIG(4);
+        String options4[2] = { F("Normal"), F("Optimized") };
+        int optionValues4[2] = { 1, 2 };
+        addFormSelector(F("Font Width"), F("p023_font_width"), 2, options4, optionValues4, choice4);
+
+        char deviceTemplate[P23_Nlines][P23_Nchars];
+        LoadCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+        for (byte varNr = 0; varNr < 8; varNr++)
+        {
+          addFormTextBox(String(F("Line ")) + (varNr + 1), String(F("p023_template")) + (varNr + 1), deviceTemplate[varNr], 64);
+        }
+
+
+        addFormPinSelect(F("Display button"), F("taskdevicepin3"), CONFIG_PIN3);
+
+        addFormNumericBox(F("Display Timeout"), F("plugin_23_timer"), PCONFIG(2));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p023_adr"));
+        PCONFIG(1) = getFormItemInt(F("p023_rotate"));
+        PCONFIG(2) = getFormItemInt(F("plugin_23_timer"));
+        PCONFIG(3) = getFormItemInt(F("p023_size"));
+        PCONFIG(4) = getFormItemInt(F("p023_font_width"));
+
+        char deviceTemplate[P23_Nlines][P23_Nchars];
+        String error;
+        for (byte varNr = 0; varNr < P23_Nlines; varNr++)
+        {
+          String argName = F("p023_template");
+          argName += varNr + 1;
+          if (!safe_strncpy(deviceTemplate[varNr], WebServer.arg(argName), P23_Nchars)) {
+            error += getCustomTaskSettingsError(varNr);
+          }
+        }
+        if (error.length() > 0) {
+          addHtmlError(error);
+        }
+        SaveCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        int index = PCONFIG(0) == 0x3C
+         ? 0
+         : 1;
+        OLED_Settings[index].address = PCONFIG(0);
+        OLED_Settings[index].type = 0;
+        if (PCONFIG(3) == 3)
+        {
+          OLED_Settings[index].type = OLED_128x32;
+        }
+        OLED_Settings[index].font_width = Size_normal;
+        if (PCONFIG(4) == 2)
+        {
+          OLED_Settings[index].font_width = Size_optimized;
+        }
+
+        Plugin_023_StartUp_OLED(OLED_Settings[index]);
+        Plugin_023_clear_display(OLED_Settings[index]);
+        if (PCONFIG(1) == 2)
+        {
+          OLED_Settings[index].type |= OLED_rotated;
+          Plugin_023_sendcommand(OLED_Settings[index].address, 0xA0 | 0x1);
+          Plugin_023_sendcommand(OLED_Settings[index].address, 0xC8);
+        }
+        if (PCONFIG(3) == 2)
+        {
+          OLED_Settings[index].type |= OLED_64x48;
+        }
+
+        Plugin_023_sendStrXY(OLED_Settings[index], "ESP Easy ", 0, 0);
+        OLED_Settings[index].displayTimer = PCONFIG(2);
+        if (CONFIG_PIN3 != -1)
+          pinMode(CONFIG_PIN3, INPUT_PULLUP);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (CONFIG_PIN3 != -1)
+        {
+          int index = PCONFIG(0) == 0x3C
+                    ? 0
+                    : 1;
+          if (!digitalRead(CONFIG_PIN3))
+          {
+            Plugin_023_displayOn(OLED_Settings[index]);
+            OLED_Settings[index].displayTimer = PCONFIG(2);
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+        int index = PCONFIG(0) == 0x3C
+          ? 0
+          : 1;
+
+        if (OLED_Settings[index].displayTimer > 0)
+        {
+          OLED_Settings[index].displayTimer--;
+          if (OLED_Settings[index].displayTimer == 0)
+            Plugin_023_displayOff(OLED_Settings[index]);
+        }
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        char deviceTemplate[P23_Nlines][P23_Nchars];
+        LoadCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+        int index = PCONFIG(0) == 0x3C
+          ? 0
+          : 1;
+
+        for (byte x = 0; x < 8; x++)
+        {
+          String tmpString = deviceTemplate[x];
+          if (tmpString.length())
+          {
+            String newString = P023_parseTemplate(tmpString, 16);
+            Plugin_023_sendStrXY(OLED_Settings[index],newString.c_str(), x, 0);
+          }
+        }
+        success = false;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        int index = PCONFIG(0) == 0x3C
+          ? 0
+          : 1;
+        String arguments = String(string);
+
+
+        int dotPos = arguments.indexOf('.');
+        if(dotPos > -1 && arguments.substring(dotPos,dotPos+4).equalsIgnoreCase(F("oled")))
+        {
+          LoadTaskSettings(event->TaskIndex);
+          String name = arguments.substring(0,dotPos);
+          name.replace("[","");
+          name.replace("]","");
+          if(name.equalsIgnoreCase(getTaskDeviceName(event->TaskIndex)) == true)
+          {
+            arguments = arguments.substring(dotPos+1);
+          }
+          else
+          {
+             return false;
+          }
+        }
+
+
+        int argIndex = arguments.indexOf(',');
+        if (argIndex)
+          arguments = arguments.substring(0, argIndex);
+        if (arguments.equalsIgnoreCase(F("OLEDCMD")))
+        {
+          success = true;
+          argIndex = string.lastIndexOf(',');
+          arguments = string.substring(argIndex + 1);
+          if (arguments.equalsIgnoreCase(F("Off")))
+            Plugin_023_displayOff(OLED_Settings[index]);
+          else if (arguments.equalsIgnoreCase(F("On")))
+            Plugin_023_displayOn(OLED_Settings[index]);
+          else if (arguments.equalsIgnoreCase(F("Clear")))
+            Plugin_023_clear_display(OLED_Settings[index]);
+        }
+        else if (arguments.equalsIgnoreCase(F("OLED")))
+        {
+          success = true;
+          argIndex = string.lastIndexOf(',');
+          arguments = string.substring(argIndex + 1);
+          String newString = P023_parseTemplate(arguments, 16);
+          Plugin_023_sendStrXY(OLED_Settings[index], newString.c_str(), event->Par1 - 1, event->Par2 - 1);
+        }
+        break;
+      }
+  }
+  return success;
+}
+
+const char Plugin_023_myFont_Size[] PROGMEM = {
+  0x05,
+  0x05,
+  0x07,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x06,
+  0x06,
+  0x06,
+  0x08,
+  0x08,
+  0x05,
+  0x08,
+  0x05,
+  0x08,
+  0x08,
+  0x07,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x06,
+  0x06,
+  0x07,
+  0x08,
+  0x07,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x06,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x08,
+  0x06,
+  0x08,
+  0x06,
+  0x08,
+  0x08,
+  0x06,
+  0x08,
+  0x08,
+  0x07,
+  0x08,
+  0x08,
+  0x07,
+  0x08,
+  0x08,
+  0x05,
+  0x06,
+  0x07,
+  0x06,
+  0x08,
+  0x07,
+  0x07,
+  0x07,
+  0x07,
+  0x07,
+  0x07,
+  0x06,
+  0x07,
+  0x08,
+  0x08,
+  0x08,
+  0x07,
+  0x08,
+  0x06,
+  0x05,
+  0x06,
+  0x08,
+  0x08
+};
+
+
+String P023_parseTemplate(String &tmpString, byte lineSize) {
+  String result = parseTemplate(tmpString, lineSize);
+  const char degree[3] = {0xc2, 0xb0, 0};
+  const char degree_oled[2] = {0x7F, 0};
+  result.replace(degree, degree_oled);
+  return result;
+}
+
+
+
+const char Plugin_023_myFont[][8] PROGMEM = {
+  {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x00, 0x5F, 0x00, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x00, 0x07, 0x00, 0x07, 0x00, 0x00, 0x00},
+  {0x00, 0x14, 0x7F, 0x14, 0x7F, 0x14, 0x00, 0x00},
+  {0x00, 0x24, 0x2A, 0x7F, 0x2A, 0x12, 0x00, 0x00},
+  {0x00, 0x23, 0x13, 0x08, 0x64, 0x62, 0x00, 0x00},
+  {0x00, 0x36, 0x49, 0x55, 0x22, 0x50, 0x00, 0x00},
+  {0x00, 0x00, 0x05, 0x03, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x1C, 0x22, 0x41, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x41, 0x22, 0x1C, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x08, 0x2A, 0x1C, 0x2A, 0x08, 0x00, 0x00},
+  {0x00, 0x08, 0x08, 0x3E, 0x08, 0x08, 0x00, 0x00},
+  {0x00, 0xA0, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x08, 0x08, 0x08, 0x08, 0x08, 0x00, 0x00},
+  {0x00, 0x60, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x20, 0x10, 0x08, 0x04, 0x02, 0x00, 0x00},
+  {0x00, 0x3E, 0x51, 0x49, 0x45, 0x3E, 0x00, 0x00},
+  {0x00, 0x00, 0x42, 0x7F, 0x40, 0x00, 0x00, 0x00},
+  {0x00, 0x62, 0x51, 0x49, 0x49, 0x46, 0x00, 0x00},
+  {0x00, 0x22, 0x41, 0x49, 0x49, 0x36, 0x00, 0x00},
+  {0x00, 0x18, 0x14, 0x12, 0x7F, 0x10, 0x00, 0x00},
+  {0x00, 0x27, 0x45, 0x45, 0x45, 0x39, 0x00, 0x00},
+  {0x00, 0x3C, 0x4A, 0x49, 0x49, 0x30, 0x00, 0x00},
+  {0x00, 0x01, 0x71, 0x09, 0x05, 0x03, 0x00, 0x00},
+  {0x00, 0x36, 0x49, 0x49, 0x49, 0x36, 0x00, 0x00},
+  {0x00, 0x06, 0x49, 0x49, 0x29, 0x1E, 0x00, 0x00},
+  {0x00, 0x00, 0x36, 0x36, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x00, 0xAC, 0x6C, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x08, 0x14, 0x22, 0x41, 0x00, 0x00, 0x00},
+  {0x00, 0x14, 0x14, 0x14, 0x14, 0x14, 0x00, 0x00},
+  {0x00, 0x41, 0x22, 0x14, 0x08, 0x00, 0x00, 0x00},
+  {0x00, 0x02, 0x01, 0x51, 0x09, 0x06, 0x00, 0x00},
+  {0x00, 0x32, 0x49, 0x79, 0x41, 0x3E, 0x00, 0x00},
+  {0x00, 0x7E, 0x09, 0x09, 0x09, 0x7E, 0x00, 0x00},
+  {0x00, 0x7F, 0x49, 0x49, 0x49, 0x36, 0x00, 0x00},
+  {0x00, 0x3E, 0x41, 0x41, 0x41, 0x22, 0x00, 0x00},
+  {0x00, 0x7F, 0x41, 0x41, 0x22, 0x1C, 0x00, 0x00},
+  {0x00, 0x7F, 0x49, 0x49, 0x49, 0x41, 0x00, 0x00},
+  {0x00, 0x7F, 0x09, 0x09, 0x09, 0x01, 0x00, 0x00},
+  {0x00, 0x3E, 0x41, 0x41, 0x51, 0x72, 0x00, 0x00},
+  {0x00, 0x7F, 0x08, 0x08, 0x08, 0x7F, 0x00, 0x00},
+  {0x00, 0x41, 0x7F, 0x41, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x20, 0x40, 0x41, 0x3F, 0x01, 0x00, 0x00},
+  {0x00, 0x7F, 0x08, 0x14, 0x22, 0x41, 0x00, 0x00},
+  {0x00, 0x7F, 0x40, 0x40, 0x40, 0x40, 0x00, 0x00},
+  {0x00, 0x7F, 0x02, 0x0C, 0x02, 0x7F, 0x00, 0x00},
+  {0x00, 0x7F, 0x04, 0x08, 0x10, 0x7F, 0x00, 0x00},
+  {0x00, 0x3E, 0x41, 0x41, 0x41, 0x3E, 0x00, 0x00},
+  {0x00, 0x7F, 0x09, 0x09, 0x09, 0x06, 0x00, 0x00},
+  {0x00, 0x3E, 0x41, 0x51, 0x21, 0x5E, 0x00, 0x00},
+  {0x00, 0x7F, 0x09, 0x19, 0x29, 0x46, 0x00, 0x00},
+  {0x00, 0x26, 0x49, 0x49, 0x49, 0x32, 0x00, 0x00},
+  {0x00, 0x01, 0x01, 0x7F, 0x01, 0x01, 0x00, 0x00},
+  {0x00, 0x3F, 0x40, 0x40, 0x40, 0x3F, 0x00, 0x00},
+  {0x00, 0x1F, 0x20, 0x40, 0x20, 0x1F, 0x00, 0x00},
+  {0x00, 0x3F, 0x40, 0x38, 0x40, 0x3F, 0x00, 0x00},
+  {0x00, 0x63, 0x14, 0x08, 0x14, 0x63, 0x00, 0x00},
+  {0x00, 0x03, 0x04, 0x78, 0x04, 0x03, 0x00, 0x00},
+  {0x00, 0x61, 0x51, 0x49, 0x45, 0x43, 0x00, 0x00},
+  {0x00, 0x7F, 0x41, 0x41, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x02, 0x04, 0x08, 0x10, 0x20, 0x00, 0x00},
+  {0x00, 0x41, 0x41, 0x7F, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x04, 0x02, 0x01, 0x02, 0x04, 0x00, 0x00},
+  {0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00, 0x00},
+  {0x00, 0x01, 0x02, 0x04, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x20, 0x54, 0x54, 0x54, 0x78, 0x00, 0x00},
+  {0x00, 0x7F, 0x48, 0x44, 0x44, 0x38, 0x00, 0x00},
+  {0x00, 0x38, 0x44, 0x44, 0x28, 0x00, 0x00, 0x00},
+  {0x00, 0x38, 0x44, 0x44, 0x48, 0x7F, 0x00, 0x00},
+  {0x00, 0x38, 0x54, 0x54, 0x54, 0x18, 0x00, 0x00},
+  {0x00, 0x08, 0x7E, 0x09, 0x02, 0x00, 0x00, 0x00},
+  {0x00, 0x18, 0xA4, 0xA4, 0xA4, 0x7C, 0x00, 0x00},
+  {0x00, 0x7F, 0x08, 0x04, 0x04, 0x78, 0x00, 0x00},
+  {0x00, 0x00, 0x7D, 0x00, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x80, 0x84, 0x7D, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x7F, 0x10, 0x28, 0x44, 0x00, 0x00, 0x00},
+  {0x00, 0x41, 0x7F, 0x40, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x7C, 0x04, 0x18, 0x04, 0x78, 0x00, 0x00},
+  {0x00, 0x7C, 0x08, 0x04, 0x7C, 0x00, 0x00, 0x00},
+  {0x00, 0x38, 0x44, 0x44, 0x38, 0x00, 0x00, 0x00},
+  {0x00, 0xFC, 0x24, 0x24, 0x18, 0x00, 0x00, 0x00},
+  {0x00, 0x18, 0x24, 0x24, 0xFC, 0x00, 0x00, 0x00},
+  {0x00, 0x00, 0x7C, 0x08, 0x04, 0x00, 0x00, 0x00},
+  {0x00, 0x48, 0x54, 0x54, 0x24, 0x00, 0x00, 0x00},
+  {0x00, 0x04, 0x7F, 0x44, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x3C, 0x40, 0x40, 0x7C, 0x00, 0x00, 0x00},
+  {0x00, 0x1C, 0x20, 0x40, 0x20, 0x1C, 0x00, 0x00},
+  {0x00, 0x3C, 0x40, 0x30, 0x40, 0x3C, 0x00, 0x00},
+  {0x00, 0x44, 0x28, 0x10, 0x28, 0x44, 0x00, 0x00},
+  {0x00, 0x1C, 0xA0, 0xA0, 0x7C, 0x00, 0x00, 0x00},
+  {0x00, 0x44, 0x64, 0x54, 0x4C, 0x44, 0x00, 0x00},
+  {0x00, 0x08, 0x36, 0x41, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x00, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x41, 0x36, 0x08, 0x00, 0x00, 0x00, 0x00},
+  {0x00, 0x02, 0x01, 0x01, 0x02, 0x01, 0x00, 0x00},
+  {0x00, 0x02, 0x05, 0x05, 0x02, 0x00, 0x00, 0x00}
+};
+
+void Plugin_023_reset_display(struct Plugin_023_OLED_SettingStruct &oled)
+{
+  Plugin_023_displayOff(oled);
+  Plugin_023_clear_display(oled);
+  Plugin_023_displayOn(oled);
+}
+
+
+void Plugin_023_StartUp_OLED(struct Plugin_023_OLED_SettingStruct &oled)
+{
+  Plugin_023_init_OLED(oled);
+  Plugin_023_reset_display(oled);
+  Plugin_023_displayOff(oled);
+  Plugin_023_setXY(oled, 0, 0);
+  Plugin_023_clear_display(oled);
+  Plugin_023_displayOn(oled);
+}
+
+
+void Plugin_023_displayOn(struct Plugin_023_OLED_SettingStruct &oled)
+{
+  Plugin_023_sendcommand(oled.address, 0xaf);
+}
+
+
+void Plugin_023_displayOff(struct Plugin_023_OLED_SettingStruct &oled)
+{
+  Plugin_023_sendcommand(oled.address, 0xae);
+}
+
+
+void Plugin_023_clear_display(struct Plugin_023_OLED_SettingStruct &oled)
+{
+  unsigned char i, k;
+  for (k = 0; k < 8; k++)
+  {
+    Plugin_023_setXY(oled, k, 0);
+    {
+      for (i = 0; i < 128; i++)
+      {
+        Plugin_023_SendChar(oled, 0);
+      }
+    }
+  }
+}
+
+
+
+void Plugin_023_SendChar(struct Plugin_023_OLED_SettingStruct &oled, unsigned char data)
+{
+  Wire.beginTransmission(oled.address);
+  Wire.write(0x40);
+  Wire.write(data);
+  Wire.endTransmission();
+}
+# 569 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P023_OLED.ino"
+void Plugin_023_sendcommand(byte address, unsigned char com)
+{
+  Wire.beginTransmission(address);
+  Wire.write(0x80);
+  Wire.write(com);
+  Wire.endTransmission();
+}
+
+
+
+
+void Plugin_023_setXY(struct Plugin_023_OLED_SettingStruct &oled, unsigned char row, unsigned char col)
+{
+  switch (oled.type)
+  {
+    case OLED_64x48:
+      col += 4;
+      break;
+    case OLED_64x48 | OLED_rotated:
+      col += 4;
+      row += 2;
+  }
+
+  Plugin_023_sendcommand(oled.address, 0xb0 + row);
+  Plugin_023_sendcommand(oled.address, 0x00 + (8 * col & 0x0f));
+  Plugin_023_sendcommand(oled.address, 0x10 + ((8 * col >> 4) & 0x0f));
+}
+# 616 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P023_OLED.ino"
+void Plugin_023_sendStrXY(struct Plugin_023_OLED_SettingStruct &oled, const char *string, int X, int Y)
+{
+  Plugin_023_setXY(oled, X, Y);
+  unsigned char i = 0;
+  unsigned char font_width = 0;
+
+  while (*string)
+  {
+    switch (oled.font_width)
+    {
+      case Size_optimized:
+        font_width = pgm_read_byte(&(Plugin_023_myFont_Size[*string - 0x20]));
+        break;
+      default:
+        font_width = 8;
+    }
+
+    for (i = 0; i < font_width; i++)
+    {
+      Plugin_023_SendChar(oled, pgm_read_byte(Plugin_023_myFont[*string - 0x20] + i));
+    }
+    string++;
+  }
+}
+
+
+void Plugin_023_init_OLED(struct Plugin_023_OLED_SettingStruct &oled)
+{
+  unsigned char multiplex;
+  unsigned char compins;
+  byte address = oled.address;
+  switch (oled.type)
+  {
+    case OLED_128x32:
+      multiplex = 0x1F;
+      compins = 0x02;
+      break;
+    default:
+      multiplex = 0x3F;
+      compins = 0x12;
+  }
+
+  Plugin_023_sendcommand(address, 0xAE);
+  Plugin_023_sendcommand(address, 0xD5);
+  Plugin_023_sendcommand(address, 0x80);
+  Plugin_023_sendcommand(address, 0xA8);
+  Plugin_023_sendcommand(address, multiplex);
+  Plugin_023_sendcommand(address, 0xD3);
+  Plugin_023_sendcommand(address, 0x00);
+  Plugin_023_sendcommand(address, 0x40 | 0x0);
+  Plugin_023_sendcommand(address, 0x8D);
+  Plugin_023_sendcommand(address, 0x14);
+  Plugin_023_sendcommand(address, 0x20);
+  Plugin_023_sendcommand(address, 0x00);
+  Plugin_023_sendcommand(address, 0xA0);
+  Plugin_023_sendcommand(address, 0xC0);
+  Plugin_023_sendcommand(address, 0xDA);
+  Plugin_023_sendcommand(address, compins);
+  Plugin_023_sendcommand(address, 0x81);
+  Plugin_023_sendcommand(address, 0xCF);
+  Plugin_023_sendcommand(address, 0xD9);
+  Plugin_023_sendcommand(address, 0xF1);
+  Plugin_023_sendcommand(address, 0xDB);
+  Plugin_023_sendcommand(address, 0x40);
+  Plugin_023_sendcommand(address, 0xA4);
+  Plugin_023_sendcommand(address, 0xA6);
+
+  Plugin_023_clear_display(oled);
+  Plugin_023_sendcommand(address, 0x2E);
+  Plugin_023_sendcommand(address, 0x20);
+  Plugin_023_sendcommand(address, 0x00);
+
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P024_MLX90614.ino"
+#ifdef USES_P024
+
+
+
+
+
+
+#define PLUGIN_024 
+#define PLUGIN_ID_024 24
+#define PLUGIN_NAME_024 "Environment - MLX90614"
+#define PLUGIN_VALUENAME1_024 "Temperature"
+
+boolean Plugin_024_init = false;
+
+uint16_t readRegister024(uint8_t i2cAddress, uint8_t reg) {
+  uint16_t ret;
+  Wire.beginTransmission(i2cAddress);
+  Wire.write(reg);
+  Wire.endTransmission(false);
+  Wire.requestFrom(i2cAddress, (uint8_t)3);
+  ret = Wire.read();
+  ret |= Wire.read() << 8;
+  Wire.read();
+  return ret;
+}
+
+float readTemp024(uint8_t i2c_addr, uint8_t i2c_reg)
+{
+  float temp;
+  temp = readRegister024(i2c_addr, i2c_reg);
+  temp *= .02;
+  temp -= 273.15;
+  return temp;
+}
+
+boolean Plugin_024(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_024;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 16;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_024);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_024));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        #define MLX90614_OPTION 2
+
+        byte choice = PCONFIG(0);
+        String options[MLX90614_OPTION];
+        int optionValues[MLX90614_OPTION];
+        optionValues[0] = (0x07);
+        options[0] = F("IR object temperature");
+        optionValues[1] = (0x06);
+        options[1] = F("Ambient temperature");
+        addFormSelector(F("Option"), F("p024_option"), MLX90614_OPTION, options, optionValues, choice);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p024_option"));
+        Plugin_024_init = false;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        Plugin_024_init = true;
+
+
+
+
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+
+
+        byte unit = CONFIG_PORT;
+        uint8_t address = 0x5A + unit;
+        UserVar[event->BaseVarIndex] = (float) readTemp024(address, PCONFIG(0));
+        String log = F("MLX90614  : Temperature: ");
+        log += UserVar[event->BaseVarIndex];
+
+        addLog(LOG_LEVEL_INFO,log);
+        success = true;
+
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P025_ADS1115.ino"
+#ifdef USES_P025
+
+
+
+
+#define PLUGIN_025 
+#define PLUGIN_ID_025 25
+#define PLUGIN_NAME_025 "Analog input - ADS1115"
+#define PLUGIN_VALUENAME1_025 "Analog"
+
+boolean Plugin_025_init = false;
+
+uint16_t readRegister025(uint8_t i2cAddress, uint8_t reg) {
+  Wire.beginTransmission(i2cAddress);
+  Wire.write((0x00));
+  Wire.endTransmission();
+  if (Wire.requestFrom(i2cAddress, (uint8_t)2) != 2)
+    return 0x8000;
+  return ((Wire.read() << 8) | Wire.read());
+}
+
+boolean Plugin_025(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_025;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_025);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_025));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte port = CONFIG_PORT;
+        if (port > 0)
+        {
+          PCONFIG(1) = PCONFIG(0) / 2;
+          PCONFIG(0) = 0x48 + ((port-1)/4);
+          PCONFIG(2) = ((port-1) & 3) | 4;
+          CONFIG_PORT = 0;
+        }
+
+        #define ADS1115_I2C_OPTION 4
+        byte addr = PCONFIG(0);
+        int optionValues[ADS1115_I2C_OPTION] = { 0x48, 0x49, 0x4A, 0x4B };
+        addFormSelectorI2C(F("p025_i2c"), ADS1115_I2C_OPTION, optionValues, addr);
+
+        addFormSubHeader(F("Input"));
+
+        #define ADS1115_PGA_OPTION 6
+        byte pga = PCONFIG(1);
+        String pgaOptions[ADS1115_PGA_OPTION] = {
+          F("2/3x gain (FS=6.144V)"),
+          F("1x gain (FS=4.096V)"),
+          F("2x gain (FS=2.048V)"),
+          F("4x gain (FS=1.024V)"),
+          F("8x gain (FS=0.512V)"),
+          F("16x gain (FS=0.256V)")
+        };
+        addFormSelector(F("Gain"), F("p025_gain"), ADS1115_PGA_OPTION, pgaOptions, NULL, pga);
+
+        #define ADS1115_MUX_OPTION 8
+        byte mux = PCONFIG(2);
+        String muxOptions[ADS1115_MUX_OPTION] = {
+          F("AIN0 - AIN1 (Differential)"),
+          F("AIN0 - AIN3 (Differential)"),
+          F("AIN1 - AIN3 (Differential)"),
+          F("AIN2 - AIN3 (Differential)"),
+          F("AIN0 - GND (Single-Ended)"),
+          F("AIN1 - GND (Single-Ended)"),
+          F("AIN2 - GND (Single-Ended)"),
+          F("AIN3 - GND (Single-Ended)"),
+        };
+        addFormSelector(F("Input Multiplexer"), F("p025_mode"), ADS1115_MUX_OPTION, muxOptions, NULL, mux);
+
+        addFormSubHeader(F("Two Point Calibration"));
+
+        addFormCheckBox(F("Calibration Enabled"), F("p025_cal"), PCONFIG(3));
+
+        addFormNumericBox(F("Point 1"), F("p025_adc1"), PCONFIG_LONG(0), -32768, 32767);
+        html_add_estimate_symbol();
+        addTextBox(F("p025_out1"), String(PCONFIG_FLOAT(0), 3), 10);
+
+        addFormNumericBox(F("Point 2"), F("p025_adc2"), PCONFIG_LONG(1), -32768, 32767);
+        html_add_estimate_symbol();
+        addTextBox(F("p025_out2"), String(PCONFIG_FLOAT(1), 3), 10);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p025_i2c"));
+
+        PCONFIG(1) = getFormItemInt(F("p025_gain"));
+
+        PCONFIG(2) = getFormItemInt(F("p025_mode"));
+
+        PCONFIG(3) = isFormItemChecked(F("p025_cal"));
+
+        PCONFIG_LONG(0) = getFormItemInt(F("p025_adc1"));
+        PCONFIG_FLOAT(0) = getFormItemFloat(F("p025_out1"));
+
+        PCONFIG_LONG(1) = getFormItemInt(F("p025_adc2"));
+        PCONFIG_FLOAT(1) = getFormItemFloat(F("p025_out2"));
+
+        Plugin_025_init = false;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        Plugin_025_init = true;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+
+
+
+
+        uint8_t address = PCONFIG(0);
+
+        uint16_t config = (0x0003) |
+                          (0x0000) |
+                          (0x0000) |
+                          (0x0000) |
+                          (0x0080) |
+                          (0x0100);
+
+        uint16_t pga = PCONFIG(1);
+        config |= pga << 9;
+
+        uint16_t mux = PCONFIG(2);
+        config |= mux << 12;
+
+        config |= (0x8000);
+
+        Wire.beginTransmission(address);
+        Wire.write((uint8_t)(0x01));
+        Wire.write((uint8_t)(config >> 8));
+        Wire.write((uint8_t)(config & 0xFF));
+        Wire.endTransmission();
+
+        String log = F("ADS1115 : Analog value: ");
+
+        delay(8);
+        int16_t value = readRegister025((address), (0x00));
+        UserVar[event->BaseVarIndex] = (float)value;
+        log += value;
+
+        if (PCONFIG(3))
+        {
+          int adc1 = PCONFIG_LONG(0);
+          int adc2 = PCONFIG_LONG(1);
+          float out1 = PCONFIG_FLOAT(0);
+          float out2 = PCONFIG_FLOAT(1);
+          if (adc1 != adc2)
+          {
+            float normalized = (float)(value - adc1) / (float)(adc2 - adc1);
+            UserVar[event->BaseVarIndex] = normalized * (out2 - out1) + out1;
+
+            log += ' ';
+            log += UserVar[event->BaseVarIndex];
+          }
+        }
+
+
+
+        addLog(LOG_LEVEL_DEBUG,log);
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P026_Sysinfo.ino"
+#ifdef USES_P026
+
+
+
+
+
+#define PLUGIN_026 
+#define PLUGIN_ID_026 26
+#define PLUGIN_NAME_026 "Generic - System Info"
+
+
+#define P026_QUERY1_CONFIG_POS 0
+#define P026_SENSOR_TYPE_INDEX P026_QUERY1_CONFIG_POS + VARS_PER_TASK
+#define P026_NR_OUTPUT_VALUES getValueCountFromSensorType(PCONFIG(P026_SENSOR_TYPE_INDEX))
+
+#define P026_NR_OUTPUT_OPTIONS 12
+
+String Plugin_026_valuename(byte value_nr, bool displayString) {
+  switch (value_nr) {
+    case 0: return displayString ? F("Uptime") : F("uptime");
+    case 1: return displayString ? F("Free RAM") : F("freeheap");
+    case 2: return displayString ? F("Wifi RSSI") : F("rssi");
+    case 3: return displayString ? F("Input VCC") : F("vcc");
+    case 4: return displayString ? F("System load") : F("load");
+    case 5: return displayString ? F("IP 1.Octet") : F("ip1");
+    case 6: return displayString ? F("IP 2.Octet") : F("ip2");
+    case 7: return displayString ? F("IP 3.Octet") : F("ip3");
+    case 8: return displayString ? F("IP 4.Octet") : F("ip4");
+    case 9: return displayString ? F("Web activity") : F("web");
+    case 10: return displayString ? F("Free Stack") : F("freestack");
+    case 11: return displayString ? F("None") : F("");
+    default:
+    break;
+  }
+  return "";
+}
+
+boolean Plugin_026(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_026;
+        Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+        Device[deviceCount].ValueCount = 4;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].FormulaOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_026);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        for (byte i = 0; i < VARS_PER_TASK; ++i) {
+          if ( i < P026_NR_OUTPUT_VALUES) {
+            const byte pconfigIndex = i + P026_QUERY1_CONFIG_POS;
+            byte choice = PCONFIG(pconfigIndex);
+            safe_strncpy(
+              ExtraTaskSettings.TaskDeviceValueNames[i],
+              Plugin_026_valuename(choice, false),
+              sizeof(ExtraTaskSettings.TaskDeviceValueNames[i]));
+          } else {
+            ZERO_FILL(ExtraTaskSettings.TaskDeviceValueNames[i]);
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_SET_DEFAULTS:
+    {
+      PCONFIG(0) = 0;
+      for (byte i = 1; i < VARS_PER_TASK; ++i) {
+        PCONFIG(i) = 11;
+      }
+      PCONFIG(P026_SENSOR_TYPE_INDEX) = SENSOR_TYPE_QUAD;
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        sensorTypeHelper_webformLoad_simple(event, P026_SENSOR_TYPE_INDEX);
+        String options[P026_NR_OUTPUT_OPTIONS];
+        for (byte i = 0; i < P026_NR_OUTPUT_OPTIONS; ++i) {
+          options[i] = Plugin_026_valuename(i, true);
+        }
+        for (byte i = 0; i < P026_NR_OUTPUT_VALUES; ++i) {
+          const byte pconfigIndex = i + P026_QUERY1_CONFIG_POS;
+          sensorTypeHelper_loadOutputSelector(event, pconfigIndex, i, P026_NR_OUTPUT_OPTIONS, options);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+
+        for (byte i = 0; i < P026_NR_OUTPUT_VALUES; ++i) {
+          const byte pconfigIndex = i + P026_QUERY1_CONFIG_POS;
+          const byte choice = PCONFIG(pconfigIndex);
+          sensorTypeHelper_saveOutputSelector(event, pconfigIndex, i, Plugin_026_valuename(choice, false));
+        }
+        sensorTypeHelper_saveSensorType(event, P026_SENSOR_TYPE_INDEX);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        sensorTypeHelper_setSensorType(event, P026_SENSOR_TYPE_INDEX);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        for (int i = 0; i < P026_NR_OUTPUT_VALUES; ++i) {
+          UserVar[event->BaseVarIndex + i] = P026_get_value(PCONFIG(i));
+        }
+        if (loglevelActiveFor(LOG_LEVEL_INFO)){
+          String log = F("SYS  : ");
+          for (int i = 0; i < P026_NR_OUTPUT_VALUES; ++i) {
+            if (i != 0) {
+              log +=',';
+            }
+            log += UserVar[event->BaseVarIndex + i];
+          }
+          addLog(LOG_LEVEL_INFO,log);
+        }
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+
+float P026_get_value(int type)
+{
+  float value = 0;
+          switch(type)
+        {
+          case 0:
+          {
+            value = (wdcounter /2);
+            break;
+          }
+          case 1:
+          {
+            value = ESP.getFreeHeap();
+            break;
+          }
+          case 2:
+          {
+            value = WiFi.RSSI();
+            break;
+          }
+          case 3:
+          {
+#if FEATURE_ADC_VCC
+            value = vcc;
+#else
+            value = -1.0;
+#endif
+            break;
+          }
+          case 4:
+          {
+            value = getCPUload();
+            break;
+          }
+          case 5:
+          {
+            value = WiFi.localIP()[0];
+            break;
+          }
+          case 6:
+          {
+            value = WiFi.localIP()[1];
+            break;
+          }
+          case 7:
+          {
+            value = WiFi.localIP()[2];
+            break;
+          }
+          case 8:
+          {
+            value = WiFi.localIP()[3];
+            break;
+          }
+          case 9:
+          {
+            value = (millis()-lastWeb)/1000;
+            break;
+          }
+          case 10:
+          {
+            value = getCurrentFreeStack();
+            break;
+          }
+        }
+ return value;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P027_INA219.ino"
+#ifdef USES_P027
+
+
+
+
+#define PLUGIN_027 
+#define PLUGIN_ID_027 27
+#define PLUGIN_NAME_027 "Energy (DC) - INA219"
+#define PLUGIN_VALUENAME1_027 "Voltage"
+#define PLUGIN_VALUENAME2_027 "Current"
+#define PLUGIN_VALUENAME3_027 "Power"
+
+
+
+
+#define INA219_ADDRESS (0x40)
+#define INA219_ADDRESS2 (0x41)
+#define INA219_ADDRESS3 (0x44)
+#define INA219_ADDRESS4 (0x45)
+#define INA219_READ (0x01)
+#define INA219_REG_CONFIG (0x00)
+#define INA219_CONFIG_RESET (0x8000)
+
+#define INA219_CONFIG_BVOLTAGERANGE_MASK (0x2000)
+#define INA219_CONFIG_BVOLTAGERANGE_16V (0x0000)
+#define INA219_CONFIG_BVOLTAGERANGE_32V (0x2000)
+
+#define INA219_CONFIG_GAIN_MASK (0x1800)
+#define INA219_CONFIG_GAIN_1_40MV (0x0000)
+#define INA219_CONFIG_GAIN_2_80MV (0x0800)
+#define INA219_CONFIG_GAIN_4_160MV (0x1000)
+#define INA219_CONFIG_GAIN_8_320MV (0x1800)
+
+#define INA219_CONFIG_BADCRES_MASK (0x0780)
+#define INA219_CONFIG_BADCRES_9BIT (0x0080)
+#define INA219_CONFIG_BADCRES_10BIT (0x0100)
+#define INA219_CONFIG_BADCRES_11BIT (0x0200)
+#define INA219_CONFIG_BADCRES_12BIT (0x0400)
+
+#define INA219_CONFIG_SADCRES_MASK (0x0078)
+#define INA219_CONFIG_SADCRES_9BIT_1S_84US (0x0000)
+#define INA219_CONFIG_SADCRES_10BIT_1S_148US (0x0008)
+#define INA219_CONFIG_SADCRES_11BIT_1S_276US (0x0010)
+#define INA219_CONFIG_SADCRES_12BIT_1S_532US (0x0018)
+#define INA219_CONFIG_SADCRES_12BIT_2S_1060US (0x0048)
+#define INA219_CONFIG_SADCRES_12BIT_4S_2130US (0x0050)
+#define INA219_CONFIG_SADCRES_12BIT_8S_4260US (0x0058)
+#define INA219_CONFIG_SADCRES_12BIT_16S_8510US (0x0060)
+#define INA219_CONFIG_SADCRES_12BIT_32S_17MS (0x0068)
+#define INA219_CONFIG_SADCRES_12BIT_64S_34MS (0x0070)
+#define INA219_CONFIG_SADCRES_12BIT_128S_69MS (0x0078)
+
+#define INA219_CONFIG_MODE_MASK (0x0007)
+#define INA219_CONFIG_MODE_POWERDOWN (0x0000)
+#define INA219_CONFIG_MODE_SVOLT_TRIGGERED (0x0001)
+#define INA219_CONFIG_MODE_BVOLT_TRIGGERED (0x0002)
+#define INA219_CONFIG_MODE_SANDBVOLT_TRIGGERED (0x0003)
+#define INA219_CONFIG_MODE_ADCOFF (0x0004)
+#define INA219_CONFIG_MODE_SVOLT_CONTINUOUS (0x0005)
+#define INA219_CONFIG_MODE_BVOLT_CONTINUOUS (0x0006)
+#define INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS (0x0007)
+
+#define INA219_REG_SHUNTVOLTAGE (0x01)
+#define INA219_REG_BUSVOLTAGE (0x02)
+#define INA219_REG_POWER (0x03)
+#define INA219_REG_CURRENT (0x04)
+#define INA219_REG_CALIBRATION (0x05)
+
+typedef struct {
+  uint32_t calValue;
+
+
+  uint32_t currentDivider_mA;
+} ina219_data;
+
+ina219_data _ina219_data[4];
+int Plugin_27_i2c_addresses[4] = { INA219_ADDRESS, INA219_ADDRESS2, INA219_ADDRESS3, INA219_ADDRESS4 };
+
+uint8_t Plugin_027_i2c_addr(struct EventStruct *event) {
+   return (uint8_t)PCONFIG(1);
+}
+
+uint8_t Plugin_027_device_index(const uint8_t i2caddr) {
+  switch(i2caddr) {
+    case INA219_ADDRESS: return 0u;
+    case INA219_ADDRESS2: return 1u;
+    case INA219_ADDRESS3: return 2u;
+    case INA219_ADDRESS4: return 3u;
+  }
+  return 0u;
+}
+
+boolean Plugin_027(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_027;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_027);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_027));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_027));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_027));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choiceMode = PCONFIG(0);
+        String optionsMode[3];
+        optionsMode[0] = F("32V, 2A");
+        optionsMode[1] = F("32V, 1A");
+        optionsMode[2] = F("16V, 0.4A");
+        int optionValuesMode[3];
+        optionValuesMode[0] = 0;
+        optionValuesMode[1] = 1;
+        optionValuesMode[2] = 2;
+        addFormSelector(F("Measure range"), F("p027_range"), 3, optionsMode, optionValuesMode, choiceMode);
+
+        addFormSelectorI2C(F("p027_i2c"), 4, Plugin_27_i2c_addresses, Plugin_027_i2c_addr(event));
+
+        byte choiceMeasureType = PCONFIG(2);
+        String options[4] = { F("Voltage"), F("Current"), F("Power"), F("Voltage/Current/Power") };
+        addFormSelector(F("Measurement Type"), F("p027_measuretype"), 4, options, NULL, choiceMeasureType );
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p027_range"));
+        PCONFIG(1) = getFormItemInt(F("p027_i2c"));
+        PCONFIG(2) = getFormItemInt(F("p027_measuretype"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+       const uint8_t i2caddr = Plugin_027_i2c_addr(event);
+        const uint8_t idx = Plugin_027_device_index(i2caddr);
+        _ina219_data[idx].currentDivider_mA = 0;
+        String log = F("INA219 0x");
+        log += String(i2caddr,HEX);
+        log += F(" setting Range to: ");
+        switch (PCONFIG(0))
+        {
+        case 0:
+        {
+            log += F("32V, 2A");
+          Plugin_027_setCalibration_32V_2A(i2caddr);
+         break;
+        }
+        case 1:
+        {
+            log += F("32V, 1A");
+         Plugin_027_setCalibration_32V_1A(i2caddr);
+         break;
+        }
+        case 2:
+        {
+            log += F("16V, 400mA");
+         Plugin_027_setCalibration_16V_400mA(i2caddr);
+         break;
+        }
+        }
+        addLog(LOG_LEVEL_INFO, log);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+
+
+
+        const uint8_t i2caddr = Plugin_027_i2c_addr(event);
+
+    float voltage = Plugin_027_getBusVoltage_V(i2caddr) + (Plugin_027_getShuntVoltage_mV(i2caddr) / 1000);
+    float current = Plugin_027_getCurrent_mA(i2caddr)/1000;
+    float power = voltage * current;
+
+        UserVar[event->BaseVarIndex] = voltage;
+       UserVar[event->BaseVarIndex + 1] = current;
+       UserVar[event->BaseVarIndex + 2] = power;
+
+       String log = F("INA219 0x");
+       log += String(i2caddr,HEX);
+
+
+
+        switch (PCONFIG(2))
+        {
+          case 0:
+          {
+            event->sensorType = SENSOR_TYPE_SINGLE;
+            UserVar[event->BaseVarIndex] = voltage;
+           log += F(": Voltage: ");
+           log += voltage;
+            break;
+          }
+          case 1:
+          {
+            event->sensorType = SENSOR_TYPE_SINGLE;
+            UserVar[event->BaseVarIndex] = current;
+           log += F(" Current: ");
+           log += current;
+            break;
+          }
+          case 2:
+          {
+            event->sensorType = SENSOR_TYPE_SINGLE;
+            UserVar[event->BaseVarIndex] = power;
+           log += F(" Power: ");
+           log += power;
+            break;
+          }
+          case 3:
+          {
+            event->sensorType = SENSOR_TYPE_TRIPLE;
+            UserVar[event->BaseVarIndex] = voltage;
+            UserVar[event->BaseVarIndex+1] = current;
+            UserVar[event->BaseVarIndex+2] = power;
+           log += F(": Voltage: ");
+           log += voltage;
+           log += F(" Current: ");
+           log += current;
+           log += F(" Power: ");
+           log += power;
+            break;
+          }
+        }
+
+        addLog(LOG_LEVEL_INFO, log);
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+
+void Plugin_027_wireWriteRegister (uint8_t i2caddr, uint8_t reg, uint16_t value)
+{
+  Wire.beginTransmission(i2caddr);
+  Wire.write(reg);
+  Wire.write((value >> 8) & 0xFF);
+  Wire.write(value & 0xFF);
+  Wire.endTransmission();
+}
+
+
+
+
+void Plugin_027_wireReadRegister(uint8_t i2caddr, uint8_t reg, uint16_t *value)
+{
+
+  Wire.beginTransmission(i2caddr);
+  Wire.write(reg);
+  Wire.endTransmission();
+
+  delay(1);
+
+  Wire.requestFrom(i2caddr, (uint8_t)2);
+
+  *value = ((Wire.read() << 8) | Wire.read());
+}
+
+
+
+
+void Plugin_027_setCalibration_32V_2A(uint8_t i2caddr) {
+  const uint8_t idx = Plugin_027_device_index(i2caddr);
+  _ina219_data[idx].calValue = 4027;
+
+
+  _ina219_data[idx].currentDivider_mA = 10;
+
+
+  Plugin_027_wireWriteRegister(i2caddr, INA219_REG_CALIBRATION, _ina219_data[idx].calValue);
+
+
+  uint16_t config = INA219_CONFIG_BVOLTAGERANGE_32V |
+                    INA219_CONFIG_GAIN_8_320MV |
+                    INA219_CONFIG_BADCRES_12BIT |
+                    INA219_CONFIG_SADCRES_12BIT_1S_532US |
+                    INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS;
+  Plugin_027_wireWriteRegister(i2caddr, INA219_REG_CONFIG, config);
+}
+
+
+
+
+void Plugin_027_setCalibration_32V_1A(uint8_t i2caddr) {
+  const uint8_t idx = Plugin_027_device_index(i2caddr);
+  _ina219_data[idx].calValue = 10240;
+
+
+  _ina219_data[idx].currentDivider_mA = 25;
+
+
+  Plugin_027_wireWriteRegister(i2caddr, INA219_REG_CALIBRATION, _ina219_data[idx].calValue);
+
+
+  uint16_t config = INA219_CONFIG_BVOLTAGERANGE_32V |
+                    INA219_CONFIG_GAIN_8_320MV |
+                    INA219_CONFIG_BADCRES_12BIT |
+                    INA219_CONFIG_SADCRES_12BIT_1S_532US |
+                    INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS;
+  Plugin_027_wireWriteRegister(i2caddr, INA219_REG_CONFIG, config);
+}
+
+
+
+
+void Plugin_027_setCalibration_16V_400mA(uint8_t i2caddr) {
+  const uint8_t idx = Plugin_027_device_index(i2caddr);
+
+  _ina219_data[idx].calValue = 8192;
+
+
+  _ina219_data[idx].currentDivider_mA = 20;
+
+
+  Plugin_027_wireWriteRegister(i2caddr, INA219_REG_CALIBRATION, _ina219_data[idx].calValue);
+
+
+  uint16_t config = INA219_CONFIG_BVOLTAGERANGE_16V |
+                    INA219_CONFIG_GAIN_1_40MV |
+                    INA219_CONFIG_BADCRES_12BIT |
+                    INA219_CONFIG_SADCRES_12BIT_1S_532US |
+                    INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS;
+  Plugin_027_wireWriteRegister(i2caddr, INA219_REG_CONFIG, config);
+}
+
+
+
+
+
+int16_t Plugin_027_getBusVoltage_raw(uint8_t i2caddr) {
+  uint16_t value;
+  Plugin_027_wireReadRegister(i2caddr, INA219_REG_BUSVOLTAGE, &value);
+
+
+  return (int16_t)((value >> 3) * 4);
+}
+
+
+
+
+int16_t Plugin_027_getShuntVoltage_raw(uint8_t i2caddr) {
+  uint16_t value;
+  Plugin_027_wireReadRegister(i2caddr, INA219_REG_SHUNTVOLTAGE, &value);
+  return (int16_t)value;
+}
+
+
+
+
+int16_t Plugin_027_getCurrent_raw(uint8_t i2caddr) {
+  const uint8_t idx = Plugin_027_device_index(i2caddr);
+  uint16_t value;
+
+
+
+
+
+  Plugin_027_wireWriteRegister(i2caddr, INA219_REG_CALIBRATION, _ina219_data[idx].calValue);
+
+
+  Plugin_027_wireReadRegister(i2caddr, INA219_REG_CURRENT, &value);
+
+  return (int16_t)value;
+}
+
+
+
+
+float Plugin_027_getShuntVoltage_mV(uint8_t i2caddr) {
+  int16_t value;
+  value = Plugin_027_getShuntVoltage_raw(i2caddr);
+  return value * 0.01;
+}
+
+
+
+
+float Plugin_027_getBusVoltage_V(uint8_t i2caddr) {
+  int16_t value = Plugin_027_getBusVoltage_raw(i2caddr);
+  return value * 0.001;
+}
+
+
+
+
+
+float Plugin_027_getCurrent_mA(uint8_t i2caddr) {
+  const uint8_t idx = Plugin_027_device_index(i2caddr);
+  float valueDec = Plugin_027_getCurrent_raw(i2caddr);
+  valueDec /= _ina219_data[idx].currentDivider_mA;
+  return valueDec;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P028_BME280.ino"
+#ifdef USES_P028
+
+
+
+
+
+#include <map>
+
+#define PLUGIN_028 
+#define PLUGIN_ID_028 28
+#define PLUGIN_NAME_028 "Environment - BMx280"
+#define PLUGIN_VALUENAME1_028 "Temperature"
+#define PLUGIN_VALUENAME2_028 "Humidity"
+#define PLUGIN_VALUENAME3_028 "Pressure"
+
+#define PLUGIN_028_BME280_DEVICE "BME280"
+#define PLUGIN_028_BMP280_DEVICE "BMP280"
+
+#define BMx280_REGISTER_DIG_T1 0x88
+#define BMx280_REGISTER_DIG_T2 0x8A
+#define BMx280_REGISTER_DIG_T3 0x8C
+
+#define BMx280_REGISTER_DIG_P1 0x8E
+#define BMx280_REGISTER_DIG_P2 0x90
+#define BMx280_REGISTER_DIG_P3 0x92
+#define BMx280_REGISTER_DIG_P4 0x94
+#define BMx280_REGISTER_DIG_P5 0x96
+#define BMx280_REGISTER_DIG_P6 0x98
+#define BMx280_REGISTER_DIG_P7 0x9A
+#define BMx280_REGISTER_DIG_P8 0x9C
+#define BMx280_REGISTER_DIG_P9 0x9E
+
+#define BMx280_REGISTER_DIG_H1 0xA1
+#define BMx280_REGISTER_DIG_H2 0xE1
+#define BMx280_REGISTER_DIG_H3 0xE3
+#define BMx280_REGISTER_DIG_H4 0xE4
+#define BMx280_REGISTER_DIG_H5 0xE5
+#define BMx280_REGISTER_DIG_H6 0xE7
+
+#define BMx280_REGISTER_CHIPID 0xD0
+#define BMx280_REGISTER_VERSION 0xD1
+#define BMx280_REGISTER_SOFTRESET 0xE0
+
+#define BMx280_REGISTER_CAL26 0xE1
+
+#define BMx280_REGISTER_CONTROLHUMID 0xF2
+#define BMx280_REGISTER_STATUS 0xF3
+#define BMx280_REGISTER_CONTROL 0xF4
+#define BMx280_REGISTER_CONFIG 0xF5
+#define BMx280_REGISTER_PRESSUREDATA 0xF7
+#define BMx280_REGISTER_TEMPDATA 0xFA
+#define BMx280_REGISTER_HUMIDDATA 0xFD
+
+#define BME280_CONTROL_SETTING_HUMIDITY 0x02
+
+#define BME280_TEMP_PRESS_CALIB_DATA_ADDR 0x88
+#define BME280_HUMIDITY_CALIB_DATA_ADDR 0xE1
+#define BME280_DATA_ADDR 0xF7
+
+#define BME280_TEMP_PRESS_CALIB_DATA_LEN 26
+#define BME280_HUMIDITY_CALIB_DATA_LEN 7
+#define BME280_P_T_H_DATA_LEN 8
+
+typedef struct
+{
+  uint16_t dig_T1;
+  int16_t dig_T2;
+  int16_t dig_T3;
+
+  uint16_t dig_P1;
+  int16_t dig_P2;
+  int16_t dig_P3;
+  int16_t dig_P4;
+  int16_t dig_P5;
+  int16_t dig_P6;
+  int16_t dig_P7;
+  int16_t dig_P8;
+  int16_t dig_P9;
+
+  uint8_t dig_H1;
+  int16_t dig_H2;
+  uint8_t dig_H3;
+  int16_t dig_H4;
+  int16_t dig_H5;
+  int8_t dig_H6;
+  int32_t t_fine;
+} bme280_calib_data;
+
+struct bme280_uncomp_data {
+
+ uint32_t pressure;
+
+ uint32_t temperature;
+
+ uint32_t humidity;
+};
+
+enum BMx_ChipId {
+  Unknown_DEVICE = 0,
+  BMP280_DEVICE_SAMPLE1 = 0x56,
+  BMP280_DEVICE_SAMPLE2 = 0x57,
+  BMP280_DEVICE = 0x58,
+  BME280_DEVICE = 0x60
+};
+
+enum BMx_state {
+  BMx_Uninitialized = 0,
+  BMx_Initialized,
+  BMx_Wait_for_samples,
+  BMx_New_values,
+  BMx_Values_read
+};
+
+struct P028_sensordata {
+  P028_sensordata() :
+    last_hum_val(0.0),
+    last_press_val(0.0),
+    last_temp_val(0.0),
+    last_dew_temp_val(0.0),
+    last_measurement(0),
+    sensorID(Unknown_DEVICE),
+    i2cAddress(0),
+    state(BMx_Uninitialized) {}
+
+    byte get_config_settings() const {
+      switch (sensorID) {
+        case BMP280_DEVICE_SAMPLE1:
+        case BMP280_DEVICE_SAMPLE2:
+        case BMP280_DEVICE: return 0x28;
+        case BME280_DEVICE: return 0x28;
+        default: return 0;
+      }
+    }
+
+    byte get_control_settings() const {
+      switch (sensorID) {
+        case BMP280_DEVICE_SAMPLE1:
+        case BMP280_DEVICE_SAMPLE2:
+        case BMP280_DEVICE: return 0x93;
+        case BME280_DEVICE: return 0x93;
+        default: return 0;
+      }
+    }
+
+    String getFullDeviceName() const {
+      String devicename = getDeviceName();
+      if (sensorID == BMP280_DEVICE_SAMPLE1 ||
+          sensorID == BMP280_DEVICE_SAMPLE2)
+      {
+        devicename += " sample";
+      }
+      return devicename;
+    }
+
+    String getDeviceName() const {
+      switch (sensorID) {
+        case BMP280_DEVICE_SAMPLE1:
+        case BMP280_DEVICE_SAMPLE2:
+        case BMP280_DEVICE: return PLUGIN_028_BMP280_DEVICE;
+        case BME280_DEVICE: return PLUGIN_028_BME280_DEVICE;
+        default: return "Unknown";
+      }
+    }
+
+    boolean hasHumidity() const {
+      switch (sensorID) {
+        case BMP280_DEVICE_SAMPLE1:
+        case BMP280_DEVICE_SAMPLE2:
+        case BMP280_DEVICE: return false;
+        case BME280_DEVICE: return true;
+        default: return false;
+      }
+    }
+
+    bool initialized() const {
+      return state != BMx_Uninitialized;
+    }
+
+    void setUninitialized() {
+      state = BMx_Uninitialized;
+    }
+
+  bme280_uncomp_data uncompensated;
+  bme280_calib_data calib;
+  float last_hum_val;
+  float last_press_val;
+  float last_temp_val;
+  float last_dew_temp_val;
+  unsigned long last_measurement;
+  BMx_ChipId sensorID;
+  uint8_t i2cAddress;
+  unsigned long moment_next_step;
+  BMx_state state;
+};
+
+std::map<uint8_t, P028_sensordata> P028_sensors;
+
+int Plugin_28_i2c_addresses[2] = { 0x76, 0x77 };
+
+uint8_t Plugin_028_i2c_addr(struct EventStruct *event) {
+  uint8_t i2cAddress = static_cast<uint8_t>(PCONFIG(0));
+  if (i2cAddress != Plugin_28_i2c_addresses[0] && i2cAddress != Plugin_28_i2c_addresses[1]) {
+
+    i2cAddress = Plugin_28_i2c_addresses[0];
+  }
+  if (P028_sensors.count(i2cAddress) == 0) {
+    P028_sensors[i2cAddress] = P028_sensordata();
+  }
+  return i2cAddress;
+}
+
+boolean Plugin_028(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_028;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_HUM_BARO;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_028);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_028));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_028));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_028));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        const uint8_t i2cAddress = Plugin_028_i2c_addr(event);
+        P028_sensordata& sensor = P028_sensors[i2cAddress];
+        addFormSelectorI2C(F("p028_bme280_i2c"), 2, Plugin_28_i2c_addresses, i2cAddress);
+        if (sensor.sensorID != Unknown_DEVICE) {
+          String detectedString = F("Detected: ");
+          detectedString += sensor.getFullDeviceName();
+          addUnit(detectedString);
+        }
+        addFormNote(F("SDO Low=0x76, High=0x77"));
+
+        addFormNumericBox(F("Altitude"), F("p028_bme280_elev"), PCONFIG(1));
+        addUnit(F("m"));
+
+        addFormNumericBox(F("Temperature offset"), F("p028_bme280_tempoffset"), PCONFIG(2));
+        addUnit(F("x 0.1C"));
+        String offsetNote = F("Offset in units of 0.1 degree Celcius");
+        if (sensor.hasHumidity()) {
+          offsetNote += F(" (also correct humidity)");
+        }
+        addFormNote(offsetNote);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        const uint8_t i2cAddress = getFormItemInt(F("p028_bme280_i2c"));
+        Plugin_028_check(i2cAddress);
+        PCONFIG(0) = i2cAddress;
+        PCONFIG(1) = getFormItemInt(F("p028_bme280_elev"));
+        PCONFIG(2) = getFormItemInt(F("p028_bme280_tempoffset"));
+        success = true;
+        break;
+      }
+    case PLUGIN_ONCE_A_SECOND:
+      {
+        const uint8_t i2cAddress = Plugin_028_i2c_addr(event);
+        const float tempOffset = PCONFIG(2) / 10.0;
+        if (Plugin_028_update_measurements(i2cAddress, tempOffset, event->TaskIndex)) {
+
+          schedule_task_device_timer(event->TaskIndex, millis() + 10);
+        }
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        const uint8_t i2cAddress = Plugin_028_i2c_addr(event);
+        P028_sensordata& sensor = P028_sensors[i2cAddress];
+        if (sensor.state != BMx_New_values) {
+          success = false;
+          break;
+        }
+        sensor.state = BMx_Values_read;
+        if (!sensor.hasHumidity()) {
+
+          event->sensorType = SENSOR_TYPE_TEMP_EMPTY_BARO;
+        }
+        UserVar[event->BaseVarIndex] = sensor.last_temp_val;
+        UserVar[event->BaseVarIndex + 1] = sensor.last_hum_val;
+        const int elev = PCONFIG(1);
+        if (elev) {
+           UserVar[event->BaseVarIndex + 2] = Plugin_028_pressureElevation(sensor.last_press_val, elev);
+        } else {
+           UserVar[event->BaseVarIndex + 2] = sensor.last_press_val;
+        }
+        if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+          String log;
+          log.reserve(40);
+          log = sensor.getDeviceName();
+          log += F(" : Address: 0x");
+          log += String(i2cAddress,HEX);
+          addLog(LOG_LEVEL_INFO, log);
+          log = sensor.getDeviceName();
+          log += F(" : Temperature: ");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO, log);
+          if (sensor.hasHumidity()) {
+            log = sensor.getDeviceName();
+            log += F(" : Humidity: ");
+            log += UserVar[event->BaseVarIndex + 1];
+            addLog(LOG_LEVEL_INFO, log);
+          }
+          log = sensor.getDeviceName();
+          log += F(" : Barometric Pressure: ");
+          log += UserVar[event->BaseVarIndex + 2];
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        success = true;
+        break;
+      }
+      case PLUGIN_EXIT:
+      {
+        const uint8_t i2cAddress = Plugin_028_i2c_addr(event);
+        P028_sensors.erase(i2cAddress);
+        break;
+      }
+  }
+  return success;
+}
+
+
+
+bool Plugin_028_update_measurements(const uint8_t i2cAddress, float tempOffset, unsigned long task_index) {
+  P028_sensordata& sensor = P028_sensors[i2cAddress];
+  const unsigned long current_time = millis();
+  Plugin_028_check(i2cAddress);
+  if (!sensor.initialized()) {
+    if (!Plugin_028_begin(i2cAddress)) {
+      return false;
+    }
+    sensor.state = BMx_Initialized;
+    sensor.last_measurement = 0;
+  }
+  if (sensor.state != BMx_Wait_for_samples) {
+    if (sensor.last_measurement != 0 &&
+        !timeOutReached(sensor.last_measurement + (Settings.TaskDeviceTimer[task_index] * 1000))) {
+
+      return false;
+    }
+
+    sensor.last_measurement = current_time;
+
+    I2C_write8_reg(i2cAddress, BMx280_REGISTER_CONTROL, 0x00);
+    if (sensor.hasHumidity()) {
+      I2C_write8_reg(i2cAddress, BMx280_REGISTER_CONTROLHUMID, BME280_CONTROL_SETTING_HUMIDITY);
+    }
+    I2C_write8_reg(i2cAddress, BMx280_REGISTER_CONFIG, sensor.get_config_settings());
+    I2C_write8_reg(i2cAddress, BMx280_REGISTER_CONTROL, sensor.get_control_settings());
+    sensor.state = BMx_Wait_for_samples;
+    return false;
+  }
+
+
+
+
+  if (!timeOutReached(sensor.last_measurement + 1587)) {
+    return false;
+  }
+  if (!Plugin_028_readUncompensatedData(i2cAddress)) {
+    return false;
+  }
+
+  I2C_write8_reg(i2cAddress, BMx280_REGISTER_CONTROL, 0x00);
+
+  sensor.last_measurement = current_time;
+  sensor.state = BMx_New_values;
+  sensor.last_temp_val = Plugin_028_readTemperature(i2cAddress);
+  sensor.last_press_val = ((float)Plugin_028_readPressure(i2cAddress)) / 100;
+  sensor.last_hum_val = ((float)Plugin_028_readHumidity(i2cAddress));
+
+
+  String log;
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    log.reserve(120);
+    log = sensor.getDeviceName();
+    log += F(":");
+  }
+  boolean logAdded = false;
+  if (sensor.hasHumidity()) {
+
+
+    sensor.last_dew_temp_val = compute_dew_point_temp(sensor.last_temp_val + (tempOffset / 2.0), sensor.last_hum_val);
+  } else {
+
+    sensor.last_dew_temp_val = sensor.last_temp_val;
+  }
+  if (tempOffset > 0.1 || tempOffset < -0.1) {
+
+    if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+      log += F(" Apply temp offset ");
+      log += tempOffset;
+      log += F("C");
+    }
+    if (sensor.hasHumidity()) {
+      if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+        log += F(" humidity ");
+        log += sensor.last_hum_val;
+      }
+      sensor.last_hum_val = compute_humidity_from_dewpoint(sensor.last_temp_val + tempOffset, sensor.last_dew_temp_val);
+      if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+        log += F("% => ");
+        log += sensor.last_hum_val;
+        log += F("%");
+      }
+    } else {
+      sensor.last_hum_val = 0.0;
+    }
+    if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+      log += F(" temperature ");
+      log += sensor.last_temp_val;
+    }
+    sensor.last_temp_val = sensor.last_temp_val + tempOffset;
+    if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+      log += F("C => ");
+      log += sensor.last_temp_val;
+      log += F("C");
+      logAdded = true;
+    }
+  }
+  if (sensor.hasHumidity()) {
+    if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+      log += F(" dew point ");
+      log += sensor.last_dew_temp_val;
+      log += F("C");
+      logAdded = true;
+    }
+  }
+  if (logAdded && loglevelActiveFor(LOG_LEVEL_INFO))
+    addLog(LOG_LEVEL_INFO, log);
+  return true;
+}
+
+
+
+
+
+bool Plugin_028_check(uint8_t i2cAddress) {
+  bool wire_status = false;
+  const uint8_t chip_id = I2C_read8_reg(i2cAddress, BMx280_REGISTER_CHIPID, &wire_status);
+  P028_sensordata& sensor = P028_sensors[i2cAddress];
+  if (!wire_status) sensor.setUninitialized();
+  switch (chip_id) {
+    case BMP280_DEVICE_SAMPLE1:
+    case BMP280_DEVICE_SAMPLE2:
+    case BMP280_DEVICE:
+    case BME280_DEVICE: {
+      if (wire_status) {
+
+        if (sensor.sensorID != chip_id) {
+          sensor.sensorID = static_cast<BMx_ChipId>(chip_id);
+          sensor.setUninitialized();
+          String log = F("BMx280 : Detected ");
+          log += sensor.getFullDeviceName();
+          addLog(LOG_LEVEL_INFO, log);
+        }
+      } else {
+        sensor.sensorID = Unknown_DEVICE;
+      }
+      break;
+    }
+    default:
+      sensor.sensorID = Unknown_DEVICE;
+      break;
+  }
+  if (sensor.sensorID == Unknown_DEVICE) {
+    String log = F("BMx280 : Unable to detect chip ID");
+    addLog(LOG_LEVEL_INFO, log);
+    return false;
+  }
+  return wire_status;
+}
+
+
+
+
+bool Plugin_028_begin(uint8_t i2cAddress) {
+  if (! Plugin_028_check(i2cAddress))
+    return false;
+
+  I2C_write8_reg(i2cAddress, BMx280_REGISTER_SOFTRESET, 0xB6);
+  delay(2);
+  Plugin_028_readCoefficients(i2cAddress);
+
+  return true;
+}
+
+
+
+
+
+void Plugin_028_readCoefficients(uint8_t i2cAddress)
+{
+  P028_sensordata& sensor = P028_sensors[i2cAddress];
+  sensor.calib.dig_T1 = I2C_read16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_T1);
+  sensor.calib.dig_T2 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_T2);
+  sensor.calib.dig_T3 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_T3);
+
+  sensor.calib.dig_P1 = I2C_read16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P1);
+  sensor.calib.dig_P2 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P2);
+  sensor.calib.dig_P3 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P3);
+  sensor.calib.dig_P4 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P4);
+  sensor.calib.dig_P5 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P5);
+  sensor.calib.dig_P6 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P6);
+  sensor.calib.dig_P7 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P7);
+  sensor.calib.dig_P8 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P8);
+  sensor.calib.dig_P9 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_P9);
+
+  if (sensor.hasHumidity()) {
+    sensor.calib.dig_H1 = I2C_read8_reg(i2cAddress, BMx280_REGISTER_DIG_H1);
+    sensor.calib.dig_H2 = I2C_readS16_LE_reg(i2cAddress, BMx280_REGISTER_DIG_H2);
+    sensor.calib.dig_H3 = I2C_read8_reg(i2cAddress, BMx280_REGISTER_DIG_H3);
+    sensor.calib.dig_H4 = (I2C_read8_reg(i2cAddress, BMx280_REGISTER_DIG_H4) << 4) | (I2C_read8_reg(i2cAddress, BMx280_REGISTER_DIG_H4 + 1) & 0xF);
+    sensor.calib.dig_H5 = (I2C_read8_reg(i2cAddress, BMx280_REGISTER_DIG_H5 + 1) << 4) | (I2C_read8_reg(i2cAddress, BMx280_REGISTER_DIG_H5) >> 4);
+    sensor.calib.dig_H6 = (int8_t)I2C_read8_reg(i2cAddress, BMx280_REGISTER_DIG_H6);
+  }
+}
+
+bool Plugin_028_readUncompensatedData(uint8_t i2cAddress) {
+
+
+  if (I2C_read8_reg(i2cAddress, BMx280_REGISTER_STATUS) & 0x08)
+    return false;
+
+  I2Cdata_bytes BME280_data(BME280_P_T_H_DATA_LEN, BME280_DATA_ADDR);
+  bool allDataRead = I2C_read_bytes(i2cAddress, BME280_data);
+  if (!allDataRead) {
+    return false;
+  }
+
+ uint32_t data_xlsb;
+ uint32_t data_lsb;
+ uint32_t data_msb;
+
+  P028_sensordata& sensor = P028_sensors[i2cAddress];
+
+
+ data_msb = (uint32_t)BME280_data[BME280_DATA_ADDR + 0] << 12;
+ data_lsb = (uint32_t)BME280_data[BME280_DATA_ADDR + 1] << 4;
+ data_xlsb = (uint32_t)BME280_data[BME280_DATA_ADDR + 2] >> 4;
+ sensor.uncompensated.pressure = data_msb | data_lsb | data_xlsb;
+
+
+ data_msb = (uint32_t)BME280_data[BME280_DATA_ADDR + 3] << 12;
+ data_lsb = (uint32_t)BME280_data[BME280_DATA_ADDR + 4] << 4;
+ data_xlsb = (uint32_t)BME280_data[BME280_DATA_ADDR + 5] >> 4;
+ sensor.uncompensated.temperature = data_msb | data_lsb | data_xlsb;
+
+
+ data_lsb = (uint32_t)BME280_data[BME280_DATA_ADDR + 6] << 8;
+ data_msb = (uint32_t)BME280_data[BME280_DATA_ADDR + 7];
+ sensor.uncompensated.humidity = data_msb | data_lsb;
+  return true;
+}
+
+
+
+
+float Plugin_028_readTemperature(uint8_t i2cAddress)
+{
+  P028_sensordata& sensor = P028_sensors[i2cAddress];
+  int32_t var1, var2;
+  int32_t adc_T = sensor.uncompensated.temperature;
+  var1 = ((((adc_T >> 3) - ((int32_t)sensor.calib.dig_T1 << 1))) *
+           ((int32_t)sensor.calib.dig_T2)) >> 11;
+
+  var2 = (((((adc_T >> 4) - ((int32_t)sensor.calib.dig_T1)) *
+             ((adc_T >> 4) - ((int32_t)sensor.calib.dig_T1))) >> 12) *
+           ((int32_t)sensor.calib.dig_T3)) >> 14;
+
+  sensor.calib.t_fine = var1 + var2;
+
+  float T = (sensor.calib.t_fine * 5 + 128) >> 8;
+  return T / 100;
+}
+
+
+
+
+float Plugin_028_readPressure(uint8_t i2cAddress)
+{
+  P028_sensordata& sensor = P028_sensors[i2cAddress];
+  int64_t var1, var2, p;
+  int32_t adc_P = sensor.uncompensated.pressure;
+
+  var1 = ((int64_t)sensor.calib.t_fine) - 128000;
+  var2 = var1 * var1 * (int64_t)sensor.calib.dig_P6;
+  var2 = var2 + ((var1 * (int64_t)sensor.calib.dig_P5) << 17);
+  var2 = var2 + (((int64_t)sensor.calib.dig_P4) << 35);
+  var1 = ((var1 * var1 * (int64_t)sensor.calib.dig_P3) >> 8) +
+         ((var1 * (int64_t)sensor.calib.dig_P2) << 12);
+  var1 = (((((int64_t)1) << 47) + var1)) * ((int64_t)sensor.calib.dig_P1) >> 33;
+
+  if (var1 == 0) {
+    return 0;
+  }
+  p = 1048576 - adc_P;
+  p = (((p << 31) - var2) * 3125) / var1;
+  var1 = (((int64_t)sensor.calib.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+  var2 = (((int64_t)sensor.calib.dig_P8) * p) >> 19;
+
+  p = ((p + var1 + var2) >> 8) + (((int64_t)sensor.calib.dig_P7) << 4);
+  return (float)p / 256;
+}
+
+
+
+
+float Plugin_028_readHumidity(uint8_t i2cAddress)
+{
+  P028_sensordata& sensor = P028_sensors[i2cAddress];
+  if (!sensor.hasHumidity()) {
+
+    return 0.0;
+  }
+  int32_t adc_H = sensor.uncompensated.humidity;
+
+  int32_t v_x1_u32r;
+
+  v_x1_u32r = (sensor.calib.t_fine - ((int32_t)76800));
+
+  v_x1_u32r = (((((adc_H << 14) - (((int32_t)sensor.calib.dig_H4) << 20) -
+                  (((int32_t)sensor.calib.dig_H5) * v_x1_u32r)) + ((int32_t)16384)) >> 15) *
+               (((((((v_x1_u32r * ((int32_t)sensor.calib.dig_H6)) >> 10) *
+                    (((v_x1_u32r * ((int32_t)sensor.calib.dig_H3)) >> 11) + ((int32_t)32768))) >> 10) +
+                  ((int32_t)2097152)) * ((int32_t)sensor.calib.dig_H2) + 8192) >> 14));
+
+  v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) *
+                             ((int32_t)sensor.calib.dig_H1)) >> 4));
+
+  v_x1_u32r = (v_x1_u32r < 0) ? 0 : v_x1_u32r;
+  v_x1_u32r = (v_x1_u32r > 419430400) ? 419430400 : v_x1_u32r;
+  float h = (v_x1_u32r >> 12);
+  return h / 1024.0;
+}
+
+
+
+
+
+
+
+float Plugin_028_readAltitude(uint8_t i2cAddress, float seaLevel)
+{
+
+
+
+
+
+
+
+  float atmospheric = Plugin_028_readPressure(i2cAddress) / 100.0F;
+  return 44330.0 * (1.0 - pow(atmospheric / seaLevel, 0.1903));
+}
+
+
+
+
+float Plugin_028_pressureElevation(float atmospheric, int altitude) {
+  return atmospheric / pow(1.0 - (altitude/44330.0), 5.255);
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P029_Output.ino"
+#ifdef USES_P029
+
+
+
+
+#define PLUGIN_029 
+#define PLUGIN_ID_029 29
+#define PLUGIN_NAME_029 "Output - Domoticz MQTT Helper"
+#define PLUGIN_VALUENAME1_029 "Output"
+boolean Plugin_029(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_029;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_029);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_029));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+        byte controllerNr = 0;
+          for (byte i=0; i < CONTROLLER_MAX; i++)
+          {
+
+            if (Settings.Protocol[i] == 2) { controllerNr = i; }
+          }
+
+        addHtml(F("<TR><TD>IDX:<TD>"));
+        String id = F("TDID");
+        id += controllerNr + 1;
+        addNumericBox(id, Settings.TaskDeviceID[controllerNr][event->TaskIndex], 0, DOMOTICZ_MAX_IDX);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P030_BMP280.ino"
+#ifdef USES_P030
+
+
+
+
+#define PLUGIN_030 
+#define PLUGIN_ID_030 30
+#define PLUGIN_NAME_030 "Environment - BMP280"
+#define PLUGIN_VALUENAME1_030 "Temperature"
+#define PLUGIN_VALUENAME2_030 "Pressure"
+
+enum
+{
+  BMP280_REGISTER_DIG_T1 = 0x88,
+  BMP280_REGISTER_DIG_T2 = 0x8A,
+  BMP280_REGISTER_DIG_T3 = 0x8C,
+
+  BMP280_REGISTER_DIG_P1 = 0x8E,
+  BMP280_REGISTER_DIG_P2 = 0x90,
+  BMP280_REGISTER_DIG_P3 = 0x92,
+  BMP280_REGISTER_DIG_P4 = 0x94,
+  BMP280_REGISTER_DIG_P5 = 0x96,
+  BMP280_REGISTER_DIG_P6 = 0x98,
+  BMP280_REGISTER_DIG_P7 = 0x9A,
+  BMP280_REGISTER_DIG_P8 = 0x9C,
+  BMP280_REGISTER_DIG_P9 = 0x9E,
+
+  BMP280_REGISTER_CHIPID = 0xD0,
+  BMP280_REGISTER_VERSION = 0xD1,
+  BMP280_REGISTER_SOFTRESET = 0xE0,
+
+  BMP280_REGISTER_CAL26 = 0xE1,
+
+  BMP280_REGISTER_CONTROL = 0xF4,
+  BMP280_REGISTER_CONFIG = 0xF5,
+  BMP280_REGISTER_PRESSUREDATA = 0xF7,
+  BMP280_REGISTER_TEMPDATA = 0xFA,
+
+  BMP280_CONTROL_SETTING = 0x57,
+  BMP280_CONFIG_SETTING = 0xE0,
+};
+
+typedef struct
+{
+  uint16_t dig_T1;
+  int16_t dig_T2;
+  int16_t dig_T3;
+
+  uint16_t dig_P1;
+  int16_t dig_P2;
+  int16_t dig_P3;
+  int16_t dig_P4;
+  int16_t dig_P5;
+  int16_t dig_P6;
+  int16_t dig_P7;
+  int16_t dig_P8;
+  int16_t dig_P9;
+} bmp280_calib_data;
+
+bmp280_calib_data _bmp280_calib[2];
+
+uint8_t bmp280_i2caddr;
+int32_t bmp280_sensorID;
+int32_t bmp280_t_fine;
+
+boolean Plugin_030_init[2] = {false, false};
+
+boolean Plugin_030(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_030;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_BARO;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_030);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_030));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_030));
+        break;
+      }
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choice = PCONFIG(0);
+
+        int optionValues[2] = { 0x76, 0x77 };
+        addFormSelectorI2C(F("p030_bmp280_i2c"), 2, optionValues, choice);
+        addFormNote(F("SDO Low=0x76, High=0x77"));
+
+        addFormNumericBox(F("Altitude"), F("p030_bmp280_elev"), PCONFIG(1));
+        addUnit(F("m"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p030_bmp280_i2c"));
+        PCONFIG(1) = getFormItemInt(F("p030_bmp280_elev"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        uint8_t idx = PCONFIG(0) & 0x1;
+        Plugin_030_init[idx] &= Plugin_030_check(PCONFIG(0));
+        Plugin_030_init[idx] &= (I2C_read8_reg(bmp280_i2caddr, BMP280_REGISTER_CONTROL) == BMP280_CONTROL_SETTING);
+
+        if (!Plugin_030_init[idx])
+        {
+          Plugin_030_init[idx] = Plugin_030_begin(PCONFIG(0));
+          delay(65);
+        }
+
+        if (Plugin_030_init[idx])
+        {
+          UserVar[event->BaseVarIndex] = Plugin_030_readTemperature(idx);
+          int elev = PCONFIG(1);
+          if (elev)
+          {
+             UserVar[event->BaseVarIndex + 1] = Plugin_030_pressureElevation((float)Plugin_030_readPressure(idx) / 100, elev);
+          } else {
+             UserVar[event->BaseVarIndex + 1] = ((float)Plugin_030_readPressure(idx)) / 100;
+          }
+
+          String log = F("BMP280  : Address: 0x");
+          log += String(bmp280_i2caddr,HEX);
+          addLog(LOG_LEVEL_INFO, log);
+          log = F("BMP280  : Temperature: ");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO, log);
+          log = F("BMP280  : Barometric Pressure: ");
+          log += UserVar[event->BaseVarIndex + 1];
+          addLog(LOG_LEVEL_INFO, log);
+# 185 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P030_BMP280.ino"
+          success = true;
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+
+
+bool Plugin_030_check(uint8_t a) {
+  bmp280_i2caddr = a?a:0x76;
+  bool wire_status = false;
+  if (I2C_read8_reg(bmp280_i2caddr, BMP280_REGISTER_CHIPID, &wire_status) != 0x58) {
+      return false;
+  } else {
+      return wire_status;
+  }
+}
+
+
+
+
+bool Plugin_030_begin(uint8_t a) {
+  if (! Plugin_030_check(a))
+    return false;
+
+  Plugin_030_readCoefficients(a & 0x1);
+  I2C_write8_reg(bmp280_i2caddr, BMP280_REGISTER_CONTROL, BMP280_CONTROL_SETTING);
+  I2C_write8_reg(bmp280_i2caddr, BMP280_REGISTER_CONFIG, BMP280_CONFIG_SETTING);
+  return true;
+}
+
+
+
+
+void Plugin_030_readCoefficients(uint8_t idx)
+{
+  _bmp280_calib[idx].dig_T1 = I2C_read16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_T1);
+  _bmp280_calib[idx].dig_T2 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_T2);
+  _bmp280_calib[idx].dig_T3 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_T3);
+
+  _bmp280_calib[idx].dig_P1 = I2C_read16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P1);
+  _bmp280_calib[idx].dig_P2 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P2);
+  _bmp280_calib[idx].dig_P3 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P3);
+  _bmp280_calib[idx].dig_P4 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P4);
+  _bmp280_calib[idx].dig_P5 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P5);
+  _bmp280_calib[idx].dig_P6 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P6);
+  _bmp280_calib[idx].dig_P7 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P7);
+  _bmp280_calib[idx].dig_P8 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P8);
+  _bmp280_calib[idx].dig_P9 = I2C_readS16_LE_reg(bmp280_i2caddr, BMP280_REGISTER_DIG_P9);
+}
+
+
+
+
+float Plugin_030_readTemperature(uint8_t idx)
+{
+  int32_t var1, var2;
+
+  int32_t adc_T = I2C_read24_reg(bmp280_i2caddr, BMP280_REGISTER_TEMPDATA);
+  adc_T >>= 4;
+
+  var1 = ((((adc_T >> 3) - ((int32_t)_bmp280_calib[idx].dig_T1 << 1))) *
+           ((int32_t)_bmp280_calib[idx].dig_T2)) >> 11;
+
+  var2 = (((((adc_T >> 4) - ((int32_t)_bmp280_calib[idx].dig_T1)) *
+             ((adc_T >> 4) - ((int32_t)_bmp280_calib[idx].dig_T1))) >> 12) *
+           ((int32_t)_bmp280_calib[idx].dig_T3)) >> 14;
+
+  bmp280_t_fine = var1 + var2;
+
+  float T = (bmp280_t_fine * 5 + 128) >> 8;
+  return T / 100;
+}
+
+
+
+
+float Plugin_030_readPressure(uint8_t idx) {
+  int64_t var1, var2, p;
+
+  int32_t adc_P = I2C_read24_reg(bmp280_i2caddr, BMP280_REGISTER_PRESSUREDATA);
+  adc_P >>= 4;
+
+  var1 = ((int64_t)bmp280_t_fine) - 128000;
+  var2 = var1 * var1 * (int64_t)_bmp280_calib[idx].dig_P6;
+  var2 = var2 + ((var1 * (int64_t)_bmp280_calib[idx].dig_P5) << 17);
+  var2 = var2 + (((int64_t)_bmp280_calib[idx].dig_P4) << 35);
+  var1 = ((var1 * var1 * (int64_t)_bmp280_calib[idx].dig_P3) >> 8) +
+         ((var1 * (int64_t)_bmp280_calib[idx].dig_P2) << 12);
+  var1 = (((((int64_t)1) << 47) + var1)) * ((int64_t)_bmp280_calib[idx].dig_P1) >> 33;
+
+  if (var1 == 0) {
+    return 0;
+  }
+  p = 1048576 - adc_P;
+  p = (((p << 31) - var2) * 3125) / var1;
+  var1 = (((int64_t)_bmp280_calib[idx].dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+  var2 = (((int64_t)_bmp280_calib[idx].dig_P8) * p) >> 19;
+
+  p = ((p + var1 + var2) >> 8) + (((int64_t)_bmp280_calib[idx].dig_P7) << 4);
+  return (float)p / 256;
+}
+
+
+
+
+
+
+
+float Plugin_030_readAltitude(float seaLevel)
+{
+  float atmospheric = Plugin_030_readPressure(bmp280_i2caddr & 0x01) / 100.0F;
+  return 44330.0 * (1.0 - pow(atmospheric / seaLevel, 0.1903));
+}
+
+
+
+
+float Plugin_030_pressureElevation(float atmospheric, int altitude) {
+  return atmospheric / pow(1.0 - (altitude/44330.0), 5.255);
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P031_SHT1X.ino"
+#ifdef USES_P031
+
+
+
+
+#define PLUGIN_031 
+#define PLUGIN_ID_031 31
+#define PLUGIN_NAME_031 "Environment - SHT1X"
+#define PLUGIN_VALUENAME1_031 "Temperature"
+#define PLUGIN_VALUENAME2_031 "Humidity"
+
+#define P031_IDLE 0
+#define P031_WAIT_TEMP 1
+#define P031_WAIT_HUM 2
+#define P031_MEAS_READY 3
+#define P031_COMMAND_NO_ACK 4
+#define P031_NO_DATA 5
+
+
+#define P031_DELAY_LONGER_CABLES delayMicroseconds(_clockdelay);
+#define P031_MAX_CLOCK_DELAY 30
+
+class P031_data_struct: public PluginTaskData_base
+{
+public:
+  enum {
+    SHT1X_CMD_MEASURE_TEMP = B00000011,
+    SHT1X_CMD_MEASURE_RH = B00000101,
+    SHT1X_CMD_READ_STATUS = B00000111,
+    SHT1X_CMD_SOFT_RESET = B00011110
+  };
+
+ P031_data_struct() {}
+
+  byte init(byte data_pin, byte clock_pin, bool pullUp, byte clockdelay) {
+    _dataPin = data_pin;
+    _clockPin = clock_pin;
+    _clockdelay = clockdelay;
+    if (_clockdelay > P031_MAX_CLOCK_DELAY) {
+      _clockdelay = P031_MAX_CLOCK_DELAY;
+    }
+    input_mode = pullUp ? INPUT_PULLUP : INPUT;
+    state = P031_IDLE;
+
+    pinMode(_dataPin, input_mode);
+    pinMode(_clockPin, OUTPUT);
+    resetSensor();
+    return readStatus();
+  }
+
+  bool process() {
+    switch (state) {
+      case P031_IDLE: return false;
+      case P031_WAIT_TEMP: {
+        if (digitalRead(_dataPin) == LOW) {
+          float tempRaw = readData(16);
+
+          const float d1 = -39.7;
+          const float d2 = 0.01;
+          tempC = d1 + (tempRaw * d2);
+          state = P031_WAIT_HUM;
+          sendCommand(SHT1X_CMD_MEASURE_RH);
+        }
+        break;
+      }
+      case P031_WAIT_HUM:
+      {
+        if (digitalRead(_dataPin) == LOW) {
+          float raw = readData(16);
+
+
+          const float c1 = -2.0468;
+          const float c2 = 0.0367;
+          const float c3 = -1.5955E-6;
+          const float t1 = 0.01;
+          const float t2 = 0.00008;
+
+          float rhLinear = c1 + c2 * raw + c3 * raw * raw;
+          rhTrue = (tempC - 25) * (t1 + t2 * raw) + rhLinear;
+# 89 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P031_SHT1X.ino"
+          state = P031_MEAS_READY;
+          return true;
+        }
+        break;
+      }
+      case P031_MEAS_READY: return true;
+      default:
+
+        return false;
+    }
+
+    if (timePassedSince(sendCommandTime) > 320) {
+      state = P031_NO_DATA;
+    }
+    return false;
+  }
+
+  void startMeasurement() {
+    state = P031_WAIT_TEMP;
+    sendCommand(SHT1X_CMD_MEASURE_TEMP);
+  }
+
+  bool measurementReady() {
+    return state == P031_MEAS_READY;
+  }
+
+  bool hasError() {
+    return state > P031_MEAS_READY;
+  }
+
+  void resetSensor()
+  {
+    state = P031_IDLE;
+    delay(11);
+    for (int i=0; i<9; i++) {
+      digitalWrite(_clockPin, HIGH);
+      digitalWrite(_clockPin, LOW);
+    }
+    sendCommand(SHT1X_CMD_SOFT_RESET);
+    delay(11);
+  }
+
+  byte readStatus()
+  {
+    sendCommand(SHT1X_CMD_READ_STATUS);
+    return readData(8);
+  }
+
+  void sendCommand(const byte cmd)
+  {
+    sendCommandTime = millis();
+    pinMode(_dataPin, OUTPUT);
+
+
+    digitalWrite(_dataPin, HIGH);
+    digitalWrite(_clockPin, HIGH);
+    P031_DELAY_LONGER_CABLES
+    digitalWrite(_dataPin, LOW);
+    digitalWrite(_clockPin, LOW);
+    P031_DELAY_LONGER_CABLES
+    digitalWrite(_clockPin, HIGH);
+    P031_DELAY_LONGER_CABLES
+    digitalWrite(_dataPin, HIGH);
+    digitalWrite(_clockPin, LOW);
+    P031_DELAY_LONGER_CABLES
+
+
+    p031_shiftOut(_dataPin, _clockPin, MSBFIRST, cmd);
+
+
+    bool ackerror = false;
+    digitalWrite(_clockPin, HIGH);
+    P031_DELAY_LONGER_CABLES
+    pinMode(_dataPin, input_mode);
+    if (digitalRead(_dataPin) != LOW) ackerror = true;
+    digitalWrite(_clockPin, LOW);
+    P031_DELAY_LONGER_CABLES
+
+    if (cmd == SHT1X_CMD_MEASURE_TEMP || cmd == SHT1X_CMD_MEASURE_RH) {
+      delayMicroseconds(1);
+      if (digitalRead(_dataPin) != HIGH) ackerror = true;
+    }
+    if (ackerror) {
+      state = P031_COMMAND_NO_ACK;
+    }
+  }
+
+  int readData(const int bits)
+  {
+    int val = 0;
+
+    if (bits == 16) {
+
+      val = p031_shiftIn(_dataPin, _clockPin, MSBFIRST);
+      val <<= 8;
+
+
+      pinMode(_dataPin, OUTPUT);
+      digitalWrite(_dataPin, LOW);
+      digitalWrite(_clockPin, HIGH);
+      P031_DELAY_LONGER_CABLES
+      digitalWrite(_clockPin, LOW);
+      P031_DELAY_LONGER_CABLES
+      pinMode(_dataPin, input_mode);
+    }
+
+
+    val |= p031_shiftIn(_dataPin, _clockPin, MSBFIRST);
+
+
+    digitalWrite(_clockPin, HIGH);
+    P031_DELAY_LONGER_CABLES
+    digitalWrite(_clockPin, LOW);
+    P031_DELAY_LONGER_CABLES
+
+    return val;
+  }
+
+  uint8_t p031_shiftIn(uint8_t dataPin, uint8_t clockPin, uint8_t bitOrder) {
+   uint8_t value = 0;
+   uint8_t i;
+
+   for (i = 0; i < 8; ++i) {
+    digitalWrite(clockPin, HIGH);
+      P031_DELAY_LONGER_CABLES
+    if (bitOrder == LSBFIRST)
+     value |= digitalRead(dataPin) << i;
+    else
+     value |= digitalRead(dataPin) << (7 - i);
+    digitalWrite(clockPin, LOW);
+      P031_DELAY_LONGER_CABLES
+   }
+   return value;
+  }
+
+  void p031_shiftOut(uint8_t dataPin, uint8_t clockPin, uint8_t bitOrder, uint8_t val)
+  {
+   uint8_t i;
+
+   for (i = 0; i < 8; i++) {
+    if (bitOrder == LSBFIRST)
+     digitalWrite(dataPin, !!(val & (1 << i)));
+    else
+     digitalWrite(dataPin, !!(val & (1 << (7 - i))));
+
+    digitalWrite(clockPin, HIGH);
+      P031_DELAY_LONGER_CABLES
+    digitalWrite(clockPin, LOW);
+      P031_DELAY_LONGER_CABLES
+   }
+  }
+
+
+  float tempC = 0.0;
+  float rhTrue = 0.0;
+  unsigned long sendCommandTime;
+
+  int input_mode;
+  byte _dataPin = 0;
+  byte _clockPin = 0;
+  byte state = P031_IDLE;
+  byte _clockdelay = 0;
+};
+
+
+
+boolean Plugin_031(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_031;
+        Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_HUM;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = true;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_031);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_031));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_031));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_bidirectional(F("Data"));
+        event->String2 = formatGpioName_output(F("SCK"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+    {
+      addFormNumericBox(F("Clock Delay"), F("p031_delay"), PCONFIG(0), 0, P031_MAX_CLOCK_DELAY);
+      addUnit(F("usec"));
+      addFormNote(F("Reduce clock/data frequency to allow for longer cables"));
+      success = true;
+      break;
+    }
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p031_delay"));
+        success = true;
+        break;
+      }
+
+
+    case PLUGIN_INIT:
+      {
+        initPluginTaskData(event->TaskIndex, new P031_data_struct());
+        P031_data_struct *P031_data =
+            static_cast<P031_data_struct *>(getPluginTaskData(event->TaskIndex));
+        if (nullptr == P031_data) {
+          return success;
+        }
+        byte status = P031_data->init(
+          CONFIG_PIN1, CONFIG_PIN2,
+          Settings.TaskDevicePin1PullUp[event->TaskIndex],
+          PCONFIG(0));
+        if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
+          String log = F("SHT1X : Status byte: ");
+          log += String(status, HEX);
+          log += F(" - resolution: ");
+          log += (status & 1 ? F("low") : F("high"));
+          log += F(" reload from OTP: ");
+          log += ((status >> 1) & 1 ? F("yes") : F("no"));
+          log += F(", heater: ");
+          log += ((status >> 2) & 1 ? F("on") : F("off"));
+          addLog(LOG_LEVEL_DEBUG, log);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+    {
+      P031_data_struct *P031_data =
+          static_cast<P031_data_struct *>(getPluginTaskData(event->TaskIndex));
+      if (nullptr != P031_data) {
+        if (P031_data->process()) {
+
+          schedule_task_device_timer(event->TaskIndex, millis() + 10);
+        }
+      }
+      success = true;
+      break;
+    }
+
+    case PLUGIN_READ:
+      {
+        P031_data_struct *P031_data =
+            static_cast<P031_data_struct *>(getPluginTaskData(event->TaskIndex));
+        if (nullptr != P031_data) {
+          if (P031_data->measurementReady()) {
+            UserVar[event->BaseVarIndex] = P031_data->tempC;
+            UserVar[event->BaseVarIndex+1] = P031_data->rhTrue;
+            success = true;
+            P031_data->state = P031_IDLE;
+          } else if (P031_data->state == P031_IDLE) {
+            P031_data->startMeasurement();
+          } else if (P031_data->hasError()) {
+
+            switch (P031_data->state) {
+              case P031_COMMAND_NO_ACK:
+                addLog(LOG_LEVEL_ERROR, F("SHT1X : Sensor did not ACK command"));
+                break;
+              case P031_NO_DATA:
+                addLog(LOG_LEVEL_ERROR, F("SHT1X : Data not ready"));
+                break;
+              default:
+                break;
+            }
+            P031_data->state = P031_IDLE;
+          }
+        }
+        break;
+      }
+  }
+  return success;
+}
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P032_MS5611.ino"
+#ifdef USES_P032
+
+
+
+
+
+#define PLUGIN_032 
+#define PLUGIN_ID_032 32
+#define PLUGIN_NAME_032 "Environment - MS5611 (GY-63)"
+#define PLUGIN_VALUENAME1_032 "Temperature"
+#define PLUGIN_VALUENAME2_032 "Pressure"
+
+enum
+{
+  MS5xxx_CMD_RESET = 0x1E,
+  MS5xxx_CMD_ADC_READ = 0x00,
+  MS5xxx_CMD_ADC_CONV = 0x40,
+  MS5xxx_CMD_ADC_D1 = 0x00,
+  MS5xxx_CMD_ADC_D2 = 0x10,
+  MS5xxx_CMD_ADC_256 = 0x00,
+  MS5xxx_CMD_ADC_512 = 0x02,
+  MS5xxx_CMD_ADC_1024 = 0x04,
+  MS5xxx_CMD_ADC_2048 = 0x06,
+  MS5xxx_CMD_ADC_4096 = 0x08,
+  MS5xxx_CMD_PROM_RD = 0xA0
+};
+
+
+
+uint8_t ms5611_i2caddr;
+unsigned int ms5611_prom[8];
+double ms5611_pressure;
+double ms5611_temperature;
+
+boolean Plugin_032_init = false;
+
+boolean Plugin_032(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_032;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_BARO;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_032);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_032));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_032));
+        break;
+      }
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choice = PCONFIG(0);
+
+        int optionValues[2] = { 0x77, 0x76 };
+        addFormSelectorI2C(F("p032_ms5611_i2c"), 2, optionValues, choice);
+
+        addFormNumericBox(F("Altitude [m]"), F("p032_ms5611_elev"), PCONFIG(1));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p032_ms5611_i2c"));
+        PCONFIG(1) = getFormItemInt(F("p032_ms5611_elev"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        if (!Plugin_032_init)
+        {
+          Plugin_032_init = Plugin_032_begin(PCONFIG(0));
+        }
+
+        if (Plugin_032_init) {
+          Plugin_032_read_prom();
+          Plugin_032_readout();
+
+          UserVar[event->BaseVarIndex] = ms5611_temperature / 100;
+          int elev = PCONFIG(1);
+          if (elev)
+          {
+             UserVar[event->BaseVarIndex + 1] = Plugin_032_pressureElevation(ms5611_pressure, elev);
+          } else {
+             UserVar[event->BaseVarIndex + 1] = ms5611_pressure;
+          }
+
+          String log = F("MS5611  : Temperature: ");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO, log);
+          log = F("MS5611  : Barometric Pressure: ");
+          log += UserVar[event->BaseVarIndex + 1];
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+
+
+bool Plugin_032_begin(uint8_t a) {
+  ms5611_i2caddr = a;
+
+  Wire.beginTransmission((uint8_t)ms5611_i2caddr);
+  uint8_t ret=Wire.endTransmission(true);
+  return ret==0;
+}
+# 146 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P032_MS5611.ino"
+void Plugin_032_read_prom() {
+  I2C_write8(ms5611_i2caddr, MS5xxx_CMD_RESET);
+  delay(3);
+
+  for(uint8_t i=0;i<8;i++)
+  {
+      ms5611_prom[i] = I2C_read16_reg(ms5611_i2caddr, MS5xxx_CMD_PROM_RD+2*i);
+  }
+}
+
+
+
+
+unsigned long Plugin_032_read_adc(unsigned char aCMD)
+{
+  I2C_write8(ms5611_i2caddr, MS5xxx_CMD_ADC_CONV+aCMD);
+  switch (aCMD & 0x0f)
+  {
+    case MS5xxx_CMD_ADC_256 : delayMicroseconds(900);
+    break;
+    case MS5xxx_CMD_ADC_512 : delay(3);
+    break;
+    case MS5xxx_CMD_ADC_1024: delay(4);
+    break;
+    case MS5xxx_CMD_ADC_2048: delay(6);
+    break;
+    case MS5xxx_CMD_ADC_4096: delay(10);
+    break;
+  }
+
+  return I2C_read24_reg(ms5611_i2caddr, MS5xxx_CMD_ADC_READ);
+}
+
+
+
+
+
+void Plugin_032_readout() {
+
+  unsigned long D1=0, D2=0;
+
+  double dT;
+  double OFF;
+  double SENS;
+
+  D2=Plugin_032_read_adc(MS5xxx_CMD_ADC_D2+MS5xxx_CMD_ADC_4096);
+  D1=Plugin_032_read_adc(MS5xxx_CMD_ADC_D1+MS5xxx_CMD_ADC_4096);
+
+
+  dT=D2-ms5611_prom[5]*pow(2,8);
+  OFF=ms5611_prom[2]*pow(2,16)+dT*ms5611_prom[4]/pow(2,7);
+  SENS=ms5611_prom[1]*pow(2,15)+dT*ms5611_prom[3]/pow(2,8);
+  ms5611_temperature=(2000+(dT*ms5611_prom[6])/pow(2,23));
+  ms5611_pressure=(((D1*SENS)/pow(2,21)-OFF)/pow(2,15));
+
+
+  double T2=0., OFF2=0., SENS2=0.;
+  if(ms5611_temperature<2000) {
+    T2=dT*dT/pow(2,31);
+    OFF2=5*(ms5611_temperature-2000)*(ms5611_temperature-2000)/pow(2,1);
+    SENS2=5*(ms5611_temperature-2000)*(ms5611_temperature-2000)/pow(2,2);
+    if(ms5611_temperature<-1500) {
+      OFF2+=7*(ms5611_temperature+1500)*(ms5611_temperature+1500);
+      SENS2+=11*(ms5611_temperature+1500)*(ms5611_temperature+1500)/pow(2,1);
+    }
+  }
+
+  ms5611_temperature-=T2;
+  OFF-=OFF2;
+  SENS-=SENS2;
+  ms5611_pressure=(((D1*SENS)/pow(2,21)-OFF)/pow(2,15));
+}
+
+
+
+
+double Plugin_032_pressureElevation(double atmospheric, int altitude) {
+  return atmospheric / pow(1.0 - (altitude/44330.0), 5.255);
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P033_Dummy.ino"
+#ifdef USES_P033
+
+
+
+
+#define PLUGIN_033 
+#define PLUGIN_ID_033 33
+#define PLUGIN_NAME_033 "Generic - Dummy Device"
+#define PLUGIN_VALUENAME1_033 "Dummy"
+boolean Plugin_033(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_033;
+        Device[deviceCount].Type = DEVICE_TYPE_DUMMY;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].DecimalsOnly = true;
+        Device[deviceCount].ValueCount = 4;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_033);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_033));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        sensorTypeHelper_webformLoad_allTypes(event, 0);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        pconfig_webformSave(event, 0);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        event->sensorType = PCONFIG(0);
+        for (byte x = 0; x < getValueCountFromSensorType(PCONFIG(0)); x++)
+        {
+          String log = F("Dummy: value ");
+          log += x+1;
+          log += F(": ");
+          log += UserVar[event->BaseVarIndex+x];
+          addLog(LOG_LEVEL_INFO,log);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String command = parseString(string, 1);
+        if (command == F("dummyvalueset"))
+        {
+          if (event->Par1 == event->TaskIndex+1)
+          {
+            float floatValue=0;
+            if (string2float(parseString(string, 4),floatValue))
+            {
+              if (loglevelActiveFor(LOG_LEVEL_INFO))
+              {
+                String log = F("Dummy: Index ");
+                log += event->Par1;
+                log += F(" value ");
+                log += event->Par2;
+                log += F(" set to ");
+                log += floatValue;
+                addLog(LOG_LEVEL_INFO,log);
+              }
+              UserVar[event->BaseVarIndex+event->Par2-1]=floatValue;
+              success = true;
+            } else {
+              if (loglevelActiveFor(LOG_LEVEL_ERROR))
+              {
+                String log = F("Dummy: Index ");
+                log += event->Par1;
+                log += F(" value ");
+                log += event->Par2;
+                log += F(" parameter3: ");
+                log += parseString(string, 4);
+                log += F(" not a float value!");
+                addLog(LOG_LEVEL_ERROR,log);
+              }
+            }
+          }
+        }
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P034_DHT12.ino"
+#ifdef USES_P034
+
+
+
+
+#define PLUGIN_034 
+#define PLUGIN_ID_034 34
+#define PLUGIN_NAME_034 "Environment - DHT12 (I2C)"
+#define PLUGIN_VALUENAME1_034 "Temperature"
+#define PLUGIN_VALUENAME2_034 "Humidity"
+
+boolean Plugin_034_init = false;
+
+#define DHT12_I2C_ADDRESS 0x5C
+
+boolean Plugin_034(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_034;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_HUM;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_034);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_034));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_034));
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        byte dht_dat[5];
+
+        byte i;
+
+        boolean error = false;
+
+        Wire.beginTransmission(DHT12_I2C_ADDRESS);
+        Wire.write(0);
+        Wire.endTransmission();
+
+        Wire.beginTransmission(DHT12_I2C_ADDRESS);
+        if (Wire.requestFrom(DHT12_I2C_ADDRESS, 5) == 5) {
+          for (i = 0; i < 5; i++)
+          {
+            dht_dat[i] = Wire.read();
+          }
+        } else {
+          error = true;
+        }
+        if (!error)
+        {
+
+          byte dht_check_sum = dht_dat[0] + dht_dat[1] + dht_dat[2] + dht_dat[3];
+
+          if (dht_dat[4] == dht_check_sum)
+          {
+            float temperature = float(dht_dat[2]*10 + (dht_dat[3] & 0x7f)) / 10.0;
+            if (dht_dat[3] & 0x80) { temperature = -temperature; }
+            float humidity = float(dht_dat[0]*10+dht_dat[1]) / 10.0;
+
+            UserVar[event->BaseVarIndex] = temperature;
+            UserVar[event->BaseVarIndex + 1] = humidity;
+            String log = F("DHT12: Temperature: ");
+            log += UserVar[event->BaseVarIndex];
+            addLog(LOG_LEVEL_INFO, log);
+            log = F("DHT12: Humidity: ");
+            log += UserVar[event->BaseVarIndex + 1];
+            addLog(LOG_LEVEL_INFO, log);
+# 100 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P034_DHT12.ino"
+            success = true;
+          }
+        }
+        if(!success)
+        {
+          addLog(LOG_LEVEL_INFO, F("DHT12: No reading!"));
+          UserVar[event->BaseVarIndex] = NAN;
+          UserVar[event->BaseVarIndex + 1] = NAN;
+        }
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P035_IRTX.ino"
+#ifdef USES_P035
+# 31 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P035_IRTX.ino"
+#include <IRremoteESP8266.h>
+#include <IRac.h>
+#include <IRutils.h>
+#include <IRsend.h>
+
+#ifdef P016_P035_Extended_AC
+#include <IRac.h>
+IRac *Plugin_035_commonAc = nullptr;
+#endif
+
+IRsend *Plugin_035_irSender = nullptr;
+
+#define PLUGIN_035 
+#define PLUGIN_ID_035 35
+#define PLUGIN_NAME_035 "Communication - IR Transmit"
+#define STATE_SIZE_MAX 53U
+#define PRONTO_MIN_LENGTH 6U
+
+#define from_32hex(c) ((((c) | ('A' ^ 'a')) - '0') % 39)
+
+#define P35_Ntimings 250
+
+boolean Plugin_035(byte function, struct EventStruct *event, String &string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+  case PLUGIN_DEVICE_ADD:
+  {
+    Device[++deviceCount].Number = PLUGIN_ID_035;
+    Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+    Device[deviceCount].SendDataOption = false;
+    break;
+  }
+
+  case PLUGIN_GET_DEVICENAME:
+  {
+    string = F(PLUGIN_NAME_035);
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES:
+  {
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEGPIONAMES:
+  {
+    event->String1 = formatGpioName_output("LED");
+    break;
+  }
+  case PLUGIN_WEBFORM_LOAD:
+  {
+    addRowLabel(F("Command"));
+    addHtml(F("IRSEND,[PROTOCOL],[DATA],[BITS optional],[REPEATS optional]<BR>BITS and REPEATS are optional and default to 0"));
+    addHtml(F("IRSENDAC,{JSON formated AC command}"));
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_INIT:
+  {
+    int irPin = CONFIG_PIN1;
+    if (Plugin_035_irSender == 0 && irPin != -1)
+    {
+      addLog(LOG_LEVEL_INFO, F("INIT: IR TX"));
+      Plugin_035_irSender = new IRsend(irPin);
+      Plugin_035_irSender->begin();
+    }
+    if (Plugin_035_irSender != 0 && irPin == -1)
+    {
+      addLog(LOG_LEVEL_INFO, F("INIT: IR TX Removed"));
+      delete Plugin_035_irSender;
+      Plugin_035_irSender = 0;
+    }
+
+#ifdef P016_P035_Extended_AC
+    if (Plugin_035_commonAc == 0 && irPin != -1)
+    {
+      addLog(LOG_LEVEL_INFO, F("INIT AC: IR TX"));
+      Plugin_035_commonAc = new IRac(irPin);
+    }
+    if (Plugin_035_commonAc != 0 && irPin == -1)
+    {
+      addLog(LOG_LEVEL_INFO, F("INIT AC: IR TX Removed"));
+      delete Plugin_035_commonAc;
+      Plugin_035_commonAc = 0;
+    }
+#endif
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_WRITE:
+  {
+    uint64_t IrCode = 0;
+    uint16_t IrBits = 0;
+
+    String cmdCode = string;
+    int argIndex = cmdCode.indexOf(',');
+    if (argIndex)
+      cmdCode = cmdCode.substring(0, argIndex);
+
+#ifdef P016_P035_Extended_AC
+    if ((cmdCode.equalsIgnoreCase(F("IRSEND")) || cmdCode.equalsIgnoreCase(F("IRSENDAC"))) && (Plugin_035_irSender != 0 || Plugin_035_commonAc != 0))
+#else
+    if (cmdCode.equalsIgnoreCase(F("IRSEND")) && Plugin_035_irSender != 0)
+#endif
+    {
+      success = true;
+#ifdef PLUGIN_016
+      if (irReceiver != 0)
+        irReceiver->disableIRIn();
+#endif
+
+      String IrType ="";
+      String IrType_orig= "";
+      String TmpStr1 ="";
+      if (GetArgv(string.c_str(), TmpStr1, 2))
+      {
+        IrType = TmpStr1;
+        IrType_orig = TmpStr1;
+        IrType.toLowerCase();
+      }
+
+      if (IrType.equals(F("raw")) || IrType.equals(F("raw2")))
+      {
+        String IrRaw;
+        uint16_t IrHz = 0;
+        unsigned int IrPLen = 0;
+        unsigned int IrBLen = 0;
+
+        if (GetArgv(string.c_str(), TmpStr1, 3))
+          IrRaw = TmpStr1;
+        if (GetArgv(string.c_str(), TmpStr1, 4))
+          IrHz = str2int(TmpStr1.c_str());
+        if (GetArgv(string.c_str(), TmpStr1, 5))
+          IrPLen = str2int(TmpStr1.c_str());
+        if (GetArgv(string.c_str(), TmpStr1, 6))
+          IrBLen = str2int(TmpStr1.c_str());
+
+        printWebString += IrType_orig + String(F(": Base32Hex RAW Code: ")) + IrRaw + String(F("<BR>kHz: ")) + IrHz + String(F("<BR>Pulse Len: ")) + IrPLen + String(F("<BR>Blank Len: ")) + IrBLen + String(F("<BR>"));
+
+        uint16_t idx = 0;
+        uint16_t *buf;
+        buf = new uint16_t[P35_Ntimings];
+        if (buf == nullptr)
+        {
+          success = false;
+          return success;
+        }
+
+        if (IrType.equals(F("raw")))
+        {
+          unsigned int c0 = 0;
+          unsigned int c1 = 0;
+
+
+
+          for (unsigned int i = 0; i < IrRaw.length(); i++)
+          {
+
+
+            char c = from_32hex(IrRaw[i]);
+
+
+            for (unsigned int shft = 1; shft < 6; shft++)
+            {
+
+              if ((c & 16) != 0)
+              {
+
+                c1++;
+
+
+                if (c0 > 0)
+                {
+
+
+                  buf[idx++] = c0 * IrBLen;
+
+
+
+                }
+
+
+
+                c0 = 0;
+              }
+              else
+              {
+
+
+
+                if (c0 + c1 != 0)
+                {
+
+                  c0++;
+
+
+                  if (c1 > 0)
+                  {
+
+
+                    buf[idx++] = c1 * IrPLen;
+
+
+
+                  }
+
+
+
+                  c1 = 0;
+                }
+              }
+
+
+              c <<= 1;
+            }
+          }
+
+
+
+
+
+          if (c0 > 0)
+          {
+            buf[idx++] = c0 * IrBLen;
+
+
+          }
+
+          if (c1 > 0)
+          {
+            buf[idx++] = c1 * IrPLen;
+
+
+          }
+
+
+        }
+        else
+        {
+          for (unsigned int i = 0, total = IrRaw.length(), gotRep = 0, rep = 0; i < total;)
+          {
+            char c = IrRaw[i++];
+            if (c == '*')
+            {
+              if (i + 2 >= total || idx + (rep = from_32hex(IrRaw[i++])) * 2 > sizeof(buf[0]) * P35_Ntimings)
+              {
+                delete[] buf;
+                buf = nullptr;
+                return addErrorTrue();
+              }
+              gotRep = 2;
+            }
+            else
+            {
+              if ((c == '^' && i + 1 >= total) || idx >= sizeof(buf[0]) * P35_Ntimings)
+              {
+                delete[] buf;
+                buf = nullptr;
+                return addErrorTrue();
+              }
+
+              uint16_t irLen = (idx & 1) ? IrBLen : IrPLen;
+              if (c == '^')
+              {
+                buf[idx++] = (from_32hex(IrRaw[i]) * 32 + from_32hex(IrRaw[i + 1])) * irLen;
+                i += 2;
+              }
+              else
+                buf[idx++] = from_32hex(c) * irLen;
+
+              if (--gotRep == 0)
+              {
+                while (--rep)
+                {
+                  buf[idx] = buf[idx - 2];
+                  buf[idx + 1] = buf[idx - 1];
+                  idx += 2;
+                }
+              }
+            }
+          }
+        }
+
+        Plugin_035_irSender->sendRaw(buf, idx, IrHz);
+        delete[] buf;
+        buf = nullptr;
+# 333 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P035_IRTX.ino"
+      }
+      else if (cmdCode.equalsIgnoreCase(F("IRSEND")))
+      {
+        uint16_t IrRepeat = 0;
+
+        String ircodestr ="";
+        if (GetArgv(string.c_str(), TmpStr1, 2))
+        {
+          IrType = TmpStr1;
+          IrType_orig = TmpStr1;
+          IrType.toUpperCase();
+        }
+        if (GetArgv(string.c_str(), ircodestr, 3))
+        {
+          IrCode = strtoull(ircodestr.c_str(), NULL, 16);
+        }
+        IrBits = 0;
+        if (GetArgv(string.c_str(), TmpStr1, 4))
+          IrBits = str2int(TmpStr1.c_str());
+        if (GetArgv(string.c_str(), TmpStr1, 5))
+          IrRepeat = str2int(TmpStr1.c_str());
+        sendIRCode(strToDecodeType(IrType.c_str()), IrCode, ircodestr.c_str(), IrBits, IrRepeat);
+      }
+#ifdef P016_P035_Extended_AC
+      if (cmdCode.equalsIgnoreCase(F("IRSENDAC")))
+      {
+
+        StaticJsonDocument<300> doc;
+        int argIndex = string.indexOf(',') + 1;
+        if (argIndex)
+          TmpStr1 = string.substring(argIndex, string.length());
+        addLog(LOG_LEVEL_INFO, String(F("IRTX: JSON received: ")) + TmpStr1);
+
+
+        DeserializationError error = deserializeJson(doc, TmpStr1);
+
+        if (error)
+        {
+          addLog(LOG_LEVEL_INFO, String(F("IRTX: Deserialize Json failed: ")) + error.c_str());
+          ReEnableIRIn();
+          return true;
+        }
+        String sprotocol = doc[F("protocol")];
+        decode_type_t protocol = strToDecodeType(sprotocol.c_str());
+        if (!IRac::isProtocolSupported(protocol))
+        {
+          addLog(LOG_LEVEL_INFO, String(F("IRTX: Protocol not supported:")) + sprotocol);
+          ReEnableIRIn();
+          return true;
+        }
+# 391 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P035_IRTX.ino"
+        String tempstr = "";
+        tempstr = doc[F("model")].as<String>();
+        uint16_t model = IRac::strToModel(tempstr.c_str());
+        tempstr = doc[F("power")].as<String>();
+        bool power = IRac::strToBool(tempstr.c_str(), false);
+        float degrees = doc[F("temp")] | 22.0;
+        tempstr = doc[F("use_celsius")].as<String>();
+        bool celsius = IRac::strToBool(tempstr.c_str(), true);
+        tempstr = doc[F("mode")].as<String>();
+        stdAc::opmode_t opmode = IRac::strToOpmode(tempstr.c_str(), stdAc::opmode_t::kAuto);
+        tempstr = doc[F("fanspeed")].as<String>();
+        stdAc::fanspeed_t fanspeed = IRac::strToFanspeed(tempstr.c_str(), stdAc::fanspeed_t::kAuto);
+        tempstr = doc[F("swingv")].as<String>();
+        stdAc::swingv_t swingv = IRac::strToSwingV(tempstr.c_str(), stdAc::swingv_t::kAuto);
+        tempstr = doc[F("swingh")].as<String>();
+        stdAc::swingh_t swingh = IRac::strToSwingH(tempstr.c_str(), stdAc::swingh_t::kAuto);
+        tempstr = doc[F("quiet")].as<String>();
+        bool quiet = IRac::strToBool(tempstr.c_str(), false);
+        tempstr = doc[F("turbo")].as<String>();
+        bool turbo = IRac::strToBool(tempstr.c_str(), false);
+        tempstr = doc[F("econo")].as<String>();
+        bool econo = IRac::strToBool(tempstr.c_str(), false);
+        tempstr = doc[F("light")].as<String>();
+        bool light = IRac::strToBool(tempstr.c_str(), false);
+        tempstr = doc[F("filter")].as<String>();
+        bool filter = IRac::strToBool(tempstr.c_str(), false);
+        tempstr = doc[F("clean")].as<String>();
+        bool clean = IRac::strToBool(tempstr.c_str(), false);
+        tempstr = doc[F("beep")].as<String>();
+        bool beep = IRac::strToBool(tempstr.c_str(), false);
+
+        int16_t sleep = doc[F("sleep")] | -1;
+        int16_t clock = doc[F("clock")] | -1;
+
+
+        Plugin_035_commonAc->sendAc(protocol, model, power, opmode, degrees, celsius, fanspeed, swingv, swingh, quiet, turbo, econo, light, filter, clean, beep, sleep, clock);
+        ReEnableIRIn();
+
+      }
+#endif
+
+      addLog(LOG_LEVEL_INFO, String(F("IRTX: IR Code Sent: ")) + IrType_orig);
+      if (printToWeb)
+      {
+        printWebString += String(F("IRTX: IR Code Sent: ")) + IrType_orig + String(F("<BR>"));
+      }
+
+      ReEnableIRIn();
+    }
+    break;
+  }
+  }
+  return success;
+}
+
+boolean addErrorTrue()
+{
+  addLog(LOG_LEVEL_ERROR, F("RAW2: Invalid encoding!"));
+  ReEnableIRIn();
+  return true;
+}
+
+void ReEnableIRIn()
+{
+#ifdef PLUGIN_016
+  if (irReceiver != 0)
+    irReceiver->enableIRIn();
+#endif
+}
+# 475 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P035_IRTX.ino"
+bool sendIRCode(int const irtype,
+                uint64_t const code, char const *code_str, uint16_t bits,
+                uint16_t repeat)
+{
+  decode_type_t irType = (decode_type_t)irtype;
+  bool success = true;
+  repeat = std::max(IRsend::minRepeats(irType), repeat);
+    if (bits == 0) bits = IRsend::defaultBits(irType);
+
+
+      if (hasACState(irType))
+        success = parseStringAndSendAirCon(irType, code_str);
+      else
+        success = Plugin_035_irSender->send(irType, code, bits, repeat);
+
+  return success;
+}
+
+
+
+
+
+bool parseStringAndSendAirCon(const int irtype, const String str)
+{
+  decode_type_t irType = (decode_type_t)irtype;
+  uint8_t strOffset = 0;
+  uint8_t state[kStateSizeMax] = {0};
+  uint16_t stateSize = 0;
+
+  if (str.startsWith("0x") || str.startsWith("0X"))
+    strOffset = 2;
+
+  uint16_t inputLength = str.length() - strOffset;
+  if (inputLength == 0) {
+
+    return false;
+  }
+
+  switch (irType) {
+    case DAIKIN:
+
+
+
+
+
+
+      stateSize = inputLength / 2;
+
+      stateSize = std::max(stateSize, kDaikinStateLengthShort);
+
+      if (stateSize > kDaikinStateLengthShort)
+
+        stateSize = std::max(stateSize, kDaikinStateLength);
+
+      stateSize = std::min(stateSize, kDaikinStateLength);
+      break;
+    case FUJITSU_AC:
+
+
+
+
+      stateSize = inputLength / 2;
+
+      stateSize = std::max(stateSize,
+                           (uint16_t) (kFujitsuAcStateLengthShort - 1));
+
+      if (stateSize > kFujitsuAcStateLengthShort)
+
+        stateSize = std::max(stateSize, (uint16_t) (kFujitsuAcStateLength - 1));
+
+      stateSize = std::min(stateSize, kFujitsuAcStateLength);
+      break;
+    case MWM:
+
+
+
+
+      stateSize = inputLength / 2;
+
+      stateSize = std::max(stateSize, (uint16_t) 3);
+
+      stateSize = std::min(stateSize, kStateSizeMax);
+      break;
+    case SAMSUNG_AC:
+
+
+
+
+      stateSize = inputLength / 2;
+
+      stateSize = std::max(stateSize, (uint16_t) (kSamsungAcStateLength));
+
+      if (stateSize > kSamsungAcStateLength)
+
+        stateSize = std::max(stateSize,
+                             (uint16_t) (kSamsungAcExtendedStateLength));
+
+      stateSize = std::min(stateSize, kSamsungAcExtendedStateLength);
+      break;
+    default:
+      stateSize = IRsend::defaultBits(irType) / 8;
+      if (!stateSize || !hasACState(irType)) {
+
+
+        return false;
+      }
+  }
+  if (inputLength > stateSize * 2) {
+
+    return false;
+  }
+
+
+  uint8_t *statePtr = &state[stateSize - 1];
+
+
+  for (uint16_t i = 0; i < inputLength; i++) {
+
+    uint8_t c = tolower(str[inputLength + strOffset - i - 1]);
+    if (isxdigit(c)) {
+      if (isdigit(c))
+        c -= '0';
+      else
+        c = c - 'a' + 10;
+    } else {
+
+
+      return false;
+    }
+    if (i % 2 == 1) {
+      *statePtr += (c << 4);
+      statePtr--;
+    } else {
+      *statePtr = c;
+    }
+  }
+  if (!Plugin_035_irSender->send(irType, state, stateSize)) {
+
+    return false;
+  }
+  return true;
+}
+
+
+
+
+
+
+
+uint16_t countValuesInStr(const String &str, char sep)
+{
+  int16_t index = -1;
+  uint16_t count = 1;
+  do
+  {
+    index = str.indexOf(sep, index + 1);
+    count++;
+  } while (index != -1);
+  return count;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P036_FrameOLED.ino"
+#ifdef USES_P036
+# 15 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P036_FrameOLED.ino"
+#define PLUGIN_036 
+#define PLUGIN_ID_036 36
+#define PLUGIN_NAME_036 "Display - OLED SSD1306/SH1106 Framed"
+#define PLUGIN_VALUENAME1_036 "OLED"
+
+#define P36_Nlines 12
+#define P36_Nchars 32
+
+#define P36_CONTRAST_OFF 1
+#define P36_CONTRAST_LOW 64
+#define P36_CONTRAST_MED 0xCF
+#define P36_CONTRAST_HIGH 0xFF
+
+
+#include "SSD1306.h"
+#include "SH1106Wire.h"
+#include "OLED_SSD1306_SH1106_images.h"
+#include "Dialog_Plain_12_font.h"
+
+#define P36_WIFI_STATE_UNSET -2
+#define P36_WIFI_STATE_NOT_CONNECTED -1
+
+static int8_t lastWiFiState = P36_WIFI_STATE_UNSET;
+
+
+
+OLEDDisplay *display=NULL;
+
+String P036_displayLines[P36_Nlines];
+
+void Plugin_036_loadDisplayLines(byte taskIndex) {
+  char P036_deviceTemplate[P36_Nlines][P36_Nchars];
+  LoadCustomTaskSettings(taskIndex, (byte*)&P036_deviceTemplate, sizeof(P036_deviceTemplate));
+  for (byte varNr = 0; varNr < P36_Nlines; varNr++) {
+    P036_displayLines[varNr] = P036_deviceTemplate[varNr];
+  }
+
+
+}
+
+boolean Plugin_036(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  static byte displayTimer = 0;
+  static byte frameCounter = 0;
+
+  static byte nrFramesToDisplay = 0;
+  static byte currentFrameToDisplay = 0;
+
+  int linesPerFrame;
+  int NFrames;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_036;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_036);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_036));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+
+        byte choice5 = PCONFIG(5);
+        String options5[2];
+        options5[0] = F("SSD1306");
+        options5[1] = F("SH1106");
+        int optionValues5[2] = { 1, 2 };
+        addFormSelector(F("Controller"), F("p036_controller"), 2, options5, optionValues5, choice5);
+
+        byte choice0 = PCONFIG(0);
+
+
+
+
+
+        int optionValues0[2];
+        optionValues0[0] = 0x3C;
+        optionValues0[1] = 0x3D;
+        addFormSelectorI2C(F("p036_adr"), 2, optionValues0, choice0);
+
+        byte choice1 = PCONFIG(1);
+        String options1[2];
+        options1[0] = F("Normal");
+        options1[1] = F("Rotated");
+        int optionValues1[2] = { 1, 2 };
+        addFormSelector(F("Rotation"), F("p036_rotate"), 2, options1, optionValues1, choice1);
+
+        byte choice2 = PCONFIG(2);
+        String options2[4];
+        int optionValues2[4];
+        for (int i = 0; i < 4; ++i) {
+          options2[i] = String(i + 1);
+          optionValues2[i] = i + 1;
+        }
+        addFormSelector(F("Lines per Frame"), F("p036_nlines"), 4, options2, optionValues2, choice2);
+
+        byte choice3 = PCONFIG(3);
+        String options3[5];
+        options3[0] = F("Very Slow");
+        options3[1] = F("Slow");
+        options3[2] = F("Fast");
+        options3[3] = F("Very Fast");
+        options3[4] = F("Instant");
+        int optionValues3[5];
+        optionValues3[0] = 1;
+        optionValues3[1] = 2;
+        optionValues3[2] = 4;
+        optionValues3[3] = 8;
+        optionValues3[4] = 32;
+        addFormSelector(F("Scroll"), F("p036_scroll"), 5, options3, optionValues3, choice3);
+        Plugin_036_loadDisplayLines(event->TaskIndex);
+        for (byte varNr = 0; varNr < P36_Nlines; varNr++)
+        {
+          addFormTextBox(String(F("Line ")) + (varNr + 1), String(F("p036_template")) + (varNr + 1), P036_displayLines[varNr], P36_Nchars);
+        }
+
+
+        addFormPinSelect(F("Display button"), F("taskdevicepin3"), CONFIG_PIN3);
+
+        addFormNumericBox(F("Display Timeout"), F("p036_timer"), PCONFIG(4));
+
+        byte choice6 = PCONFIG(6);
+        if (choice6 == 0) choice6 = P36_CONTRAST_HIGH;
+        String options6[3];
+        options6[0] = F("Low");
+        options6[1] = F("Medium");
+        options6[2] = F("High");
+        int optionValues6[3];
+        optionValues6[0] = P36_CONTRAST_LOW;
+        optionValues6[1] = P36_CONTRAST_MED;
+        optionValues6[2] = P36_CONTRAST_HIGH;
+        addFormSelector(F("Contrast"), F("p036_contrast"), 3, options6, optionValues6, choice6);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+
+        schedule_task_device_timer(event->TaskIndex,
+           millis() + (Settings.TaskDeviceTimer[event->TaskIndex] * 1000));
+        frameCounter=0;
+
+        PCONFIG(0) = getFormItemInt(F("p036_adr"));
+        PCONFIG(1) = getFormItemInt(F("p036_rotate"));
+        PCONFIG(2) = getFormItemInt(F("p036_nlines"));
+        PCONFIG(3) = getFormItemInt(F("p036_scroll"));
+        PCONFIG(4) = getFormItemInt(F("p036_timer"));
+        PCONFIG(5) = getFormItemInt(F("p036_controller"));
+        PCONFIG(6) = getFormItemInt(F("p036_contrast"));
+
+        String error;
+        char P036_deviceTemplate[P36_Nlines][P36_Nchars];
+        for (byte varNr = 0; varNr < P36_Nlines; varNr++)
+        {
+          String argName = F("p036_template");
+          argName += varNr + 1;
+          if (!safe_strncpy(P036_deviceTemplate[varNr], WebServer.arg(argName), P36_Nchars)) {
+            error += getCustomTaskSettingsError(varNr);
+          }
+        }
+        if (error.length() > 0) {
+          addHtmlError(error);
+        }
+        SaveCustomTaskSettings(event->TaskIndex, (byte*)&P036_deviceTemplate, sizeof(P036_deviceTemplate));
+
+        Plugin_036_loadDisplayLines(event->TaskIndex);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        lastWiFiState = P36_WIFI_STATE_UNSET;
+
+        Plugin_036_loadDisplayLines(event->TaskIndex);
+
+
+        if (display)
+        {
+          display->end();
+          delete display;
+        }
+
+        uint8_t OLED_address = PCONFIG(0);
+        if (PCONFIG(5) == 1) {
+          display = new SSD1306Wire(OLED_address, Settings.Pin_i2c_sda, Settings.Pin_i2c_scl);
+        } else {
+          display = new SH1106Wire(OLED_address, Settings.Pin_i2c_sda, Settings.Pin_i2c_scl);
+        }
+        display->init();
+        display->displayOn();
+
+        uint8_t OLED_contrast = PCONFIG(6);
+        P36_setContrast(OLED_contrast);
+
+
+        UserVar[event->BaseVarIndex] = 1;
+
+
+        if (PCONFIG(1) == 2)display->flipScreenVertically();
+
+
+        display_header();
+        display_logo();
+        display->display();
+
+
+        displayTimer = PCONFIG(4);
+
+        if (CONFIG_PIN3 != -1)
+        {
+          pinMode(CONFIG_PIN3, INPUT_PULLUP);
+        }
+
+
+        frameCounter = 0;
+        nrFramesToDisplay = 1;
+        currentFrameToDisplay = 0;
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+          if (display)
+          {
+            display->end();
+            delete display;
+            display=NULL;
+          }
+          for (byte varNr = 0; varNr < P36_Nlines; varNr++) {
+            P036_displayLines[varNr] = "";
+          }
+          break;
+      }
+
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (CONFIG_PIN3 != -1)
+        {
+          if (!digitalRead(CONFIG_PIN3))
+          {
+            display->displayOn();
+            UserVar[event->BaseVarIndex] = 1;
+            displayTimer = PCONFIG(4);
+          }
+        }
+        break;
+      }
+
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+
+        if ( displayTimer > 0)
+        {
+          displayTimer--;
+          if (displayTimer == 0)
+          {
+            display->displayOff();
+            UserVar[event->BaseVarIndex] = 0;
+          }
+        }
+        if (UserVar[event->BaseVarIndex] == 1) {
+
+          if (display && display_wifibars()) {
+
+            display->display();
+          }
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+# 329 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P036_FrameOLED.ino"
+        linesPerFrame = PCONFIG(2);
+        NFrames = P36_Nlines / linesPerFrame;
+
+
+        String tmpString;
+        tmpString.reserve(P36_Nchars);
+        String newString[4];
+        String oldString[4];
+
+
+        for (byte i = 0; i < linesPerFrame; i++)
+        {
+          tmpString = P036_displayLines[(linesPerFrame * frameCounter) + i];
+          oldString[i] = P36_parseTemplate(tmpString, 20);
+          oldString[i].trim();
+        }
+
+
+
+
+        boolean foundText = false;
+        int ntries = 0;
+        while (!foundText) {
+
+
+          ntries += 1;
+          if (ntries > NFrames) break;
+
+
+          frameCounter = frameCounter + 1;
+          if ( frameCounter > NFrames - 1) {
+            frameCounter = 0;
+            currentFrameToDisplay = 0;
+          }
+
+
+          for (byte i = 0; i < linesPerFrame; i++)
+          {
+            tmpString = P036_displayLines[(linesPerFrame * frameCounter) + i];
+            newString[i] = P36_parseTemplate(tmpString, 20);
+            newString[i].trim();
+            if (newString[i].length() > 0) foundText = true;
+          }
+          if (foundText) {
+            if (frameCounter != 0) {
+              ++currentFrameToDisplay;
+            }
+          }
+        }
+        if ((currentFrameToDisplay + 1) > nrFramesToDisplay) {
+          nrFramesToDisplay = currentFrameToDisplay + 1;
+        }
+
+
+        display_header();
+        display_indicator(currentFrameToDisplay, nrFramesToDisplay);
+
+        display->display();
+
+        int scrollspeed = PCONFIG(3);
+        display_scroll(oldString, newString, linesPerFrame, scrollspeed);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String tmpString = string;
+        int argIndex = tmpString.indexOf(',');
+        if (argIndex)
+          tmpString = tmpString.substring(0, argIndex);
+        if (tmpString.equalsIgnoreCase(F("OLEDFRAMEDCMD")) && display)
+        {
+          success = true;
+          argIndex = string.lastIndexOf(',');
+          tmpString = string.substring(argIndex + 1);
+          if (tmpString.equalsIgnoreCase(F("Off")))
+            P36_setContrast(P36_CONTRAST_OFF);
+          else if (tmpString.equalsIgnoreCase(F("On")))
+            display->displayOn();
+          else if (tmpString.equalsIgnoreCase(F("Low")))
+            P36_setContrast(P36_CONTRAST_LOW);
+          else if (tmpString.equalsIgnoreCase(F("Med")))
+            P36_setContrast(P36_CONTRAST_MED);
+          else if (tmpString.equalsIgnoreCase(F("High")))
+            P36_setContrast(P36_CONTRAST_HIGH);
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+
+
+void P36_setContrast(uint8_t OLED_contrast) {
+  char contrast = 100;
+  char precharge = 241;
+  char comdetect = 64;
+  switch (OLED_contrast) {
+    case P36_CONTRAST_OFF:
+      if (display) {
+        display->displayOff();
+      }
+      return;
+    case P36_CONTRAST_LOW:
+      contrast = 10; precharge = 5; comdetect = 0;
+      break;
+    case P36_CONTRAST_MED:
+      contrast = P36_CONTRAST_MED; precharge = 0x1F; comdetect = 64;
+      break;
+    case P36_CONTRAST_HIGH:
+    default:
+      contrast = P36_CONTRAST_HIGH; precharge = 241; comdetect = 64;
+      break;
+  }
+  if (display) {
+    display->displayOn();
+    display->setContrast(contrast, precharge, comdetect);
+  }
+}
+
+
+String P36_parseTemplate(String &tmpString, byte lineSize) {
+  String result = parseTemplate(tmpString, lineSize);
+# 482 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P036_FrameOLED.ino"
+  return result;
+}
+
+
+
+void display_header() {
+  static boolean showWiFiName = true;
+  if (showWiFiName && (WiFiConnected()) ) {
+    String newString = WiFi.SSID();
+    newString.trim();
+    display_title(newString);
+  } else {
+    String dtime = F("%sysname%");
+    String newString = parseTemplate(dtime, 10);
+    newString.trim();
+    display_title(newString);
+  }
+  showWiFiName = !showWiFiName;
+
+  display_time();
+  display_wifibars();
+}
+
+void display_time() {
+  String dtime = F("%systime%");
+  String newString = parseTemplate(dtime, 10);
+  display->setTextAlignment(TEXT_ALIGN_LEFT);
+  display->setFont(ArialMT_Plain_10);
+  display->setColor(BLACK);
+  display->fillRect(0, 0, 28, 10);
+  display->setColor(WHITE);
+  display->drawString(0, 0, newString.substring(0, 5));
+}
+
+void display_title(String& title) {
+  display->setTextAlignment(TEXT_ALIGN_CENTER);
+  display->setFont(ArialMT_Plain_10);
+  display->setColor(BLACK);
+  display->fillRect(0, 0, 128, 13);
+  display->setColor(WHITE);
+  display->drawString(64, 0, title);
+}
+
+void display_logo() {
+  display->setTextAlignment(TEXT_ALIGN_LEFT);
+  display->setFont(ArialMT_Plain_16);
+  display->setColor(BLACK);
+  display->fillRect(0, 14, 128, 64);
+  display->setColor(WHITE);
+  display->drawString(65, 15, F("ESP"));
+  display->drawString(65, 34, F("Easy"));
+  display->drawXbm(24, 14, espeasy_logo_width, espeasy_logo_height, espeasy_logo_bits);
+}
+
+
+
+void display_indicator(int iframe, int frameCount) {
+
+
+
+  display->setColor(BLACK);
+  display->fillRect(0, 54, 128, 10);
+  display->setColor(WHITE);
+
+
+  if (frameCount <= 1) return;
+
+
+  for (byte i = 0; i < frameCount; i++) {
+    const char *image;
+    if (iframe == i) {
+      image = activeSymbole;
+    } else {
+      image = inactiveSymbole;
+    }
+
+    int x, y;
+
+    y = 56;
+
+
+
+
+    const int number_spaces = frameCount - 1;
+    if (number_spaces <= 0)
+      return;
+    int margin = 20;
+    int spacing = (128 - 2 * margin) / number_spaces;
+
+    if (spacing > 30) {
+      spacing = 30;
+      margin = (128 - number_spaces * spacing) / 2;
+    }
+
+    x = margin + (spacing * i);
+    display->drawXbm(x, y, 8, 8, image);
+  }
+}
+
+void display_scroll(String outString[], String inString[], int nlines, int scrollspeed)
+{
+
+
+
+
+
+  int ypos[4];
+
+  if (nlines == 1)
+  {
+    display->setFont(ArialMT_Plain_24);
+    ypos[0] = 20;
+  }
+
+  if (nlines == 2)
+  {
+    display->setFont(ArialMT_Plain_16);
+    ypos[0] = 15;
+    ypos[1] = 34;
+  }
+
+  if (nlines == 3)
+  {
+    display->setFont(Dialog_plain_12);
+    ypos[0] = 13;
+    ypos[1] = 25;
+    ypos[2] = 37;
+  }
+
+  if (nlines == 4)
+  {
+    display->setFont(ArialMT_Plain_10);
+    ypos[0] = 12;
+    ypos[1] = 22;
+    ypos[2] = 32;
+    ypos[3] = 42;
+  }
+
+  display->setTextAlignment(TEXT_ALIGN_CENTER);
+
+  for (byte i = 0; i < 33; i = i + scrollspeed)
+  {
+
+
+
+    display->setColor(BLACK);
+
+    display->fillRect(0, 12, 128, 42);
+    display->setColor(WHITE);
+
+
+
+    for (byte j = 0; j < nlines; j++)
+    {
+
+      display->drawString(64 + (4 * i), ypos[j], outString[j]);
+
+      display->drawString(-64 + (4 * i), ypos[j], inString[j]);
+    }
+
+    display->display();
+
+    delay(2);
+
+
+  }
+}
+
+
+bool display_wifibars() {
+  const bool connected = WiFiConnected();
+  const int nbars_filled = (WiFi.RSSI() + 100) / 8;
+  const int newState = connected ? nbars_filled : P36_WIFI_STATE_UNSET;
+  if (newState == lastWiFiState)
+    return false;
+
+  int x = 105;
+  int y = 0;
+  int size_x = 15;
+  int size_y = 10;
+  int nbars = 5;
+  int16_t width = (size_x / nbars);
+  size_x = width * nbars - 1;
+
+
+
+
+
+
+  display->setColor(BLACK);
+  display->fillRect(x , y, size_x, size_y);
+  display->setColor(WHITE);
+  if (WiFiConnected()) {
+    for (byte ibar = 0; ibar < nbars; ibar++) {
+      int16_t height = size_y * (ibar + 1) / nbars;
+      int16_t xpos = x + ibar * width;
+      int16_t ypos = y + size_y - height;
+      if (ibar <= nbars_filled) {
+
+        display->fillRect(xpos, ypos, width - 1, height);
+      } else {
+
+        display->fillRect(xpos, ypos, width - 1, 1);
+        display->fillRect(xpos, y + size_y - 1, width - 1, 1);
+      }
+    }
+  } else {
+
+  }
+  return true;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P037_MQTTImport.ino"
+#ifdef USES_P037
+# 10 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P037_MQTTImport.ino"
+#define PLUGIN_037 
+#define PLUGIN_ID_037 37
+#define PLUGIN_NAME_037 "Generic - MQTT Import"
+
+#define PLUGIN_VALUENAME1_037 "Value1"
+#define PLUGIN_VALUENAME2_037 "Value2"
+#define PLUGIN_VALUENAME3_037 "Value3"
+#define PLUGIN_VALUENAME4_037 "Value4"
+
+#define PLUGIN_IMPORT 37
+
+
+
+
+WiFiClient espclient_037;
+PubSubClient *MQTTclient_037 = NULL;
+bool MQTTclient_037_connected = false;
+int reconnectCount = 0;
+
+String getClientName() {
+
+
+
+  String tmpClientName = F("%sysname%-Import");
+  String ClientName = parseTemplate(tmpClientName, 20);
+  ClientName.trim();
+  ClientName.replace(' ', '_');
+  if (reconnectCount != 0) ClientName += reconnectCount;
+  return ClientName;
+}
+
+void Plugin_037_try_connect() {
+  Plugin_037_update_connect_status();
+  if (MQTTclient_037_connected) return;
+
+  espclient_037 = WiFiClient();
+  espclient_037.setTimeout(CONTROLLER_CLIENTTIMEOUT_DFLT);
+
+  if (MQTTclient_037 == NULL) {
+    MQTTclient_037 = new PubSubClient(espclient_037);
+  }
+  if (MQTTConnect_037())
+  {
+
+    MQTTSubscribe_037();
+  } else {
+    MQTTclient_037->disconnect();
+  }
+  Plugin_037_update_connect_status();
+}
+
+void Plugin_037_update_connect_status() {
+  bool connected = false;
+  if (MQTTclient_037 != NULL) {
+    connected = MQTTclient_037->connected();
+  }
+  if (MQTTclient_037_connected != connected) {
+    MQTTclient_037_connected = !MQTTclient_037_connected;
+    P037_MQTTImport_connected = MQTTclient_037_connected;
+
+    if (Settings.UseRules) {
+      String event = connected ? F("MQTTimport#Connected") : F("MQTTimport#Disconnected");
+      rulesProcessing(event);
+    }
+    if (!connected) {
+
+      if (MQTTclient_037 != NULL) {
+        espclient_037 = WiFiClient();
+        espclient_037.setTimeout(CONTROLLER_CLIENTTIMEOUT_DFLT);
+        MQTTclient_037->setClient(espclient_037);
+      }
+      ++reconnectCount;
+      addLog(LOG_LEVEL_ERROR, F("IMPT : MQTT 037 Connection lost"));
+    }
+  }
+}
+
+boolean Plugin_037(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  char deviceTemplate[4][41];
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_037;
+        Device[deviceCount].Type = DEVICE_TYPE_DUMMY;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 4;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_037);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_037));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_037));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_037));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3], PSTR(PLUGIN_VALUENAME4_037));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+        LoadCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+
+        for (byte varNr = 0; varNr < 4; varNr++)
+        {
+         addFormTextBox(String(F("MQTT Topic ")) + (varNr + 1), String(F("p037_template")) +
+           (varNr + 1), deviceTemplate[varNr], 40);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        String error;
+        for (byte varNr = 0; varNr < 4; varNr++)
+        {
+          String argName = F("p037_template");
+          argName += varNr + 1;
+          if (!safe_strncpy(deviceTemplate[varNr], WebServer.arg(argName).c_str(), sizeof(deviceTemplate[varNr]))) {
+            error += getCustomTaskSettingsError(varNr);
+          }
+        }
+        if (error.length() > 0) {
+          addHtmlError(error);
+        }
+
+        SaveCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        success = false;
+
+
+        if (MQTTclient_037 != NULL) {
+          MQTTclient_037->disconnect();
+          if (MQTTConnect_037())
+          {
+
+            MQTTSubscribe_037();
+            success = true;
+          }
+        }
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (MQTTclient_037 != NULL && !MQTTclient_037->loop()) {
+          Plugin_037_update_connect_status();
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+
+        Plugin_037_try_connect();
+        if (MQTTclient_037 != NULL) {
+          if (!MQTTclient_037->connected() || MQTTclient_should_reconnect) {
+            if (MQTTclient_should_reconnect) {
+              addLog(LOG_LEVEL_ERROR, F("IMPT : MQTT 037 Intentional reconnect"));
+            }
+
+            MQTTclient_037->disconnect();
+            Plugin_037_update_connect_status();
+            delay(250);
+
+            if (! MQTTConnect_037()) {
+              success = false;
+              break;
+            }
+
+            MQTTSubscribe_037();
+          }
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+
+        success = false;
+        break;
+      }
+
+    case PLUGIN_IMPORT:
+      {
+
+
+
+        LoadTaskSettings(event->TaskIndex);
+
+        String Payload = event->String2;
+        float floatPayload;
+        if (!string2float(Payload, floatPayload)) {
+          String log = F("IMPT : Bad Import MQTT Command ");
+          log += event->String1;
+          addLog(LOG_LEVEL_ERROR, log);
+          log = F("ERR  : Illegal Payload ");
+          log += Payload;
+          log += "  ";
+          log += getTaskDeviceName(event->TaskIndex);
+          addLog(LOG_LEVEL_INFO, log);
+          success = false;
+          break;
+        }
+
+
+
+        String Topic = event->String1;
+
+        LoadCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+
+        for (byte x = 0; x < 4; x++)
+        {
+          String subscriptionTopic = deviceTemplate[x];
+          subscriptionTopic.trim();
+          if (subscriptionTopic.length() == 0) continue;
+
+
+          parseSystemVariables(subscriptionTopic, false);
+          if (MQTTCheckSubscription_037(Topic, subscriptionTopic))
+          {
+            UserVar[event->BaseVarIndex + x] = floatPayload;
+
+
+
+            String log = F("IMPT : [");
+            log += getTaskDeviceName(event->TaskIndex);
+            log += F("#");
+            log += ExtraTaskSettings.TaskDeviceValueNames[x];
+            log += F("] : ");
+            log += floatPayload;
+            addLog(LOG_LEVEL_INFO, log);
+
+
+
+            if (Settings.UseRules)
+            {
+              String RuleEvent = "";
+              RuleEvent += getTaskDeviceName(event->TaskIndex);
+              RuleEvent += F("#");
+              RuleEvent += ExtraTaskSettings.TaskDeviceValueNames[x];
+              RuleEvent += F("=");
+              RuleEvent += floatPayload;
+              rulesProcessing(RuleEvent);
+            }
+
+            success = true;
+          }
+        }
+
+        break;
+
+      }
+  }
+
+  return success;
+}
+boolean MQTTSubscribe_037()
+{
+  if (!MQTTclient_037_connected) return false;
+
+
+
+
+  char deviceTemplate[4][41];
+
+
+
+  for (byte y = 0; y < TASKS_MAX; y++)
+  {
+    if (Settings.TaskDeviceNumber[y] == PLUGIN_ID_037)
+    {
+      LoadCustomTaskSettings(y, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+
+
+
+      for (byte x = 0; x < 4; x++)
+      {
+        String subscribeTo = deviceTemplate[x];
+
+        if (subscribeTo.length() > 0)
+        {
+          parseSystemVariables(subscribeTo, false);
+          if (MQTTclient_037 != NULL && MQTTclient_037->subscribe(subscribeTo.c_str()))
+          {
+            String log = F("IMPT : [");
+            LoadTaskSettings(y);
+            log += getTaskDeviceName(y);
+            log += F("#");
+            log += ExtraTaskSettings.TaskDeviceValueNames[x];
+            log += F("] subscribed to ");
+            log += subscribeTo;
+            addLog(LOG_LEVEL_INFO, log);
+          }
+          else
+          {
+            String log = F("IMPT : Error subscribing to ");
+            log += subscribeTo;
+            addLog(LOG_LEVEL_ERROR, log);
+            return false;
+          }
+
+        }
+      }
+    }
+  }
+  return true;
+}
+
+
+
+void mqttcallback_037(char* c_topic, byte* b_payload, unsigned int length)
+{
+
+  String topic = c_topic;
+
+  char cpayload[256];
+  strncpy(cpayload, (char*)b_payload, length);
+  cpayload[length] = 0;
+  String payload = cpayload;
+  payload.trim();
+
+  byte DeviceIndex = getDeviceIndex(PLUGIN_ID_037);
+
+
+
+  struct EventStruct TempEvent;
+
+  TempEvent.String1 = topic;
+  TempEvent.String2 = payload;
+
+
+
+  for (byte y = 0; y < TASKS_MAX; y++)
+  {
+    if (Settings.TaskDeviceNumber[y] == PLUGIN_ID_037)
+    {
+      TempEvent.TaskIndex = y;
+      LoadTaskSettings(TempEvent.TaskIndex);
+      TempEvent.BaseVarIndex = y * VARS_PER_TASK;
+      schedule_plugin_task_event_timer(DeviceIndex, PLUGIN_IMPORT, &TempEvent);
+    }
+  }
+}
+
+
+
+
+
+
+boolean MQTTConnect_037()
+{
+  boolean result = false;
+  if (MQTTclient_037 == NULL) return false;
+  String clientid = getClientName();
+
+  int enabledMqttController = firstEnabledMQTTController();
+  if (enabledMqttController < 0) {
+
+    return false;
+  }
+
+  if (MQTTclient_037->connected()) return true;
+
+
+  if (!WiFiConnected(100)) {
+    Plugin_037_update_connect_status();
+    return false;
+  }
+  MakeControllerSettings(ControllerSettings);
+  LoadControllerSettings(enabledMqttController, ControllerSettings);
+  if (ControllerSettings.UseDNS) {
+    MQTTclient_037->setServer(ControllerSettings.getHost().c_str(), ControllerSettings.Port);
+  } else {
+    MQTTclient_037->setServer(ControllerSettings.getIP(), ControllerSettings.Port);
+  }
+  MQTTclient_037->setCallback(mqttcallback_037);
+
+
+
+  for (byte x = 1; x < 4; x++)
+  {
+    String log = "";
+
+    if ((SecuritySettings.ControllerUser[enabledMqttController][0] != 0) && (SecuritySettings.ControllerPassword[enabledMqttController][0] != 0))
+      result = MQTTclient_037->connect(clientid.c_str(), SecuritySettings.ControllerUser[enabledMqttController], SecuritySettings.ControllerPassword[enabledMqttController]);
+    else
+      result = MQTTclient_037->connect(clientid.c_str());
+
+
+    if (result)
+    {
+      log = F("IMPT : Connected to MQTT broker with Client ID=");
+      log += clientid;
+      addLog(LOG_LEVEL_INFO, log);
+
+      break;
+    }
+    else
+    {
+      log = F("IMPT : Failed to connect to MQTT broker - attempt ");
+      log += x;
+      addLog(LOG_LEVEL_ERROR, log);
+    }
+
+    delay(500);
+  }
+  Plugin_037_update_connect_status();
+  return MQTTclient_037->connected();
+}
+
+
+
+
+boolean MQTTCheckSubscription_037(const String& Topic, const String& Subscription) {
+
+  String tmpTopic = Topic;
+  String tmpSub = Subscription;
+
+  tmpTopic.trim();
+  tmpSub.trim();
+
+
+
+  if (tmpTopic.substring(0, 1) == "/")tmpTopic = tmpTopic.substring(1);
+  if (tmpSub.substring(0, 1) == "/")tmpSub = tmpSub.substring(1);
+
+
+
+  int lenTopic = tmpTopic.length();
+  if (tmpTopic.substring(lenTopic - 1, lenTopic) != "/")tmpTopic += '/';
+
+  int lenSub = tmpSub.length();
+  if (tmpSub.substring(lenSub - 1, lenSub) != "/")tmpSub += '/';
+
+
+
+  int SlashTopic;
+  int SlashSub;
+  int count = 0;
+
+  String pTopic;
+  String pSub;
+
+  while (count < 10) {
+
+
+
+    SlashTopic = tmpTopic.indexOf('/');
+    SlashSub = tmpSub.indexOf('/');
+
+
+
+
+    if ((SlashTopic == -1) && (SlashSub == -1)) return true;
+    if ((SlashTopic == -1) && (SlashSub != -1)) return false;
+    if ((SlashTopic != -1) && (SlashSub == -1)) return false;
+
+
+
+    pTopic = tmpTopic.substring(0, SlashTopic);
+    pSub = tmpSub.substring(0, SlashSub);
+
+
+
+    tmpTopic = tmpTopic.substring(SlashTopic + 1);
+    tmpSub = tmpSub.substring(SlashSub + 1);
+
+
+    if (pSub == "#") return true;
+    if ((pTopic != pSub) && (pSub != "+"))return false;
+
+    count = count + 1;
+  }
+  return false;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P038_NeoPixel.ino"
+#ifdef USES_P038
+# 30 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P038_NeoPixel.ino"
+#include <Adafruit_NeoPixel.h>
+
+Adafruit_NeoPixel *Plugin_038_pixels;
+
+#define PLUGIN_038 
+#define PLUGIN_ID_038 38
+#define PLUGIN_NAME_038 "Output - NeoPixel (Basic)"
+#define PLUGIN_VALUENAME1_038 ""
+
+int MaxPixels = 0;
+
+boolean Plugin_038(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_038;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].Custom = true;
+        Device[deviceCount].TimerOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_038);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_038));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        const String options[] = { F("GRB"), F("GRBW") };
+        int indices[] = { 1, 2 };
+
+       addFormNumericBox(F("Led Count"), F("p038_leds"), PCONFIG(0),1,999);
+
+
+       addFormPinSelect(F("GPIO"), F("taskdevicepin1"), CONFIG_PIN1);
+        addFormSelector(F("Strip Type"), F("p038_strip"), 2, options, indices, PCONFIG(1) );
+
+       success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p038_leds"));
+        MaxPixels = PCONFIG(0);
+        PCONFIG(1) = getFormItemInt(F("p038_strip"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        if (!Plugin_038_pixels)
+        {
+          byte striptype = PCONFIG(1);
+          if (striptype == 1)
+            Plugin_038_pixels = new Adafruit_NeoPixel(PCONFIG(0), CONFIG_PIN1, NEO_GRB + NEO_KHZ800);
+          else if (striptype == 2)
+            Plugin_038_pixels = new Adafruit_NeoPixel(PCONFIG(0), CONFIG_PIN1, NEO_GRBW + NEO_KHZ800);
+          else
+            Plugin_038_pixels = new Adafruit_NeoPixel(PCONFIG(0), CONFIG_PIN1, NEO_GRB + NEO_KHZ800);
+
+          Plugin_038_pixels->begin();
+        }
+        MaxPixels = PCONFIG(0);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        if (Plugin_038_pixels)
+        {
+          String log = "";
+          if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+            log = F("P038 : ");
+            log += string;
+          }
+
+          String tmpString = string;
+          int argIndex = tmpString.indexOf(',');
+          if (argIndex)
+            tmpString = tmpString.substring(0, argIndex);
+
+          if (tmpString.equalsIgnoreCase(F("NeoPixel")))
+          {
+
+
+
+
+
+
+            Plugin_038_pixels->setPixelColor(event->Par1 - 1, Plugin_038_pixels->Color(event->Par2, event->Par3, event->Par4, event->Par5));
+            Plugin_038_pixels->show();
+            success = true;
+          }
+
+
+          if (tmpString.equalsIgnoreCase(F("NeoPixelHSV")))
+          {
+            int rgbw[4];
+            rgbw[3]=0;
+            if (PCONFIG(1)==1) {
+              HSV2RGB(event->Par2,event->Par3,event->Par4,rgbw);
+            } else {
+              HSV2RGBW(event->Par2,event->Par3,event->Par4,rgbw);
+            }
+            if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+              log += F(" HSV converted to RGB(W):");
+              log += rgbw[0];
+              log += ",";
+              log += rgbw[1];
+              log += ",";
+              log += rgbw[2];
+              log += ",";
+              log += rgbw[3];
+              addLog(LOG_LEVEL_INFO,log);
+            }
+            Plugin_038_pixels->setPixelColor(event->Par1 - 1, Plugin_038_pixels->Color(rgbw[0], rgbw[1], rgbw[2], rgbw[3]));
+            Plugin_038_pixels->show();
+            success = true;
+          }
+
+          if (tmpString.equalsIgnoreCase(F("NeoPixelAll")))
+      {
+
+
+
+
+       for (int i = 0; i < MaxPixels; i++)
+       {
+                Plugin_038_pixels->setPixelColor(i, Plugin_038_pixels->Color(event->Par1, event->Par2, event->Par3, event->Par4));
+       }
+       Plugin_038_pixels->show();
+       success = true;
+          }
+
+
+          if (tmpString.equalsIgnoreCase(F("NeoPixelAllHSV"))) {
+            int rgbw[4];
+            rgbw[3]=0;
+            if (PCONFIG(1)==1) {
+              HSV2RGB(event->Par1,event->Par2,event->Par3,rgbw);
+            } else {
+              HSV2RGBW(event->Par1,event->Par2,event->Par3,rgbw);
+            }
+            if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+              log += F(" HSV converted to RGB(W):");
+              log += rgbw[0];
+              log += ",";
+              log += rgbw[1];
+              log += ",";
+              log += rgbw[2];
+              log += ",";
+              log += rgbw[3];
+              addLog(LOG_LEVEL_INFO,log);
+            }
+
+           for (int i = 0; i < MaxPixels; i++)
+            {
+                Plugin_038_pixels->setPixelColor(i, Plugin_038_pixels->Color(rgbw[0], rgbw[1], rgbw[2], rgbw[3]));
+            }
+           Plugin_038_pixels->show();
+           success = true;
+          }
+
+          if (tmpString.equalsIgnoreCase(F("NeoPixelLine")))
+      {
+# 219 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P038_NeoPixel.ino"
+       for (int i = event->Par1 - 1; i < event->Par2; i++)
+       {
+        Plugin_038_pixels->setPixelColor(i, Plugin_038_pixels->Color(event->Par3, event->Par4, event->Par5));
+       }
+       Plugin_038_pixels->show();
+       success = true;
+          }
+
+          if (tmpString.equalsIgnoreCase(F("NeoPixelLineHSV")))
+      {
+            int rgbw[4];
+            rgbw[3]=0;
+            if (PCONFIG(1)==1) {
+              HSV2RGB(event->Par3,event->Par4,event->Par5,rgbw);
+            } else {
+              HSV2RGBW(event->Par3,event->Par4,event->Par5,rgbw);
+            }
+            if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+              log += F(" HSV converted to RGB(W):");
+              log += rgbw[0];
+              log += ",";
+              log += rgbw[1];
+              log += ",";
+              log += rgbw[2];
+              log += ",";
+              log += rgbw[3];
+              addLog(LOG_LEVEL_INFO,log);
+            }
+
+       for (int i = event->Par1 - 1; i < event->Par2; i++)
+       {
+        Plugin_038_pixels->setPixelColor(i, Plugin_038_pixels->Color(rgbw[0], rgbw[1], rgbw[2], rgbw[3]));
+       }
+       Plugin_038_pixels->show();
+       success = true;
+          }
+
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P039_Thermocouple.ino"
+#ifdef USES_P039
+# 37 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P039_Thermocouple.ino"
+#include <SPI.h>
+
+#define PLUGIN_039 
+#define PLUGIN_ID_039 39
+#define PLUGIN_NAME_039 "Environment - Thermocouple"
+#define PLUGIN_VALUENAME1_039 "Temperature"
+
+uint8_t Plugin_039_SPI_CS_Pin = 15;
+bool Plugin_039_SensorAttached = true;
+uint32_t Plugin_039_Sensor_fault = 0;
+double Plugin_039_Celsius = 0.0;
+
+boolean Plugin_039(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_039;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_039);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_039));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output(F("CS"));
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+
+
+        if (CONFIG_PIN1 != 0)
+        {
+
+          Plugin_039_SPI_CS_Pin = CONFIG_PIN1;
+        }
+
+
+        pinMode(Plugin_039_SPI_CS_Pin, OUTPUT);
+
+        SPI.setHwCs(false);
+        SPI.begin();
+
+        addLog(LOG_LEVEL_INFO, F("P039 : SPI Init"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        addFormNote(F("<b>1st GPIO</b> = CS (Usable GPIOs : 0, 2, 4, 5, 15)"));
+
+
+        byte choice = PCONFIG(0);
+        String options[2];
+        options[0] = F("MAX 6675");
+        options[1] = F("MAX 31855");
+
+        int optionValues[2] = { 1, 2 };
+        addFormSelector(F("Adapter IC"), F("p039_maxtype"), 2, options, optionValues, choice);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p039_maxtype"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+
+        byte MaxType = PCONFIG(0);
+
+
+
+        Plugin_039_SPI_CS_Pin = CONFIG_PIN1;
+
+        switch (MaxType) {
+          case 1:
+            Plugin_039_Celsius = readMax6675();
+            break;
+          case 2:
+            Plugin_039_Celsius = readMax31855();
+            break;
+          case 3:
+
+            break;
+        }
+
+        if (Plugin_039_Celsius != NAN)
+        {
+          UserVar[event->BaseVarIndex] = Plugin_039_Celsius;
+          String log = F("P039 : Temperature ");
+          log += UserVar[event->BaseVarIndex];
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+        }
+        else
+        {
+          UserVar[event->BaseVarIndex] = NAN;
+          UserVar[event->BaseVarIndex + 1] = NAN;
+          addLog(LOG_LEVEL_INFO, F("P039 : No Sensor attached !"));
+          success = false;
+        }
+
+        break;
+      }
+  }
+  return success;
+}
+
+double readMax6675()
+{
+  uint16_t rawvalue = 0;
+
+  digitalWrite(Plugin_039_SPI_CS_Pin, LOW);
+
+
+
+
+  rawvalue = SPI.transfer16(0x0);
+
+  digitalWrite(Plugin_039_SPI_CS_Pin, HIGH);
+
+  String log = F("P039 : MAX6675 : RAW - BIN:");
+  log += String(rawvalue, BIN);
+  log += " HEX:";
+  log += String(rawvalue, HEX);
+  log += " DEC:";
+  log += String(rawvalue);
+  addLog(LOG_LEVEL_DEBUG, log);
+
+
+
+
+
+  Plugin_039_SensorAttached = !(rawvalue & 0x0004);
+
+  if (Plugin_039_SensorAttached)
+  {
+
+    rawvalue >>= 3;
+
+
+    return rawvalue * 0.25;
+  }
+  else
+  {
+    return NAN;
+  }
+}
+
+double readMax31855()
+{
+  uint32_t rawvalue = 0;
+
+  digitalWrite(Plugin_039_SPI_CS_Pin, LOW);
+
+  rawvalue = SPI.transfer16(0x0);
+
+  rawvalue <<= 16;
+
+  rawvalue |= SPI.transfer16(0x0);
+
+  digitalWrite(Plugin_039_SPI_CS_Pin, HIGH);
+
+  String log = F("P039 : MAX31855 : RAW - BIN:");
+  log += String(rawvalue, BIN);
+  log += " HEX:";
+  log += String(rawvalue, HEX);
+  log += " DEC:";
+  log += String(rawvalue);
+  addLog(LOG_LEVEL_DEBUG, log);
+
+  if (Plugin_039_Sensor_fault != (rawvalue & 0x7)) {
+
+    Plugin_039_Sensor_fault = (rawvalue & 0x7);
+    log = F("P039 : MAX31855");
+    if (Plugin_039_Sensor_fault == 0) {
+      log += F("Fault resolved");
+    } else {
+      log += F("Fault code:");
+      if (rawvalue & 0x01) {
+        log += F(" Open (no connection)");
+      }
+      if (rawvalue & 0x02) {
+        log += F(" Short-circuit to GND");
+      }
+      if (rawvalue & 0x04) {
+        log += F(" Short-circuit to Vcc");
+      }
+    }
+    addLog(LOG_LEVEL_DEBUG, log);
+  }
+
+  Plugin_039_SensorAttached = !(rawvalue & 0x00010000);
+  if (Plugin_039_SensorAttached)
+  {
+
+
+    rawvalue >>= 18;
+# 277 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P039_Thermocouple.ino"
+    int temperature = Plugin_039_convert_two_complement(rawvalue, 14);
+
+    return temperature * 0.25;
+  }
+  else
+  {
+
+    return NAN;
+  }
+}
+
+int Plugin_039_convert_two_complement(uint32_t value, int nr_bits) {
+  const bool negative = (value & (1 << (nr_bits - 1))) != 0;
+  int nativeInt;
+  if (negative) {
+
+    nativeInt = value | ~((1 << nr_bits) - 1);
+  } else {
+    nativeInt = value;
+  }
+  return nativeInt;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P040_ID12.ino"
+#ifdef USES_P040
+
+
+
+
+#define PLUGIN_040 
+#define PLUGIN_ID_040 40
+#define PLUGIN_NAME_040 "RFID - ID12LA/RDM6300"
+#define PLUGIN_VALUENAME1_040 "Tag"
+
+boolean Plugin_040_init = false;
+
+boolean Plugin_040(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_040;
+        Device[deviceCount].VType = SENSOR_TYPE_LONG;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_040);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_040));
+        break;
+      }
+
+
+    case PLUGIN_INIT:
+      {
+        Plugin_040_init = true;
+        Serial.begin(9600);
+        success = true;
+        break;
+      }
+
+
+    case PLUGIN_SERIAL_IN:
+      {
+        if (Plugin_040_init)
+        {
+          byte val = 0;
+          byte code[6];
+          byte checksum = 0;
+          byte bytesread = 0;
+          byte tempbyte = 0;
+
+          if ((val = Serial.read()) == 2)
+          {
+            bytesread = 0;
+            while (bytesread < 12) {
+              if ( Serial.available() > 0) {
+                val = Serial.read();
+                if ((val == 0x0D) || (val == 0x0A) || (val == 0x03) || (val == 0x02)) {
+
+                  break;
+                }
+
+
+                if ((val >= '0') && (val <= '9')) {
+                  val = val - '0';
+                }
+                else if ((val >= 'A') && (val <= 'F')) {
+                  val = 10 + val - 'A';
+                }
+
+
+                if ( (bytesread & 1) == 1) {
+
+
+                  code[bytesread >> 1] = (val | (tempbyte << 4));
+
+                  if (bytesread >> 1 != 5) {
+                    checksum ^= code[bytesread >> 1];
+                  };
+                }
+                else {
+                  tempbyte = val;
+                };
+                bytesread++;
+              }
+            }
+          }
+
+          if (bytesread == 12)
+          {
+            if (code[5] == checksum)
+            {
+
+              byte index = 0;
+              for (byte y = 0; y < TASKS_MAX; y++)
+                if (Settings.TaskDeviceNumber[y] == PLUGIN_ID_040)
+                  index = y;
+              byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[index]);
+              event->TaskIndex = index;
+              event->BaseVarIndex = index * VARS_PER_TASK;
+              event->sensorType = Device[DeviceIndex].VType;
+
+
+              unsigned long key = 0;
+              for (byte i = 1; i < 5; i++) key = key | (((unsigned long) code[i] << ((4 - i) * 8)));
+              UserVar[event->BaseVarIndex] = (key & 0xFFFF);
+              UserVar[event->BaseVarIndex + 1] = ((key >> 16) & 0xFFFF);
+              String log = F("RFID : Tag: ");
+              log += key;
+              addLog(LOG_LEVEL_INFO, log);
+              sendData(event);
+            }
+          }
+          success = true;
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P041_NeoClock.ino"
+#ifdef USES_P041
+
+
+
+#include <Adafruit_NeoPixel.h>
+
+#define NUM_LEDS 114
+
+byte Plugin_041_red = 0;
+byte Plugin_041_green = 0;
+byte Plugin_041_blue = 0;
+
+Adafruit_NeoPixel *Plugin_041_pixels;
+
+#define PLUGIN_041 
+#define PLUGIN_ID_041 41
+#define PLUGIN_NAME_041 "Output - NeoPixel (Word Clock)"
+#define PLUGIN_VALUENAME1_041 "Clock"
+boolean Plugin_041(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_041;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_041);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_041));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output(F("Data"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+       addFormNumericBox(F("Red"), F("p041_red"), PCONFIG(0), 0, 255);
+       addFormNumericBox(F("Green"), F("p041_green"), PCONFIG(1), 0, 255);
+       addFormNumericBox(F("Blue"), F("p041_blue"), PCONFIG(2), 0, 255);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p041_red"));
+        PCONFIG(1) = getFormItemInt(F("p041_green"));
+        PCONFIG(2) = getFormItemInt(F("p041_blue"));
+        Plugin_041_red = PCONFIG(0);
+        Plugin_041_green = PCONFIG(1);
+        Plugin_041_blue = PCONFIG(2);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        if (!Plugin_041_pixels)
+        {
+          Plugin_041_pixels = new Adafruit_NeoPixel(NUM_LEDS, CONFIG_PIN1, NEO_GRB + NEO_KHZ800);
+          Plugin_041_pixels->begin();
+        }
+        Plugin_041_red = PCONFIG(0);
+        Plugin_041_green = PCONFIG(1);
+        Plugin_041_blue = PCONFIG(2);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_CLOCK_IN:
+      {
+        Plugin_041_update();
+        success = true;
+        break;
+      }
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+
+
+
+
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String tmpString = string;
+        int argIndex = tmpString.indexOf(',');
+        if (argIndex)
+          tmpString = tmpString.substring(0, argIndex);
+
+        if (tmpString.equalsIgnoreCase(F("NeoClockColor")))
+        {
+          Plugin_041_red = event->Par1;
+          Plugin_041_green = event->Par2;
+          Plugin_041_blue = event->Par3;
+          Plugin_041_update();
+          success = true;
+        }
+
+        if (tmpString.equalsIgnoreCase(F("NeoTestAll")))
+        {
+          for (int i = 0; i < NUM_LEDS; i++)
+            Plugin_041_pixels->setPixelColor(i, Plugin_041_pixels->Color(event->Par1, event->Par2, event->Par3));
+          Plugin_041_pixels->show();
+          success = true;
+        }
+
+        if (tmpString.equalsIgnoreCase(F("NeoTestLoop")))
+        {
+          for (int i = 0; i < NUM_LEDS; i++)
+          {
+            resetAndBlack();
+            Plugin_041_pixels->setPixelColor(i, Plugin_041_pixels->Color(event->Par1, event->Par2, event->Par3));
+            Plugin_041_pixels->show();
+            delay(200);
+          }
+          success = true;
+        }
+
+        break;
+      }
+
+  }
+  return success;
+}
+
+void Plugin_041_update()
+{
+  byte Hours = hour();
+  byte Minutes = minute();
+  resetAndBlack();
+  timeToStrip(Hours, Minutes);
+  Plugin_041_pixels->show();
+}
+
+
+void resetAndBlack() {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    Plugin_041_pixels->setPixelColor(i, Plugin_041_pixels->Color(0, 0, 0));
+  }
+}
+
+void pushToStrip(int ledId) {
+  Plugin_041_pixels->setPixelColor(ledId, Plugin_041_pixels->Color(Plugin_041_red, Plugin_041_green, Plugin_041_blue));
+}
+
+void timeToStrip(uint8_t hours, uint8_t minutes)
+{
+  pushIT_IS();
+
+  if (minutes >= 5 && minutes < 10) {
+    pushFIVE1();
+    pushAFTER();
+  } else if (minutes >= 10 && minutes < 15) {
+    pushTEN1();
+    pushAFTER();
+  } else if (minutes >= 15 && minutes < 20) {
+    pushQUATER();
+    pushAFTER();
+  } else if (minutes >= 20 && minutes < 25) {
+    pushTEN1();
+    pushFOR();
+    pushHALF();
+  } else if (minutes >= 25 && minutes < 30) {
+    pushFIVE1();
+    pushFOR();
+    pushHALF();
+  } else if (minutes >= 30 && minutes < 35) {
+    pushHALF();
+  } else if (minutes >= 35 && minutes < 40) {
+    pushFIVE1();
+    pushAFTER();
+    pushHALF();
+  } else if (minutes >= 40 && minutes < 45) {
+    pushTEN1();
+    pushAFTER();
+    pushHALF();
+  } else if (minutes >= 45 && minutes < 50) {
+    pushQUATER();
+    pushFOR();
+  } else if (minutes >= 50 && minutes < 55) {
+    pushTEN1();
+    pushFOR();
+  } else if (minutes >= 55 && minutes < 60) {
+    pushFIVE1();
+    pushFOR();
+  }
+
+  int singleMinutes = minutes % 5;
+  switch (singleMinutes) {
+    case 1:
+      pushM_ONE();
+      break;
+    case 2:
+      pushM_ONE();
+      pushM_TWO();
+      break;
+    case 3:
+      pushM_ONE();
+      pushM_TWO();
+      pushM_THREE();
+      break;
+    case 4:
+      pushM_ONE();
+      pushM_TWO();
+      pushM_THREE();
+      pushM_FOUR();
+      break;
+  }
+  if (hours >= 12) {
+    hours -= 12;
+  }
+  if (hours == 12) {
+    hours = 0;
+  }
+  if (minutes >= 20) {
+    hours++;
+  }
+
+
+  switch (hours) {
+    case 0:
+      pushTWELVE();
+      break;
+    case 1:
+      pushONE();
+      break;
+    case 2:
+      pushTWO();
+      break;
+    case 3:
+      pushTHREE();
+      break;
+    case 4:
+      pushFOUR();
+      break;
+    case 5:
+      pushFIVE2();
+      break;
+    case 6:
+      pushSIX();
+      break;
+    case 7:
+      pushSEVEN();
+      break;
+    case 8:
+      pushEIGHT();
+      break;
+    case 9:
+      pushNINE();
+      break;
+    case 10:
+      pushTEN();
+      break;
+    case 11:
+      pushELEVEN();
+      break;
+    case 12:
+      pushTWELVE();
+      break;
+  }
+
+  if (minutes < 5) {
+    pushHOURE();
+  }
+}
+
+void pushM_ONE() {
+  pushToStrip(0);
+}
+void pushM_TWO() {
+  pushToStrip(12);
+}
+void pushM_THREE() {
+  pushToStrip(101);
+}
+void pushM_FOUR() {
+  pushToStrip(113);
+}
+void pushIT_IS() {
+  pushToStrip(1);
+  pushToStrip(2);
+  pushToStrip(3);
+  pushToStrip(5);
+  pushToStrip(6);
+}
+void pushAFTER() {
+  pushToStrip(36);
+  pushToStrip(37);
+  pushToStrip(38);
+  pushToStrip(39);
+}
+void pushQUATER() {
+  pushToStrip(30);
+  pushToStrip(31);
+  pushToStrip(32);
+  pushToStrip(33);
+  pushToStrip(34);
+}
+void pushFOR() {
+  pushToStrip(41);
+  pushToStrip(42);
+  pushToStrip(43);
+  pushToStrip(44);
+}
+void pushHALF() {
+  pushToStrip(50);
+  pushToStrip(51);
+  pushToStrip(52);
+  pushToStrip(53);
+}
+void pushONE() {
+  pushToStrip(63);
+  pushToStrip(64);
+  pushToStrip(65);
+}
+void pushTWO() {
+  pushToStrip(64);
+  pushToStrip(65);
+  pushToStrip(66);
+  pushToStrip(67);
+}
+void pushTHREE() {
+  pushToStrip(109);
+  pushToStrip(110);
+  pushToStrip(111);
+  pushToStrip(112);
+}
+void pushFOUR() {
+  pushToStrip(57);
+  pushToStrip(58);
+  pushToStrip(59);
+  pushToStrip(60);
+}
+void pushFIVE1() {
+  pushToStrip(8);
+  pushToStrip(9);
+  pushToStrip(10);
+  pushToStrip(11);
+}
+void pushFIVE2() {
+  pushToStrip(92);
+  pushToStrip(93);
+  pushToStrip(94);
+  pushToStrip(95);
+}
+void pushSIX() {
+  pushToStrip(69);
+  pushToStrip(88);
+  pushToStrip(91);
+}
+void pushSEVEN() {
+  pushToStrip(69);
+  pushToStrip(70);
+  pushToStrip(71);
+  pushToStrip(72);
+  pushToStrip(73);
+}
+void pushEIGHT() {
+  pushToStrip(97);
+  pushToStrip(98);
+  pushToStrip(99);
+  pushToStrip(100);
+}
+void pushNINE() {
+  pushToStrip(73);
+  pushToStrip(74);
+  pushToStrip(75);
+  pushToStrip(76);
+  pushToStrip(77);
+}
+void pushTEN() {
+  pushToStrip(54);
+  pushToStrip(59);
+  pushToStrip(76);
+  pushToStrip(81);
+}
+void pushTEN1() {
+  pushToStrip(25);
+  pushToStrip(26);
+  pushToStrip(27);
+  pushToStrip(28);
+}
+void pushELEVEN() {
+  pushToStrip(107);
+  pushToStrip(108);
+  pushToStrip(109);
+}
+void pushTWELVE() {
+  pushToStrip(82);
+  pushToStrip(83);
+  pushToStrip(84);
+  pushToStrip(85);
+  pushToStrip(86);
+  pushToStrip(87);
+}
+void pushTWENTY() {
+  pushToStrip(16);
+  pushToStrip(17);
+  pushToStrip(18);
+  pushToStrip(19);
+  pushToStrip(20);
+  pushToStrip(21);
+  pushToStrip(22);
+}
+void pushHOURE() {
+  pushToStrip(102);
+  pushToStrip(103);
+  pushToStrip(104);
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P042_Candle.ino"
+#ifdef USES_P042
+# 53 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P042_Candle.ino"
+#include <Adafruit_NeoPixel.h>
+
+#define NUM_PIXEL 20
+#define NUM_PIXEL_ROW 5
+#define RANDOM_PIXEL 70
+#define BRIGHT_START 128
+#define BASE_TEMP 21
+
+enum SimType {
+  TypeOff,
+  TypeSimpleCandle,
+  TypeAdvancedCandle,
+  TypeStaticLight,
+  TypePolice,
+  TypeBlink,
+  TypeStrobe,
+  TypeColorFader
+};
+
+enum ColorType {
+  ColorDefault,
+  ColorSelected
+};
+
+byte Candle_red = 0;
+byte Candle_green = 0;
+byte Candle_blue = 0;
+byte Candle_bright = 128;
+SimType Candle_type = TypeSimpleCandle;
+ColorType Candle_color = ColorDefault;
+
+
+unsigned long Candle_Update = 0;
+word Candle_Temp[4] = { 0, 0, 0 };
+int Candle_Temp4 = 0;
+boolean GPIO_Set = false;
+
+Adafruit_NeoPixel *Candle_pixels;
+
+#define PLUGIN_042 
+#define PLUGIN_ID_042 42
+#define PLUGIN_NAME_042 "Output - NeoPixel (Candle)"
+#define PLUGIN_VALUENAME1_042 "Color"
+#define PLUGIN_VALUENAME2_042 "Brightness"
+#define PLUGIN_VALUENAME3_042 "Type"
+
+boolean Plugin_042(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_042;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_042);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_042));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_042));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_042));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output(F("Data"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        addHtml(F("<script src=\"jscolor.min.js\"></script>\n"));
+
+        char tmpString[128];
+        String options[8];
+
+
+        options[0] = F("Off");
+        options[1] = F("Static Light");
+        options[2] = F("Simple Candle");
+        options[3] = F("Advanced Candle");
+        options[4] = F("Police");
+        options[5] = F("Blink");
+        options[6] = F("Strobe");
+        options[7] = F("Color Fader");
+
+        byte choice = PCONFIG(4);
+        if (choice > sizeof(options) - 1)
+        {
+          choice = 2;
+        }
+
+
+        addFormSelector(F("Flame Type"), F("web_Candle_Type"), 8, options, NULL, choice);
+
+
+        Candle_color = (ColorType)PCONFIG(5);
+        addHtml(F("<TR><TD>Color Handling:<TD>"));
+        addHtml(F("<input type='radio' id='web_Color_Default' name='web_Color_Type' value='0'"));
+        if (Candle_color == ColorDefault) {
+          addHtml(F(" checked>"));
+        } else {
+          addHtml(">");
+        }
+        addHtml(F("<label for='web_Color_Default'> Use default color</label><br>"));
+        addHtml(F("<input type='radio' id='web_Color_Selected' name='web_Color_Type' value='1'"));
+        if (Candle_color == ColorSelected) {
+          addHtml(F(" checked>"));
+        } else {
+          addHtml(">");
+        }
+        addHtml(F("<label for='web_Color_Selected'> Use selected color</label><br>"));
+
+
+        char hexvalue[7] = {0};
+        sprintf(hexvalue, "%02X%02X%02X",
+                PCONFIG(0),
+                PCONFIG(1),
+                PCONFIG(2));
+
+
+        addHtml(F("<TR><TD>Color:<TD><input class=\"jscolor {onFineChange:'update(this)'}\" value='"));
+        addHtml(hexvalue);
+        addHtml("'>");
+        addFormNumericBox(F("RGB Color"), F("web_RGB_Red"), PCONFIG(0), 0, 255);
+        addNumericBox(F("web_RGB_Green"), PCONFIG(1), 0, 255);
+        addNumericBox(F("web_RGB_Blue"), PCONFIG(2), 0, 255);
+
+
+        addHtml(F("<TR><TD>Brightness:<TD>min<input type='range' id='web_Bright_Slide' min='0' max='255' value='"));
+        addHtml(String(PCONFIG(3)));
+        addHtml(F("'> max"));
+
+        sprintf_P(tmpString, PSTR("<TR><TD>Brightness Value:<TD><input type='text' name='web_Bright_Text' id='web_Bright_Text' size='3' value='%u'>"), PCONFIG(3));
+        addHtml(tmpString);
+
+
+        addHtml(F("<script script type='text/javascript'>"));
+        addHtml(F("function update(picker) {"));
+        addHtml(F("    document.getElementById('web_RGB_Red').value = Math.round(picker.rgb[0]);"));
+        addHtml(F("    document.getElementById('web_RGB_Green').value = Math.round(picker.rgb[1]);"));
+        addHtml(F("    document.getElementById('web_RGB_Blue').value = Math.round(picker.rgb[2]);"));
+        addHtml("}");
+        addHtml(F("</script>"));
+
+        addHtml(F("<script type='text/javascript'>window.addEventListener('load', function(){"));
+        addHtml(F("var slider = document.getElementById('web_Bright_Slide');"));
+        addHtml(F("slider.addEventListener('change', function(){"));
+        addHtml(F("document.getElementById('web_Bright_Text').value = this.value;"));
+        addHtml(F("});"));
+        addHtml(F("});</script>"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("web_RGB_Red"));
+        PCONFIG(1) = getFormItemInt(F("web_RGB_Green"));
+        PCONFIG(2) = getFormItemInt(F("web_RGB_Blue"));
+        PCONFIG(3) = getFormItemInt(F("web_Bright_Text"));
+        PCONFIG(4) = getFormItemInt(F("web_Candle_Type"));
+        PCONFIG(5) = getFormItemInt(F("web_Color_Type"));
+
+        Candle_red = PCONFIG(0);
+        Candle_green = PCONFIG(1);
+        Candle_blue = PCONFIG(2);
+        if (Candle_bright > 255) {
+          Candle_bright = 255;
+        }
+        Candle_bright = PCONFIG(3);
+        Candle_type = (SimType)PCONFIG(4);
+        Candle_color = (ColorType)PCONFIG(5);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        Candle_red = PCONFIG(0);
+        Candle_green = PCONFIG(1);
+        Candle_blue = PCONFIG(2);
+        Candle_bright = PCONFIG(3);
+        if (Candle_red == 0 && Candle_green == 0 && Candle_blue == 0) {
+          Candle_bright = BRIGHT_START;
+        }
+        Candle_type = (SimType)PCONFIG(4);
+        Candle_color = (ColorType)PCONFIG(5);
+
+        if (!Candle_pixels || GPIO_Set == false)
+        {
+          GPIO_Set = CONFIG_PIN1 > -1;
+          if (Candle_pixels) {
+            delete Candle_pixels;
+          }
+          Candle_pixels = new Adafruit_NeoPixel(NUM_PIXEL, CONFIG_PIN1, NEO_GRB + NEO_KHZ800);
+          SetPixelsBlack();
+          Candle_pixels->setBrightness(Candle_bright);
+          Candle_pixels->begin();
+          String log = F("CAND : Init WS2812 Pin : ");
+          log += CONFIG_PIN1;
+          addLog(LOG_LEVEL_DEBUG, log);
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+        Candle_pixels->setBrightness(Candle_bright);
+        Candle_pixels->show();
+        success = true;
+        break;
+      }
+
+    case PLUGIN_FIFTY_PER_SECOND:
+      {
+        switch (Candle_type)
+        {
+          case 0:
+            {
+              type_Off();
+              break;
+            }
+
+          case 1:
+            {
+              type_Static_Light();
+              break;
+            }
+
+          case 2:
+          case 3:
+            {
+              if (timeOutReached(Candle_Update)) {
+                if (Candle_type == 2) {
+                  type_Simple_Candle();
+                }
+                if (Candle_type == 3) {
+                  type_Advanced_Candle();
+                }
+                Candle_Update = millis() + random(25, 150);
+              }
+              break;
+            }
+
+          case 4:
+            {
+              if (timeOutReached(Candle_Update)) {
+                type_Police();
+                Candle_Update = millis() + 150;
+              }
+              break;
+            }
+
+          case 5:
+            {
+              if (timeOutReached(Candle_Update)) {
+                type_BlinkStrobe();
+                Candle_Update = millis() + 100;
+              }
+              break;
+            }
+
+          case 6:
+            {
+              type_BlinkStrobe();
+              break;
+            }
+          case 7:
+            {
+              if (timeOutReached(Candle_Update)) {
+                type_ColorFader();
+                Candle_Update = millis() + 2000;
+              }
+              break;
+            }
+        }
+
+        Candle_pixels->show();
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        UserVar[event->BaseVarIndex] = Candle_red * 65536 + Candle_green * 256 + Candle_blue;
+        UserVar[event->BaseVarIndex + 1] = Candle_bright;
+        UserVar[event->BaseVarIndex + 2] = Candle_type;
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String tmpString = string;
+# 392 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P042_Candle.ino"
+        if (tmpString.startsWith(F("CANDLE:"))){
+          int idx1 = tmpString.indexOf(':');
+          int idx2 = tmpString.indexOf(':', idx1+1);
+          int idx3 = tmpString.indexOf(':', idx2+1);
+          int idx4 = tmpString.indexOf(':', idx3+1);
+          String val_Type = tmpString.substring(idx1+1, idx2);
+          String val_Color = tmpString.substring(idx2+1, idx3);
+          String val_Bright = tmpString.substring(idx3+1, idx4);
+
+          if (val_Type != "") {
+             if (val_Type.toInt() > -1 && val_Type.toInt() < 8) {
+                PCONFIG(4) = val_Type.toInt();
+                Candle_type = (SimType)PCONFIG(4);
+                String log = F("CAND : CMD - Type : ");
+                log += val_Type;
+                addLog(LOG_LEVEL_DEBUG, log);
+             }
+          }
+
+          if (val_Bright != "") {
+             if (val_Bright.toInt() > -1 && val_Bright.toInt() < 256) {
+                PCONFIG(3) = val_Bright.toInt();
+                Candle_bright = PCONFIG(3);
+                String log = F("CAND : CMD - Bright : ");
+                log += val_Bright;
+                addLog(LOG_LEVEL_DEBUG, log);
+             }
+          }
+
+          if (val_Color != "") {
+            long number = strtol( &val_Color[0], NULL, 16);
+
+            byte r = number >> 16;
+            byte g = number >> 8 & 0xFF;
+            byte b = number & 0xFF;
+
+            PCONFIG(0) = r;
+            PCONFIG(1) = g;
+            PCONFIG(2) = b;
+            Candle_red = PCONFIG(0);
+            Candle_green = PCONFIG(1);
+            Candle_blue = PCONFIG(2);
+            PCONFIG(5) = 1;
+            Candle_color = (ColorType)PCONFIG(5);
+
+            String log = F("CAND : CMD - R ");
+            log += r;
+            log += F(" G ");
+            log += g;
+            log += F(" B ");
+            log += b;
+            addLog(LOG_LEVEL_DEBUG, log);
+          } else {
+            PCONFIG(5) = 0;
+            Candle_color = (ColorType)PCONFIG(5);
+            addLog(LOG_LEVEL_DEBUG, F("CAND : CMD - Color : DEFAULT"));
+          }
+
+
+
+
+          success = true;
+        }
+
+        break;
+      }
+
+  }
+  return success;
+}
+
+void SetPixelsBlack() {
+  for (int i = 0; i < NUM_PIXEL; i++) {
+    Candle_pixels->setPixelColor(i, Candle_pixels->Color(0, 0, 0));
+  }
+}
+
+void SetPixelToColor(int PixelIdx) {
+  Candle_pixels->setPixelColor(PixelIdx, Candle_pixels->Color(Candle_red, Candle_green, Candle_blue));
+}
+
+void type_Off() {
+  SetPixelsBlack();
+}
+
+void type_Static_Light() {
+  for (int i = 0; i < NUM_PIXEL; i++) {
+    if (Candle_color == ColorDefault) {
+      Candle_pixels->setPixelColor(i, 255, 255, 255);
+    } else {
+      Candle_pixels->setPixelColor(i, Candle_red, Candle_green, Candle_blue);
+    }
+  }
+}
+
+void type_Simple_Candle() {
+  int r, g, b;
+  if (Candle_color == ColorDefault) {
+    r = 226, g = 042, b = 35;
+
+
+  } else {
+    r = Candle_red, g = Candle_green, b = Candle_blue;
+  }
+
+
+  for (int i = 0; i < NUM_PIXEL; i++) {
+    int flicker = random(0, RANDOM_PIXEL);
+    int r1 = r - flicker;
+    int g1 = g - flicker;
+    int b1 = b - flicker;
+    if (g1 < 0) g1 = 0;
+    if (r1 < 0) r1 = 0;
+    if (b1 < 0) b1 = 0;
+    Candle_pixels->setPixelColor(i, r1, g1, b1);
+  }
+}
+
+void type_Advanced_Candle() {
+  Candle_Temp[0] = random(1, 4);
+  Candle_Temp[1] = random(1, 4) + Candle_Temp[0];
+  Candle_Temp[2] = random(0, 2);
+
+  int colorbase[3];
+  int color1[3];
+  int color2[3];
+  int color3[3];
+
+  if (Candle_color == ColorDefault) {
+    colorbase[0] = 255; colorbase[1] = 120; colorbase[2] = 0;
+    color1[0] = 115; color1[1] = 50; color1[2] = 0;
+    color2[0] = 180; color2[1] = 80; color2[2] = 0;
+    color3[0] = 70; color3[1] = 30; color3[2] = 0;
+  } else {
+    colorbase[0] = Candle_red; colorbase[1] = Candle_green; colorbase[2] = Candle_blue;
+    double hsv[3];
+
+    RGBtoHSV(Candle_red, Candle_green, Candle_blue, hsv);
+    double newH = hsv[0] - 5;
+    if (newH < 0) { newH += 359; }
+    double newV = hsv[2] / 2;
+    double newV2 = hsv[2] / 4;
+
+    HSVtoRGB(newH, hsv[1], hsv[2], color1);
+    HSVtoRGB(hsv[0], hsv[1], newV, color2);
+    HSVtoRGB(newH, hsv[1], newV2, color3);
+  }
+
+  for (int j = 0; j < 4; j++) {
+    for (unsigned int i = 1; i < 6; i++){
+      if (i <= Candle_Temp[0]) {
+        Candle_pixels->setPixelColor(j * 5 + i - 1, colorbase[0], colorbase[1], colorbase[2]);
+      }
+      if (i > Candle_Temp[0] && i <= Candle_Temp[1]) {
+        if (Candle_Temp[2] == 0){
+          Candle_pixels->setPixelColor(j * 5 + i - 1, color1[0], color1[1], color1[2]);
+        } else {
+          Candle_pixels->setPixelColor(j * 5 + i - 1, color2[0], color2[1], color2[2]);
+        }
+      }
+      if (i > Candle_Temp[1]) {
+        Candle_pixels->setPixelColor(j * 5 + i - 1, color3[0], color3[1], color3[2]);
+      }
+    }
+  }
+}
+
+void type_Police() {
+  Candle_Temp[0]++;
+  if (Candle_Temp[0] > 3) {
+    Candle_Temp[0] = 0;
+  }
+
+  for (unsigned int i = 0; i < 4; i++) {
+    if (i == Candle_Temp[0])
+    {
+      for (int j = 0; j < 5; j++) {
+        if (Candle_color == ColorDefault) {
+          Candle_pixels->setPixelColor(i * 5 + j, 0, 0, 255);
+        } else {
+          Candle_pixels->setPixelColor(i * 5 + j, Candle_red, Candle_green, Candle_blue);
+        }
+      }
+    } else {
+      for (int j = 0; j < 5; j++) {
+        Candle_pixels->setPixelColor(i * 5 + j, 0, 0, 0);
+      }
+    }
+  }
+}
+
+void type_BlinkStrobe() {
+  Candle_Temp[0]++;
+  if (Candle_Temp[0] > 1) {
+    Candle_Temp[0] = 0;
+  }
+
+  for (int i = 0; i < NUM_PIXEL; i++) {
+    if (Candle_Temp[0] == 0) {
+      Candle_pixels->setPixelColor(i, 0, 0, 0);
+    } else {
+      if (Candle_color == ColorDefault) {
+        Candle_pixels->setPixelColor(i, 255, 255, 255);
+      } else {
+        Candle_pixels->setPixelColor(i, Candle_red, Candle_green, Candle_blue);
+      }
+    }
+  }
+}
+
+void type_ColorFader() {
+  int colors[3];
+  double hsv[3];
+  if (Candle_color != ColorDefault) {
+    if (Candle_Temp[0] > 254 && Candle_Temp[1] == 1) {
+      Candle_Temp[1] = 0;
+    }
+    if (Candle_Temp[0] < 55 && Candle_Temp[1] == 0) {
+      Candle_Temp[1] = 1;
+    }
+
+    if (Candle_Temp[1] > 0) {
+      Candle_Temp[0]++;
+    } else {
+      Candle_Temp[0]--;
+    }
+
+
+
+    RGBtoHSV(Candle_red, Candle_green, Candle_blue, hsv);
+
+
+
+
+    HSVtoRGB(hsv[0], hsv[1], Candle_Temp[0], colors);
+
+    for (int i = 0; i < NUM_PIXEL; i++) {
+      Candle_pixels->setPixelColor(i, colors[0], colors[1], colors[2]);
+    }
+  } else {
+    Candle_Temp[0]++;
+    if (Candle_Temp[0] > 359) {
+      Candle_Temp[0] = 0;
+    }
+
+
+    HSVtoRGB(Candle_Temp[0], 255, 255, colors);
+
+    for (int i = 0; i < NUM_PIXEL; i++) {
+      Candle_pixels->setPixelColor(i, colors[0], colors[1], colors[2]);
+    }
+  }
+}
+
+
+void HSVtoRGB(int hue, int sat, int val, int colors[3]) {
+
+  int r=0, g=0, b=0, base=0;
+
+  if (sat == 0) {
+    colors[0]=val;
+    colors[1]=val;
+    colors[2]=val;
+  }
+  else {
+    base = ((255 - sat) * val)>>8;
+    switch(hue/60) {
+    case 0:
+      r = val;
+      g = (((val-base)*hue)/60)+base;
+      b = base;
+      break;
+    case 1:
+      r = (((val-base)*(60-(hue%60)))/60)+base;
+      g = val;
+      b = base;
+      break;
+    case 2:
+      r = base;
+      g = val;
+      b = (((val-base)*(hue%60))/60)+base;
+      break;
+    case 3:
+      r = base;
+      g = (((val-base)*(60-(hue%60)))/60)+base;
+      b = val;
+      break;
+    case 4:
+      r = (((val-base)*(hue%60))/60)+base;
+      g = base;
+      b = val;
+      break;
+    case 5:
+      r = val;
+      g = base;
+      b = (((val-base)*(60-(hue%60)))/60)+base;
+      break;
+    }
+    colors[0]=r;
+    colors[1]=g;
+    colors[2]=b;
+  }
+}
+
+
+void RGBtoHSV(byte r, byte g, byte b, double hsv[3]) {
+    double rd = (double) r/255;
+    double gd = (double) g/255;
+    double bd = (double) b/255;
+    double maxval = rd;
+    if (gd > maxval) { maxval = gd; }
+    if (bd > maxval) { maxval = bd; }
+    double minval = rd;
+    if (gd < minval) { minval = gd; }
+    if (bd < minval) { minval = bd; }
+    double h = 0, s, v = maxval;
+    double d = maxval - minval;
+
+    s = maxval == 0 ? 0 : d / maxval;
+
+    if (maxval == minval) {
+        h = 0;
+    } else {
+        if (maxval == rd) {
+            h = (gd - bd) / d + (gd < bd ? 6 : 0);
+        } else if (maxval == gd) {
+            h = (bd - rd) / d + 2;
+        } else if (maxval == bd) {
+            h = (rd - gd) / d + 4;
+        }
+        h /= 6;
+    }
+
+    hsv[0] = h * 360;
+    hsv[1] = s * 255;
+    hsv[2] = v * 255;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P043_ClkOutput.ino"
+#ifdef USES_P043
+
+
+
+#define PLUGIN_043 
+#define PLUGIN_ID_043 43
+#define PLUGIN_NAME_043 "Output - Clock"
+#define PLUGIN_VALUENAME1_043 "Output"
+#define PLUGIN_043_MAX_SETTINGS 8
+
+boolean Plugin_043(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_043;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_043);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_043));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output(F("Clock Event"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        String options[3];
+        options[0] = "";
+        options[1] = F("Off");
+        options[2] = F("On");
+
+        for (byte x = 0; x < PLUGIN_043_MAX_SETTINGS; x++)
+        {
+         addFormTextBox(String(F("Day,Time ")) + (x + 1), String(F("p043_clock")) + (x), timeLong2String(ExtraTaskSettings.TaskDevicePluginConfigLong[x]), 32);
+# 68 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P043_ClkOutput.ino"
+          addHtml(" ");
+          byte choice = ExtraTaskSettings.TaskDevicePluginConfig[x];
+          addSelector(String(F("p043_state")) + (x), 3, options, NULL, NULL, choice, false);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        for (byte x = 0; x < PLUGIN_043_MAX_SETTINGS; x++)
+        {
+          String argc = F("p043_clock");
+          argc += x;
+          String plugin1 = WebServer.arg(argc);
+          ExtraTaskSettings.TaskDevicePluginConfigLong[x] = string2TimeLong(plugin1);
+
+          argc = F("p043_state");
+          argc += x;
+          String plugin2 = WebServer.arg(argc);
+          ExtraTaskSettings.TaskDevicePluginConfig[x] = plugin2.toInt();
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        success = true;
+        break;
+      }
+
+    case PLUGIN_CLOCK_IN:
+      {
+        LoadTaskSettings(event->TaskIndex);
+        for (byte x = 0; x < PLUGIN_043_MAX_SETTINGS; x++)
+        {
+          unsigned long clockEvent = (unsigned long)minute() % 10 | (unsigned long)(minute() / 10) << 4 | (unsigned long)(hour() % 10) << 8 | (unsigned long)(hour() / 10) << 12 | (unsigned long)weekday() << 16;
+          unsigned long clockSet = ExtraTaskSettings.TaskDevicePluginConfigLong[x];
+
+          if (matchClockEvent(clockEvent,clockSet))
+          {
+            byte state = ExtraTaskSettings.TaskDevicePluginConfig[x];
+            if (state != 0)
+            {
+              state--;
+              pinMode(CONFIG_PIN1, OUTPUT);
+              digitalWrite(CONFIG_PIN1, state);
+              UserVar[event->BaseVarIndex] = state;
+              String log = F("TCLK : State ");
+              log += state;
+              addLog(LOG_LEVEL_INFO, log);
+              sendData(event);
+            }
+          }
+        }
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P044_P1WifiGateway.ino"
+#ifdef USES_P044
+# 12 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P044_P1WifiGateway.ino"
+#define PLUGIN_044 
+#define PLUGIN_ID_044 44
+#define PLUGIN_NAME_044 "Communication - P1 Wifi Gateway"
+#define PLUGIN_VALUENAME1_044 "P1WifiGateway"
+
+#define P044_STATUS_LED 12
+#define P044_BUFFER_SIZE 1024
+#define P044_NETBUF_SIZE 128
+#define P044_DISABLED 0
+#define P044_WAITING 1
+#define P044_READING 2
+#define P044_CHECKSUM 3
+#define P044_DONE 4
+
+boolean Plugin_044_init = false;
+boolean serialdebug = false;
+char* Plugin_044_serial_buf = nullptr;
+unsigned int bytes_read = 0;
+boolean CRCcheck = false;
+unsigned int currCRC = 0;
+int checkI = 0;
+
+WiFiServer *P1GatewayServer = nullptr;
+WiFiClient P1GatewayClient;
+
+
+
+
+
+
+boolean Plugin_044(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+  static byte connectionState = 0;
+  static int state = P044_DISABLED;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_044;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].Custom = true;
+        Device[deviceCount].TimerOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_044);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_044));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+       addFormNumericBox(F("TCP Port"), F("p044_port"), ExtraTaskSettings.TaskDevicePluginConfigLong[0]);
+       addFormNumericBox(F("Baud Rate"), F("p044_baud"), ExtraTaskSettings.TaskDevicePluginConfigLong[1]);
+       addFormNumericBox(F("Data bits"), F("p044_data"), ExtraTaskSettings.TaskDevicePluginConfigLong[2]);
+
+        byte choice = ExtraTaskSettings.TaskDevicePluginConfigLong[3];
+        String options[3];
+        options[0] = F("No parity");
+        options[1] = F("Even");
+        options[2] = F("Odd");
+        int optionValues[3] = { 0, 2, 3 };
+        addFormSelector(F("Parity"), F("p044_parity"), 3, options, optionValues, choice);
+
+       addFormNumericBox(F("Stop bits"), F("p044_stop"), ExtraTaskSettings.TaskDevicePluginConfigLong[4]);
+
+
+       addFormPinSelect(F("Reset target after boot"), F("taskdevicepin1"), Settings.TaskDevicePin1[event->TaskIndex]);
+
+       addFormNumericBox(F("RX Receive Timeout (mSec)"), F("p044_rxwait"), Settings.TaskDevicePluginConfig[event->TaskIndex][0]);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        ExtraTaskSettings.TaskDevicePluginConfigLong[0] = getFormItemInt(F("p044_port"));
+        ExtraTaskSettings.TaskDevicePluginConfigLong[1] = getFormItemInt(F("p044_baud"));
+        ExtraTaskSettings.TaskDevicePluginConfigLong[2] = getFormItemInt(F("p044_data"));
+        ExtraTaskSettings.TaskDevicePluginConfigLong[3] = getFormItemInt(F("p044_parity"));
+        ExtraTaskSettings.TaskDevicePluginConfigLong[4] = getFormItemInt(F("p044_stop"));
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = getFormItemInt(F("p044_rxwait"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        pinMode(P044_STATUS_LED, OUTPUT);
+        digitalWrite(P044_STATUS_LED, 0);
+
+        LoadTaskSettings(event->TaskIndex);
+        if ((ExtraTaskSettings.TaskDevicePluginConfigLong[0] != 0) && (ExtraTaskSettings.TaskDevicePluginConfigLong[1] != 0))
+        {
+          #if defined(ESP8266)
+            byte serialconfig = 0x10;
+          #endif
+          #if defined(ESP32)
+            uint32_t serialconfig = 0x8000010;
+          #endif
+          serialconfig += ExtraTaskSettings.TaskDevicePluginConfigLong[3];
+          serialconfig += (ExtraTaskSettings.TaskDevicePluginConfigLong[2] - 5) << 2;
+          if (ExtraTaskSettings.TaskDevicePluginConfigLong[4] == 2)
+            serialconfig += 0x20;
+          #if defined(ESP8266)
+            Serial.begin(ExtraTaskSettings.TaskDevicePluginConfigLong[1], (SerialConfig)serialconfig);
+          #endif
+          #if defined(ESP32)
+            Serial.begin(ExtraTaskSettings.TaskDevicePluginConfigLong[1], serialconfig);
+          #endif
+          if (P1GatewayServer)
+          {
+            P1GatewayServer->close();
+            delete P1GatewayServer;
+          }
+          P1GatewayServer = new WiFiServer(ExtraTaskSettings.TaskDevicePluginConfigLong[0]);
+          P1GatewayServer->begin();
+
+          if (!Plugin_044_serial_buf)
+            Plugin_044_serial_buf = new char[P044_BUFFER_SIZE];
+
+          if (Settings.TaskDevicePin1[event->TaskIndex] != -1)
+          {
+            pinMode(Settings.TaskDevicePin1[event->TaskIndex], OUTPUT);
+            digitalWrite(Settings.TaskDevicePin1[event->TaskIndex], LOW);
+            delay(500);
+            digitalWrite(Settings.TaskDevicePin1[event->TaskIndex], HIGH);
+            pinMode(Settings.TaskDevicePin1[event->TaskIndex], INPUT_PULLUP);
+          }
+
+          Plugin_044_init = true;
+        }
+
+        blinkLED();
+
+        if (ExtraTaskSettings.TaskDevicePluginConfigLong[1] == 115200) {
+          addLog(LOG_LEVEL_DEBUG, F("P1   : DSMR version 4 meter, CRC on"));
+          CRCcheck = true;
+        } else {
+          addLog(LOG_LEVEL_DEBUG, F("P1   : DSMR version 4 meter, CRC off"));
+          CRCcheck = false;
+        }
+
+
+        state = P044_WAITING;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+        if (P1GatewayServer) {
+          P1GatewayServer->close();
+          delete P1GatewayServer;
+          P1GatewayServer = NULL;
+        }
+        if (Plugin_044_serial_buf) {
+          delete[] Plugin_044_serial_buf;
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (Plugin_044_init)
+        {
+          if (P1GatewayServer->hasClient())
+          {
+            if (P1GatewayClient) P1GatewayClient.stop();
+            P1GatewayClient = P1GatewayServer->available();
+            P1GatewayClient.setTimeout(CONTROLLER_CLIENTTIMEOUT_DFLT);
+            addLog(LOG_LEVEL_ERROR, F("P1   : Client connected!"));
+          }
+
+          if (P1GatewayClient.connected())
+          {
+            connectionState = 1;
+            uint8_t net_buf[P044_NETBUF_SIZE];
+            int count = P1GatewayClient.available();
+            if (count > 0)
+            {
+              size_t net_bytes_read;
+              if (count > P044_NETBUF_SIZE)
+                count = P044_NETBUF_SIZE;
+              net_bytes_read = P1GatewayClient.read(net_buf, count);
+              Serial.write(net_buf, net_bytes_read);
+              Serial.flush();
+
+              if (count == P044_NETBUF_SIZE)
+              {
+                count--;
+
+                addLog(LOG_LEVEL_ERROR, F("P1   : Error: network buffer full!"));
+              }
+              net_buf[count] = 0;
+              char log[P044_NETBUF_SIZE + 40];
+              sprintf_P(log, PSTR("P1   : Error: N>: %s"), (char*)net_buf);
+              addLog(LOG_LEVEL_DEBUG, log);
+            }
+          }
+          else
+          {
+            if (connectionState == 1)
+            {
+              connectionState = 0;
+              addLog(LOG_LEVEL_ERROR, F("P1   : Client disconnected!"));
+            }
+
+            while (Serial.available())
+              Serial.read();
+          }
+
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_SERIAL_IN:
+      {
+        if (Plugin_044_init)
+        {
+          if (P1GatewayClient.connected())
+          {
+            int RXWait = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
+            if (RXWait == 0)
+              RXWait = 1;
+            int timeOut = RXWait;
+            while (timeOut > 0)
+            {
+              while (Serial.available() && state != P044_DONE) {
+                if (bytes_read < P044_BUFFER_SIZE - 5) {
+                  char ch = Serial.read();
+                  digitalWrite(P044_STATUS_LED, 1);
+                  switch (state) {
+                    case P044_DISABLED:
+                      break;
+                    case P044_WAITING:
+                      if (ch == '/') {
+                        Plugin_044_serial_buf[0] = ch;
+                        bytes_read=1;
+                        state = P044_READING;
+                      }
+                      break;
+                    case P044_READING:
+                      if (ch == '!') {
+                        if (CRCcheck) {
+                          state = P044_CHECKSUM;
+                        } else {
+                          state = P044_DONE;
+                        }
+                      }
+                      if (validP1char(ch)) {
+                        Plugin_044_serial_buf[bytes_read] = ch;
+                        bytes_read++;
+                      } else if (ch=='/') {
+                        addLog(LOG_LEVEL_DEBUG, F("P1   : Error: Start detected, discarded input."));
+                        Plugin_044_serial_buf[0] = ch;
+                        bytes_read = 1;
+                      } else {
+                        addLog(LOG_LEVEL_DEBUG, F("P1   : Error: DATA corrupt, discarded input."));
+                        Serial.flush();
+                        bytes_read = 0;
+                        state = P044_WAITING;
+                      }
+                      break;
+                    case P044_CHECKSUM:
+                      checkI ++;
+                      if (checkI == 4) {
+                        checkI = 0;
+                        state = P044_DONE;
+                      }
+                      Plugin_044_serial_buf[bytes_read] = ch;
+                      bytes_read++;
+                      break;
+                    case P044_DONE:
+
+
+
+                      break;
+                  }
+                }
+                else
+                {
+                  Serial.read();
+                  bytes_read = 0;
+                  state = P044_WAITING;
+                }
+                digitalWrite(P044_STATUS_LED, 0);
+                timeOut = RXWait;
+              }
+              delay(1);
+              timeOut--;
+            }
+
+            if (state == P044_DONE) {
+              if (checkDatagram(bytes_read)) {
+                Plugin_044_serial_buf[bytes_read] = '\r';
+                bytes_read++;
+                Plugin_044_serial_buf[bytes_read] = '\n';
+                bytes_read++;
+                Plugin_044_serial_buf[bytes_read] = 0;
+                P1GatewayClient.write((const uint8_t*)Plugin_044_serial_buf, bytes_read);
+                P1GatewayClient.flush();
+                addLog(LOG_LEVEL_DEBUG, F("P1   : data send!"));
+                blinkLED();
+
+                if (Settings.UseRules)
+                {
+                  LoadTaskSettings(event->TaskIndex);
+                  String eventString = getTaskDeviceName(event->TaskIndex);
+                  eventString += F("#Data");
+                  rulesProcessing(eventString);
+                }
+
+              } else {
+                addLog(LOG_LEVEL_DEBUG, F("P1   : Error: Invalid CRC, dropped data"));
+              }
+
+              bytes_read = 0;
+              state = P044_WAITING;
+            }
+          }
+          success = true;
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+void blinkLED() {
+  digitalWrite(P044_STATUS_LED, 1);
+  delay(500);
+  digitalWrite(P044_STATUS_LED, 0);
+}
+
+
+
+
+bool validP1char(char ch) {
+  if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch == '.') || (ch == '!') || (ch == ' ') || (ch == 92) || (ch == 13) || (ch == '\n') || (ch == '(') || (ch == ')') || (ch == '-') || (ch == '*') || (ch == ':') )
+  {
+    return true;
+  } else {
+    addLog(LOG_LEVEL_DEBUG, F("P1   : Error: invalid char read from P1"));
+    if (serialdebug) {
+      serialPrint(F("faulty char>"));
+      serialPrint(String(ch));
+      serialPrintln("<");
+    }
+    return false;
+  }
+}
+
+int FindCharInArrayRev(char array[], char c, int len) {
+  for (int i = len - 1; i >= 0; i--) {
+    if (array[i] == c) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+
+
+
+
+
+unsigned int CRC16(unsigned int crc, unsigned char *buf, int len)
+{
+  for (int pos = 0; pos < len; pos++)
+  {
+    crc ^= (unsigned int)buf[pos];
+
+    for (int i = 8; i != 0; i--) {
+      if ((crc & 0x0001) != 0) {
+        crc >>= 1;
+        crc ^= 0xA001;
+      }
+      else
+        crc >>= 1;
+    }
+  }
+
+  return crc;
+}
+
+
+
+
+
+
+
+bool checkDatagram(int len) {
+  int startChar = FindCharInArrayRev(Plugin_044_serial_buf, '/', len);
+  int endChar = FindCharInArrayRev(Plugin_044_serial_buf, '!', len);
+  bool validCRCFound = false;
+
+  if (!CRCcheck) return true;
+
+  if (serialdebug) {
+    serialPrint(F("input length: "));
+    serialPrintln(String(len));
+    serialPrint("Start char \\ : ");
+    serialPrintln(String(startChar));
+    serialPrint(F("End char ! : "));
+    serialPrintln(String(endChar));
+  }
+
+  if (endChar >= 0)
+  {
+    currCRC = CRC16(0x0000, (unsigned char *) Plugin_044_serial_buf, endChar - startChar + 1);
+
+    char messageCRC[5];
+    strncpy(messageCRC, Plugin_044_serial_buf + endChar + 1, 4);
+    messageCRC[4] = 0;
+    if (serialdebug) {
+      for (int cnt = 0; cnt < len; cnt++)
+        serialPrint(String(Plugin_044_serial_buf[cnt]));
+    }
+
+    validCRCFound = (strtoul(messageCRC, NULL, 16) == currCRC);
+    if (!validCRCFound) {
+      addLog(LOG_LEVEL_DEBUG, F("P1   : Error: invalid CRC found"));
+    }
+    currCRC = 0;
+  }
+  return validCRCFound;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P045_MPU6050.ino"
+#ifdef USES_P045
+# 66 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P045_MPU6050.ino"
+#define MPU6050_RA_GYRO_CONFIG 0x1B
+#define MPU6050_RA_ACCEL_CONFIG 0x1C
+#define MPU6050_RA_ACCEL_XOUT_H 0x3B
+#define MPU6050_RA_PWR_MGMT_1 0x6B
+#define MPU6050_ACONFIG_AFS_SEL_BIT 4
+#define MPU6050_ACONFIG_AFS_SEL_LENGTH 2
+#define MPU6050_GCONFIG_FS_SEL_BIT 4
+#define MPU6050_GCONFIG_FS_SEL_LENGTH 2
+#define MPU6050_CLOCK_PLL_XGYRO 0x01
+#define MPU6050_GYRO_FS_250 0x00
+#define MPU6050_ACCEL_FS_2 0x00
+#define MPU6050_PWR1_SLEEP_BIT 6
+#define MPU6050_PWR1_CLKSEL_BIT 2
+#define MPU6050_PWR1_CLKSEL_LENGTH 3
+
+#define PLUGIN_045 
+#define PLUGIN_ID_045 45
+#define PLUGIN_NAME_045 "Gyro - MPU 6050 [TESTING]"
+#define PLUGIN_VALUENAME1_045 ""
+
+int16_t _P045_axis[3][5][2];
+unsigned long _P045_time[2];
+
+boolean Plugin_045(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_045;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].FormulaOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_045);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_045));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+        byte choice = PCONFIG(0);
+
+
+
+
+
+        int optionValues[2];
+        optionValues[0] = 0x68;
+        optionValues[1] = 0x69;
+        addFormSelectorI2C(F("p045_address"), 2, optionValues, choice);
+        addFormNote(F("ADDR Low=0x68, High=0x69"));
+
+        choice = PCONFIG(1);
+        String options[10];
+        options[0] = F("Movement detection");
+        options[1] = F("Range acceleration X");
+        options[2] = F("Range acceleration Y");
+        options[3] = F("Range acceleration Z");
+        options[4] = F("Acceleration X");
+        options[5] = F("Acceleration Y");
+        options[6] = F("Acceleration Z");
+        options[7] = F("G-force X");
+        options[8] = F("G-force Y");
+        options[9] = F("G-force Z");
+        addFormSelector(F("Function"), F("p045_function"), 10, options, NULL, choice);
+
+        if (choice == 0) {
+
+
+          addHtml(F("<TR><TD><TD>The thresholdvalues (0-65535) can be used to set a threshold for one or more<br>"));
+          addHtml(F("axis. The axis will trigger when the range for that axis exceeds the threshold<br>"));
+          addHtml(F("value. A value of 0 disables movement detection for that axis."));
+
+         addFormNumericBox(F("Detection threshold X"), F("p045_threshold_x"), PCONFIG(2), 0, 65535);
+         addFormNumericBox(F("Detection threshold Y"), F("p045_threshold_y"), PCONFIG(3), 0, 65535);
+         addFormNumericBox(F("Detection threshold Z"), F("p045_threshold_z"), PCONFIG(4), 0, 65535);
+
+          addHtml(F("<TR><TD><TD>Each 30 seconds a counter for the detection window is increased plus all axis<br>"));
+          addHtml(F("are checked and if they *all* exceeded the threshold values, a counter is increased.<br>"));
+          addHtml(F("Each period, defined by the [detection window], the counter is checked against<br>"));
+          addHtml(F("the [min. detection count] and if found equal or larger, movement is detected.<br>"));
+          addHtml(F("If in the next window the [min. detection count] value is not met, movement has stopped."));
+          addHtml(F("The [detection window] cannot be smaller than the [min. detection count]."));
+
+         addFormNumericBox(F("Min. detection count"), F("p045_threshold_counter"), PCONFIG(5), 0, 999999);
+         addFormNumericBox(F("Detection window"), F("p045_threshold_window"), PCONFIG(6), 0, 999999);
+
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+
+        PCONFIG(0) = getFormItemInt(F("p045_address"));
+        PCONFIG(1) = getFormItemInt(F("p045_function"));
+        PCONFIG(2) = getFormItemInt(F("p045_threshold_x"));
+        PCONFIG(3) = getFormItemInt(F("p045_threshold_y"));
+        PCONFIG(4) = getFormItemInt(F("p045_threshold_z"));
+        PCONFIG(5) = getFormItemInt(F("p045_threshold_counter"));
+        PCONFIG(6) = getFormItemInt(F("p045_threshold_window"));
+        if (PCONFIG(6) < PCONFIG(5)) {
+          PCONFIG(6) = PCONFIG(5);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+
+
+        uint8_t devAddr = PCONFIG(0);
+        if ((devAddr < 0x68) || (devAddr > 0x69)) {
+          devAddr = 0x68;
+          PCONFIG(0) = devAddr;
+        }
+
+        _P045_writeBits(devAddr, MPU6050_RA_PWR_MGMT_1, MPU6050_PWR1_CLKSEL_BIT, MPU6050_PWR1_CLKSEL_LENGTH, MPU6050_CLOCK_PLL_XGYRO);
+        _P045_writeBits(devAddr, MPU6050_RA_GYRO_CONFIG, MPU6050_GCONFIG_FS_SEL_BIT, MPU6050_GCONFIG_FS_SEL_LENGTH, MPU6050_GYRO_FS_250);
+        _P045_writeBits(devAddr, MPU6050_RA_ACCEL_CONFIG, MPU6050_ACONFIG_AFS_SEL_BIT, MPU6050_ACONFIG_AFS_SEL_LENGTH, MPU6050_ACCEL_FS_2);
+        _P045_writeBits(devAddr, MPU6050_RA_PWR_MGMT_1, MPU6050_PWR1_SLEEP_BIT, 1, 0);
+
+
+        int16_t ax, ay, az, gx, gy, gz;
+        _P045_getMotion6(devAddr, &ax, &ay, &az, &gx, &gy, &gz);
+
+
+        PCONFIG(7) = 0;
+        UserVar[event->BaseVarIndex] = 0;
+        PCONFIG_LONG(0) = 0;
+        PCONFIG_LONG(1) = 0;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+        uint8_t devAddr = PCONFIG(0);
+        byte dev = devAddr & 1;
+
+
+        _P045_getMotion6(devAddr, &_P045_axis[0][3][dev], &_P045_axis[1][3][dev], &_P045_axis[2][3][dev], &_P045_axis[0][4][dev], &_P045_axis[1][4][dev], &_P045_axis[2][4][dev]);
+
+        _P045_trackMinMax(_P045_axis[0][3][dev], &_P045_axis[0][0][dev], &_P045_axis[0][1][dev]);
+        _P045_trackMinMax(_P045_axis[1][3][dev], &_P045_axis[1][0][dev], &_P045_axis[1][1][dev]);
+        _P045_trackMinMax(_P045_axis[2][3][dev], &_P045_axis[2][0][dev], &_P045_axis[2][1][dev]);
+# 249 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P045_MPU6050.ino"
+        if (timeOutReached(_P045_time[dev] + 5000))
+        {
+          _P045_time[dev] = millis();
+
+
+          for (uint8_t i=0; i<3; i++) {
+            _P045_axis[i][2][dev] = abs(_P045_axis[i][1][dev] - _P045_axis[i][0][dev]);
+            _P045_axis[i][0][dev] = _P045_axis[i][3][dev];
+            _P045_axis[i][1][dev] = _P045_axis[i][3][dev];
+          }
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        int devAddr = PCONFIG(0);
+        byte dev = devAddr & 1;
+        int _P045_Function = PCONFIG(1);
+        switch (_P045_Function)
+        {
+
+          case 0:
+          {
+
+            boolean thresexceed = true;
+            byte count = 0;
+            for (byte i=0; i<3; i++)
+            {
+
+              if (PCONFIG(i + 2) != 0) {
+                if (_P045_axis[i][2][dev] < PCONFIG(i + 2)) { thresexceed = false; }
+              } else { count++; }
+            }
+            if (count == 3) { thresexceed = false; }
+
+
+            if (thresexceed) { PCONFIG_LONG(0)++; }
+
+            PCONFIG_LONG(1)++;
+
+            if (PCONFIG_LONG(1) >= PCONFIG(6)) {
+
+              PCONFIG_LONG(1) = 0;
+
+
+              if (PCONFIG_LONG(0) >= PCONFIG(5)) {
+                UserVar[event->BaseVarIndex] = 1;
+              } else {
+                UserVar[event->BaseVarIndex] = 0;
+              }
+
+
+              if (PCONFIG(7) != UserVar[event->BaseVarIndex]) {
+                PCONFIG(7) = UserVar[event->BaseVarIndex];
+                success = true;
+              } else {
+                success = false;
+              }
+              PCONFIG_LONG(0) = 0;
+            }
+
+
+            event->sensorType = SENSOR_TYPE_SWITCH;
+            break;
+          }
+
+          default:
+          {
+            uint8_t reqaxis = (_P045_Function - 1) % 3;
+            uint8_t reqvar = ((_P045_Function - 1) / 3) + 2;
+            UserVar[event->BaseVarIndex] = float(_P045_axis[reqaxis][reqvar][dev]);
+            success = true;
+            break;
+          }
+        }
+        break;
+      }
+  }
+  return success;
+}
+
+void _P045_trackMinMax(int16_t current, int16_t *min, int16_t *max)
+
+{
+  if (current > *max)
+  {
+    *max = current;
+  }
+  else if (current < *min)
+  {
+    *min = current;
+  }
+}
+# 356 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P045_MPU6050.ino"
+void _P045_getMotion6(uint8_t devAddr, int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, int16_t* gy, int16_t* gz) {
+
+    uint8_t buffer[14];
+    uint8_t count = 0;
+    I2C_write8(devAddr, MPU6050_RA_ACCEL_XOUT_H);
+    Wire.requestFrom(devAddr, (uint8_t)14);
+    for (; Wire.available(); count++) {
+        buffer[count] = Wire.read();
+    }
+    *ax = (((int16_t)buffer[0]) << 8) | buffer[1];
+    *ay = (((int16_t)buffer[2]) << 8) | buffer[3];
+    *az = (((int16_t)buffer[4]) << 8) | buffer[5];
+    *gx = (((int16_t)buffer[8]) << 8) | buffer[9];
+    *gy = (((int16_t)buffer[10]) << 8) | buffer[11];
+    *gz = (((int16_t)buffer[12]) << 8) | buffer[13];
+}
+# 380 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P045_MPU6050.ino"
+void _P045_writeBits(uint8_t devAddr, uint8_t regAddr, uint8_t bitStart, uint8_t length, uint8_t data) {
+# 389 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P045_MPU6050.ino"
+    bool is_ok = true;
+    uint8_t b = I2C_read8_reg(devAddr, regAddr, &is_ok);
+    if (is_ok) {
+      uint8_t mask = ((1 << length) - 1) << (bitStart - length + 1);
+      data <<= (bitStart - length + 1);
+      data &= mask;
+      b &= ~(mask);
+      b |= data;
+      I2C_write8_reg(devAddr, regAddr, b);
+    }
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P046_VentusW266.ino"
+#ifdef USES_P046
+# 80 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P046_VentusW266.ino"
+#ifdef PLUGIN_BUILD_DISABLED
+
+#define PLUGIN_046_DEBUG true
+
+#define PLUGIN_046 
+#define PLUGIN_ID_046 46
+#define PLUGIN_NAME_046 "Hardware - Ventus W266 [TESTING]"
+#define PLUGIN_VALUENAME1_046 ""
+#define PLUGIN_VALUENAME2_046 ""
+#define PLUGIN_VALUENAME3_046 ""
+
+#define Plugin_046_MagicByte 0x7F
+#define Plugin_046_RAW_BUFFER_SIZE 24
+#define Plugin_046_Payload 23
+
+struct P046_data_struct {
+  int8_t Plugin_046_MOSIpin = -1;
+  int8_t Plugin_046_SCLKpin = -1;
+  int8_t Plugin_046_nSELpin = -1;
+  int8_t Plugin_046_MISOpin = -1;
+
+  byte Plugin_046_ISR_Buffer[Plugin_046_RAW_BUFFER_SIZE];
+
+  byte Plugin_046_databuffer[Plugin_046_RAW_BUFFER_SIZE];
+  bool Plugin_046_ReceiveActive = false;
+  bool Plugin_046_MasterSlave = false;
+  bool Plugin_046_newData = false;
+  byte Plugin_046_bitpointer;
+  byte Plugin_046_bytepointer;
+  byte Plugin_046_receivedData;
+
+};
+
+P046_data_struct* P046_data = nullptr;
+
+
+
+
+volatile unsigned long Plugin_046_lastrainctr;
+volatile int Plugin_046_lastraincount;
+volatile float Plugin_046_rainmmph = 0;
+volatile unsigned long Plugin_046_laststrikectr;
+volatile unsigned int Plugin_046_laststrikecount;
+volatile int Plugin_046_strikesph = 0;
+
+
+
+void Plugin_046_ISR_nSEL() ICACHE_RAM_ATTR;
+void Plugin_046_ISR_SCLK() ICACHE_RAM_ATTR;
+
+boolean Plugin_046(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_046;
+        Device[deviceCount].Type = DEVICE_TYPE_DUMMY;
+        Device[deviceCount].VType = SENSOR_TYPE_DUAL;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].ValueCount = 3;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choice = PCONFIG(0);
+        byte nrchoices = 9;
+        String options[nrchoices];
+        options[0] = F("Main + Temp/Hygro");
+        options[1] = F("Wind");
+        options[2] = F("Rain");
+        options[3] = F("UV");
+        options[4] = F("Lightning strikes");
+        options[5] = F("Lightning distance");
+
+        options[6] = F("Unknown 1, byte 6");
+        options[7] = F("Unknown 2, byte 16");
+        options[8] = F("Unknown 3, byte 19");
+
+        addFormSelector(F("Plugin function"), F("p046"), nrchoices, options, NULL, choice);
+
+        if (choice==0) {
+          addHtml(F("<TR><TD>1st GPIO (5-MOSI):<TD>"));
+          addPinSelect(false, "taskdevicepin1", PCONFIG(1));
+          addHtml(F("<TR><TD>2nd GPIO (6-SCLK):<TD>"));
+          addPinSelect(false, "taskdevicepin2", PCONFIG(2));
+          addHtml(F("<TR><TD>3rd GPIO (7-nSEL):<TD>"));
+          addPinSelect(false, "taskdevicepin3", PCONFIG(3));
+          addHtml(F("<TR><TD>4th GPIO (8-MISO):<TD>"));
+          addPinSelect(false, "taskdeviceport", PCONFIG(4));
+        }
+
+        switch (choice)
+        {
+          case (0):
+          {
+            addHtml(F("<TR><TD><B>Be sure you only have 1 main plugin!</B></TD>"));
+            addHtml(F("<TR><TD>Value 1: Temperature, 1 decimal<BR>Value 2: Humidity, 0 decimals"));
+            addHtml(F("<BR>Value 3: not used</TD>"));
+            break;
+          }
+          case (1):
+          {
+            addHtml(F("<TR><TD>Value 1: Direction, 0 decimals<BR>"));
+            addHtml(F("Value 2: Average, 1 decimal<Br>Value 3: Gust, 1 decimal</TD>"));
+            break;
+          }
+          case (2):
+          {
+            addHtml(F("<TR><TD>Value 1: Rain in mm per hour<BR>Value 2: Total rain in mm"));
+            addHtml(F("<BR>Value 3: not used</TD>"));
+            break;
+          }
+          case (3):
+          {
+            addHtml(F("<TR><TD>Value 1: UV, 1 decimal"));
+            addHtml(F("<BR>Values 2, 3</TD>"));
+            break;
+          }
+          case (4):
+          {
+            addHtml(F("<TR><TD>Value 1: Strikes this hour, 0 decimals"));
+            addHtml(F("<BR>Values 2, 3: not used</TD>"));
+            break;
+          }
+          case (5):
+          {
+            addHtml(F("<TR><TD>Value 1: Distance in km, 0 decimals"));
+            addHtml(F("<BR>Values 2, 3: not used</TD>"));
+            break;
+          }
+          case (6):
+          {
+            addHtml(F("<TR><TD>Value 1: Batterybyte, 0 decimals"));
+            addHtml(F("<BR>Values 2, 3: not used</TD>"));
+            break;
+          }
+          case (7):
+          {
+            addHtml(F("<TR><TD>Value 1: Last rainbyte, 0 decimals"));
+            addHtml(F("<BR>Values 2, 3: not used</TD>"));
+            break;
+          }
+          case (8):
+          {
+            addHtml(F("<TR><TD>Value 1: Last lightningbyte, 0 decimals"));
+            addHtml(F("<BR>Values 2, 3: not used</TD>"));
+            break;
+          }
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("p046"));
+        if (PCONFIG(0) == 0) {
+          PCONFIG(1) = getFormItemInt(F("taskdevicepin1"));
+          PCONFIG(2) = getFormItemInt(F("taskdevicepin2"));
+          PCONFIG(3) = getFormItemInt(F("taskdevicepin3"));
+          PCONFIG(4) = getFormItemInt(F("taskdeviceport"));
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_046);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_046));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_046));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_046));
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+        if (P046_data) {
+          delete P046_data;
+          P046_data = nullptr;
+        }
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        if (!P046_data) {
+          P046_data = new P046_data_struct();
+        }
+
+        byte choice = PCONFIG(0);
+        switch (choice)
+        {
+          case (0):
+          {
+            P046_data->Plugin_046_MOSIpin = PCONFIG(1);
+            P046_data->Plugin_046_SCLKpin = PCONFIG(2);
+            P046_data->Plugin_046_nSELpin = PCONFIG(3);
+            P046_data->Plugin_046_MISOpin = PCONFIG(4);
+            int8_t total = P046_data->Plugin_046_MOSIpin + P046_data->Plugin_046_SCLKpin + P046_data->Plugin_046_nSELpin + P046_data->Plugin_046_MISOpin;
+            if (total > 6) {
+              pinMode(P046_data->Plugin_046_MOSIpin, INPUT);
+              pinMode(P046_data->Plugin_046_SCLKpin, INPUT);
+              pinMode(P046_data->Plugin_046_nSELpin, INPUT);
+              pinMode(P046_data->Plugin_046_MISOpin, INPUT);
+              P046_data->Plugin_046_databuffer[0] = 0;
+              Plugin_046_lastrainctr = 0;
+              Plugin_046_lastraincount = -1;
+              Plugin_046_laststrikectr = 0;
+              Plugin_046_laststrikecount = -1;
+              attachInterrupt(P046_data->Plugin_046_SCLKpin, Plugin_046_ISR_SCLK, RISING);
+              attachInterrupt(P046_data->Plugin_046_nSELpin, Plugin_046_ISR_nSEL, CHANGE);
+            }
+            break;
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (!P046_data) break;
+        if (PCONFIG(0) == 0) {
+          if (P046_data->Plugin_046_newData) {
+            uint8_t crc = 0xff;
+            char data;
+
+            P046_data->Plugin_046_databuffer[0] = P046_data->Plugin_046_ISR_Buffer[0];
+            for (int i = 1; i < P046_data->Plugin_046_bytepointer; i++) {
+              data = P046_data->Plugin_046_ISR_Buffer[i];
+              P046_data->Plugin_046_databuffer[i] = data;
+              for (int j = 0; j < 8; j++)
+              {
+                uint8_t mix = (crc ^ data) & 0x01;
+                crc >>= 1;
+                if (mix) crc ^= 0x8C;
+                  data >>= 1;
+              }
+            }
+            P046_data->Plugin_046_MasterSlave = false;
+            P046_data->Plugin_046_newData = false;
+            if (PLUGIN_046_DEBUG) {
+              String log = F("Ventus W266 Rcvd(");
+              log += getTimeString(':');
+              log += F(") ");
+              for (int i = 0; i < Plugin_046_Payload; i++) {
+                if ((i==2)||(i==3)||(i==4)||(i==9)||(i==10)||(i==14)||(i==17)||(i==18)||(i==20)) {
+                  log += F(":");
+                }
+                char myHex = (P046_data->Plugin_046_databuffer[i] >> 4) + 0x30;
+                if (myHex > 0x39) { myHex += 7; }
+                log += myHex;
+                myHex = (P046_data->Plugin_046_databuffer[i] & 0x0f) + 0x30;
+                if (myHex > 0x39) { myHex += 7; }
+                log += myHex;
+              }
+              log += F(" > ");
+              char myHex = (crc >> 4) + 0x30;
+              if (myHex > 0x39) { myHex += 7; }
+              log += myHex;
+              myHex = (crc & 0x0f) + 0x30;
+              if (myHex > 0x39) { myHex += 7; }
+              log += myHex;
+              addLog(LOG_LEVEL_INFO, log);
+            }
+            if (crc != 00)
+            {
+              P046_data->Plugin_046_databuffer[0] = 0;
+            }
+          }
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        if (!P046_data) break;
+        if (P046_data->Plugin_046_databuffer[0] == Plugin_046_MagicByte)
+        {
+          UserVar[event->BaseVarIndex + 1] = 0;
+          byte choice = PCONFIG(0);
+          switch (choice)
+          {
+            case (0):
+            {
+              int myTemp = int((P046_data->Plugin_046_databuffer[5] * 256) + P046_data->Plugin_046_databuffer[4]);
+              if (myTemp > 0x8000) { myTemp |= 0xffff0000; }
+              float temperature = float(myTemp) / 10.0;
+              byte myHum = (P046_data->Plugin_046_databuffer[2] >> 4) * 10 + (P046_data->Plugin_046_databuffer[2] & 0x0f);
+              float humidity = float(myHum);
+              UserVar[event->BaseVarIndex] = temperature;
+              UserVar[event->BaseVarIndex + 1] = humidity;
+              event->sensorType = SENSOR_TYPE_TEMP_HUM;
+              break;
+            }
+            case (1):
+            {
+              float average = float((P046_data->Plugin_046_databuffer[11] << 8) + P046_data->Plugin_046_databuffer[10]) / 10;
+              float gust = float((P046_data->Plugin_046_databuffer[13] << 8) + P046_data->Plugin_046_databuffer[12]) / 10;
+              float bearing = float(P046_data->Plugin_046_databuffer[9] & 0x0f) * 22.5;
+              UserVar[event->BaseVarIndex] = bearing;
+              UserVar[event->BaseVarIndex + 1] = average;
+              UserVar[event->BaseVarIndex + 2] = gust;
+              event->sensorType = SENSOR_TYPE_WIND;
+              break;
+            }
+            case (2):
+            {
+              float raincnt = float(((P046_data->Plugin_046_databuffer[15]) * 256 + P046_data->Plugin_046_databuffer[14]) / 4);
+              int rainnow = int(raincnt);
+              if (wdcounter < Plugin_046_lastrainctr) { Plugin_046_lastrainctr = wdcounter; }
+              if (Plugin_046_lastrainctr > (wdcounter + 10))
+              {
+                Plugin_046_lastrainctr = wdcounter;
+                if (rainnow > Plugin_046_lastraincount)
+                {
+                  Plugin_046_rainmmph = float(rainnow - Plugin_046_lastraincount) * 12;
+                  Plugin_046_lastraincount = rainnow;
+                } else {
+                  Plugin_046_rainmmph = 0;
+                }
+              }
+              UserVar[event->BaseVarIndex] = Plugin_046_rainmmph;
+              UserVar[event->BaseVarIndex + 1] = raincnt;
+              break;
+            }
+            case (3):
+            {
+              float uvindex = float((P046_data->Plugin_046_databuffer[17]) / 10);
+              UserVar[event->BaseVarIndex] = uvindex;
+              break;
+            }
+            case (4):
+            {
+
+              unsigned int strikesnow = int((P046_data->Plugin_046_databuffer[21]) * 256 + P046_data->Plugin_046_databuffer[20]);
+              if (wdcounter < Plugin_046_laststrikectr) { Plugin_046_laststrikectr = wdcounter; }
+              if (Plugin_046_laststrikectr > (wdcounter + 10))
+              {
+                Plugin_046_laststrikectr = wdcounter;
+                if (strikesnow > Plugin_046_laststrikecount)
+                {
+                  Plugin_046_strikesph = strikesnow - Plugin_046_laststrikecount;
+                  Plugin_046_laststrikecount = strikesnow;
+                } else {
+                  Plugin_046_strikesph = 0;
+                }
+              }
+              UserVar[event->BaseVarIndex] = float(Plugin_046_strikesph);
+              break;
+            }
+            case (5):
+            {
+              float distance = float(-1);
+              if (P046_data->Plugin_046_databuffer[18] != 0x3F )
+              {
+                distance = float(P046_data->Plugin_046_databuffer[18]);
+              }
+              UserVar[event->BaseVarIndex] = distance;
+              break;
+            }
+            case (6):
+            {
+              UserVar[event->BaseVarIndex] = float(P046_data->Plugin_046_databuffer[6]);
+              break;
+            }
+            case (7):
+            {
+              UserVar[event->BaseVarIndex] = float(P046_data->Plugin_046_databuffer[16]);
+              break;
+            }
+            case (8):
+            {
+              UserVar[event->BaseVarIndex] = float(P046_data->Plugin_046_databuffer[19]);
+              break;
+            }
+          }
+          success = true;
+        } else {
+          success = false;
+        }
+        break;
+      }
+    }
+    return success;
+}
+
+void Plugin_046_ISR_nSEL()
+  {
+    if (!P046_data) return;
+    if (digitalRead(P046_data->Plugin_046_nSELpin)) {
+      P046_data->Plugin_046_ReceiveActive = false;
+      if (P046_data->Plugin_046_MasterSlave) {
+        if (P046_data->Plugin_046_bytepointer == Plugin_046_Payload) {
+          P046_data->Plugin_046_newData = true;
+        }
+      }
+    } else {
+      if (!P046_data->Plugin_046_newData) {
+        P046_data->Plugin_046_bitpointer = 7;
+        P046_data->Plugin_046_bytepointer = 0;
+        P046_data->Plugin_046_MasterSlave = false;
+        P046_data->Plugin_046_ReceiveActive = true;
+      }
+    }
+  }
+
+void Plugin_046_ISR_SCLK()
+  {
+    if (!P046_data) return;
+
+    if (P046_data->Plugin_046_ReceiveActive) {
+      if (P046_data->Plugin_046_MasterSlave) {
+        bitWrite(P046_data->Plugin_046_receivedData, P046_data->Plugin_046_bitpointer, digitalRead(P046_data->Plugin_046_MISOpin));
+      } else {
+        bitWrite(P046_data->Plugin_046_receivedData, P046_data->Plugin_046_bitpointer, digitalRead(P046_data->Plugin_046_MOSIpin));
+      }
+      if (P046_data->Plugin_046_bitpointer == 0) {
+        P046_data->Plugin_046_bitpointer = 7;
+        if (P046_data->Plugin_046_receivedData==Plugin_046_MagicByte) {
+          P046_data->Plugin_046_MasterSlave = true;
+        }
+        P046_data->Plugin_046_ISR_Buffer[P046_data->Plugin_046_bytepointer] = P046_data->Plugin_046_receivedData;
+        P046_data->Plugin_046_bytepointer++;
+        if (P046_data->Plugin_046_bytepointer > Plugin_046_RAW_BUFFER_SIZE) {
+          P046_data->Plugin_046_ReceiveActive = false;
+          P046_data->Plugin_046_MasterSlave = false;
+        }
+      } else {
+        P046_data->Plugin_046_bitpointer--;
+      }
+    }
+  }
+#endif
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P047_i2c-soil-moisture-sensor.ino"
+#ifdef USES_P047
+# 13 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P047_i2c-soil-moisture-sensor.ino"
+#define PLUGIN_047 
+#define PLUGIN_ID_047 47
+#define PLUGIN_NAME_047 "Environment - Soil moisture sensor [TESTING]"
+#define PLUGIN_VALUENAME1_047 "Temperature"
+#define PLUGIN_VALUENAME2_047 "Moisture"
+#define PLUGIN_VALUENAME3_047 "Light"
+
+
+
+#define SOILMOISTURESENSOR_DEFAULT_ADDR 0x20
+
+
+#define SOILMOISTURESENSOR_GET_CAPACITANCE 0x00
+#define SOILMOISTURESENSOR_SET_ADDRESS 0x01
+#define SOILMOISTURESENSOR_GET_ADDRESS 0x02
+#define SOILMOISTURESENSOR_MEASURE_LIGHT 0x03
+#define SOILMOISTURESENSOR_GET_LIGHT 0x04
+#define SOILMOISTURESENSOR_GET_TEMPERATURE 0x05
+#define SOILMOISTURESENSOR_RESET 0x06
+#define SOILMOISTURESENSOR_GET_VERSION 0x07
+#define SOILMOISTURESENSOR_SLEEP 0x08
+#define SOILMOISTURESENSOR_GET_BUSY 0x09
+
+
+
+uint8_t _i2caddrP47;
+
+boolean Plugin_047(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_047;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_047);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_047));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_047));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_047));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+       addFormTextBox(F("I2C Address (Hex)"), F("p047_i2cSoilMoisture_i2cAddress"),
+            formatToHex_decimal(PCONFIG(0)), 4);
+
+        addFormCheckBox(F("Send sensor to sleep"), F("p047_sleep"), PCONFIG(1));
+
+        addFormCheckBox(F("Check sensor version") ,F("p047_version"), PCONFIG(2));
+
+        addFormSeparator(2);
+
+        addFormCheckBox(F("Change Sensor address"),F("p047_changeAddr"), false);
+       addFormTextBox(F("Change I2C Addr. to (Hex)"), F("p047_i2cSoilMoisture_changeAddr"),
+            formatToHex_decimal(PCONFIG(0)), 4);
+
+        addFormSeparator(2);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        String plugin1 = WebServer.arg(F("p047_i2cSoilMoisture_i2cAddress"));
+        PCONFIG(0) = (int) strtol(plugin1.c_str(), 0, 16);
+
+        PCONFIG(1) = isFormItemChecked(F("p047_sleep"));
+
+        PCONFIG(2) = isFormItemChecked(F("p047_version"));
+
+        String plugin4 = WebServer.arg(F("p047_i2cSoilMoisture_changeAddr"));
+        PCONFIG(3) = (int) strtol(plugin4.c_str(), 0, 16);
+
+        PCONFIG(4) = isFormItemChecked(F("p047_changeAddr"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        _i2caddrP47 = PCONFIG(0);
+
+        if (PCONFIG(1)) {
+
+         Plugin_047_getVersion();
+          delayBackground(20);
+          addLog(LOG_LEVEL_DEBUG, F("SoilMoisture->wake"));
+        }
+
+        uint8_t sensorVersion = 0;
+        if (PCONFIG(2)) {
+
+          sensorVersion = Plugin_047_getVersion();
+          if (sensorVersion==0x22 || sensorVersion==0x23) {
+
+          }
+          else {
+            addLog(LOG_LEVEL_INFO, F("SoilMoisture: Bad Version, no Sensor?"));
+            I2C_write8(_i2caddrP47, SOILMOISTURESENSOR_RESET);
+            break;
+          }
+        }
+
+
+        if (PCONFIG(4)) {
+         addLog(LOG_LEVEL_INFO, String(F("SoilMoisture: Change Address: 0x")) + String(_i2caddrP47,HEX) + String(F("->0x")) +
+           String(PCONFIG(3),HEX));
+         if (Plugin_047_setAddress(PCONFIG(3))) {
+           PCONFIG(0) = PCONFIG(3);
+         }
+         PCONFIG(4) = false;
+        }
+
+
+        I2C_write8(_i2caddrP47, SOILMOISTURESENSOR_MEASURE_LIGHT);
+
+
+        delayBackground(2000);
+
+        float temperature = ((float)Plugin_047_readTemperature()) / 10;
+        float moisture = ((float)Plugin_047_readMoisture());
+        float light = ((float)Plugin_047_readLight());
+
+        if (temperature>100 || temperature < -40 || moisture > 800 || moisture < 1 || light > 65535 || light < 0) {
+            addLog(LOG_LEVEL_INFO, F("SoilMoisture: Bad Reading, resetting Sensor..."));
+            I2C_write8(_i2caddrP47, SOILMOISTURESENSOR_RESET);
+            success = false;
+            break;
+        }
+        else {
+         UserVar[event->BaseVarIndex] = temperature;
+         UserVar[event->BaseVarIndex + 1] = moisture;
+         UserVar[event->BaseVarIndex + 2] = light;
+
+         String log = F("SoilMoisture: Address: 0x");
+         log += String(_i2caddrP47,HEX);
+         if (PCONFIG(2)) {
+          log += F(" Version: 0x");
+          log += String(sensorVersion,HEX);
+         }
+         addLog(LOG_LEVEL_INFO, log);
+         log = F("SoilMoisture: Temperature: ");
+         log += temperature;
+         addLog(LOG_LEVEL_INFO, log);
+         log = F("SoilMoisture: Moisture: ");
+         log += moisture;
+         addLog(LOG_LEVEL_INFO, log);
+         log = F("SoilMoisture: Light: ");
+         log += light;
+         addLog(LOG_LEVEL_INFO, log);
+
+         if (PCONFIG(1)) {
+
+          I2C_write8(_i2caddrP47, SOILMOISTURESENSOR_SLEEP);
+          addLog(LOG_LEVEL_DEBUG, F("SoilMoisture->sleep"));
+         }
+         success = true;
+         break;
+        }
+      }
+  }
+  return success;
+}
+# 207 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P047_i2c-soil-moisture-sensor.ino"
+float Plugin_047_readTemperature()
+{
+  return I2C_readS16_reg(_i2caddrP47, SOILMOISTURESENSOR_GET_TEMPERATURE);
+}
+
+
+
+
+float Plugin_047_readLight() {
+  return I2C_read16_reg(_i2caddrP47, SOILMOISTURESENSOR_GET_LIGHT);
+}
+
+
+
+
+unsigned int Plugin_047_readMoisture() {
+  return I2C_read16_reg(_i2caddrP47, SOILMOISTURESENSOR_GET_CAPACITANCE);
+}
+
+
+uint8_t Plugin_047_getVersion() {
+  return I2C_read8_reg(_i2caddrP47, SOILMOISTURESENSOR_GET_VERSION);
+}
+# 238 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P047_i2c-soil-moisture-sensor.ino"
+bool Plugin_047_setAddress(int addr) {
+ I2C_write8_reg(_i2caddrP47, SOILMOISTURESENSOR_SET_ADDRESS, addr);
+ I2C_write8_reg(_i2caddrP47, SOILMOISTURESENSOR_SET_ADDRESS, addr);
+ I2C_write8(_i2caddrP47, SOILMOISTURESENSOR_RESET);
+ delayBackground(1000);
+  _i2caddrP47=addr;
+  return (I2C_read8_reg(_i2caddrP47, SOILMOISTURESENSOR_GET_ADDRESS) == addr);
+}
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P048_Motorshield_v2.ino"
+#ifdef USES_P048
+# 13 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P048_Motorshield_v2.ino"
+#include <Adafruit_MotorShield.h>
+
+#define PLUGIN_048 
+#define PLUGIN_ID_048 48
+#define PLUGIN_NAME_048 "Motor - Adafruit Motorshield v2 [TESTING]"
+#define PLUGIN_VALUENAME1_048 "MotorShield v2"
+
+uint8_t Plugin_048_MotorShield_address = 0x60;
+
+int Plugin_048_MotorStepsPerRevolution = 200;
+int Plugin_048_StepperSpeed = 10;
+
+boolean Plugin_048(byte function, struct EventStruct *event, String& string) {
+ boolean success = false;
+
+ Adafruit_MotorShield AFMS;
+
+
+
+ switch (function) {
+
+  case PLUGIN_DEVICE_ADD: {
+   Device[++deviceCount].Number = PLUGIN_ID_048;
+   Device[deviceCount].Type = DEVICE_TYPE_I2C;
+   Device[deviceCount].VType = SENSOR_TYPE_NONE;
+   Device[deviceCount].Ports = 0;
+   Device[deviceCount].PullUpOption = false;
+   Device[deviceCount].InverseLogicOption = false;
+   Device[deviceCount].FormulaOption = false;
+   Device[deviceCount].ValueCount = 0;
+   Device[deviceCount].SendDataOption = false;
+   Device[deviceCount].TimerOption = false;
+   break;
+  }
+
+  case PLUGIN_GET_DEVICENAME: {
+   string = F(PLUGIN_NAME_048);
+   break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES: {
+   strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0],
+     PSTR(PLUGIN_VALUENAME1_048));
+   break;
+  }
+
+  case PLUGIN_WEBFORM_LOAD: {
+
+     addFormTextBox(F("I2C Address (Hex)"), F("p048_adr"),
+                 formatToHex_decimal(PCONFIG(0)), 4);
+
+     addFormNumericBox(F("Stepper: steps per revolution"), F("p048_MotorStepsPerRevolution")
+       , PCONFIG(1));
+
+     addFormNumericBox(F("Stepper speed (rpm)"), F("p048_StepperSpeed")
+       , PCONFIG(2));
+
+   success = true;
+   break;
+  }
+
+  case PLUGIN_WEBFORM_SAVE: {
+   String plugin1 = WebServer.arg(F("p048_adr"));
+   PCONFIG(0) = (int) strtol(plugin1.c_str(), 0, 16);
+
+   PCONFIG(1) = getFormItemInt(F("p048_MotorStepsPerRevolution"));
+
+   PCONFIG(2) = getFormItemInt(F("p048_StepperSpeed"));
+   success = true;
+   break;
+  }
+
+  case PLUGIN_INIT: {
+   Plugin_048_MotorShield_address = PCONFIG(0);
+   Plugin_048_MotorStepsPerRevolution = PCONFIG(1);
+   Plugin_048_StepperSpeed = PCONFIG(2);
+
+   success = true;
+   break;
+  }
+
+  case PLUGIN_READ: {
+
+   success = false;
+   break;
+  }
+
+  case PLUGIN_WRITE: {
+   String cmd = parseString(string, 1);
+
+
+
+
+   if (cmd.equalsIgnoreCase(F("MotorShieldCMD")))
+   {
+        String param1 = parseString(string, 2);
+        String param2 = parseString(string, 3);
+        String param3 = parseString(string, 4);
+        String param4 = parseString(string, 5);
+        String param5 = parseString(string, 6);
+
+    int p2_int;
+    int p4_int;
+    const bool param2_is_int = validIntFromString(param2, p2_int);
+    const bool param4_is_int = validIntFromString(param4, p4_int);
+
+
+    AFMS = Adafruit_MotorShield(Plugin_048_MotorShield_address);
+    String log = F("MotorShield: Address: 0x");
+    log += String(Plugin_048_MotorShield_address,HEX);
+    addLog(LOG_LEVEL_DEBUG, log);
+
+    if (param1.equalsIgnoreCase(F("DCMotor"))) {
+     if (param2_is_int && p2_int > 0 && p2_int < 5)
+     {
+      Adafruit_DCMotor *myMotor;
+      myMotor = AFMS.getMotor(p2_int);
+      if (param3.equalsIgnoreCase(F("Forward")))
+      {
+       byte speed = 255;
+       if (param4_is_int && p4_int >= 0 && p4_int <= 255)
+        speed = p4_int;
+       AFMS.begin();
+       addLog(LOG_LEVEL_INFO, String(F("DCMotor")) + param2 + String(F("->Forward Speed: ")) + String(speed));
+       myMotor->setSpeed(speed);
+       myMotor->run(FORWARD);
+       success = true;
+      }
+      if (param3.equalsIgnoreCase(F("Backward")))
+      {
+       byte speed = 255;
+       if (param4_is_int && p4_int >= 0 && p4_int <= 255)
+        speed = p4_int;
+       AFMS.begin();
+       addLog(LOG_LEVEL_INFO, String(F("DCMotor")) + param2 + String(F("->Backward Speed: ")) + String(speed));
+       myMotor->setSpeed(speed);
+       myMotor->run(BACKWARD);
+       success = true;
+      }
+      if (param3.equalsIgnoreCase(F("Release")))
+      {
+       AFMS.begin();
+       addLog(LOG_LEVEL_INFO, String(F("DCMotor")) + param2 + String(F("->Release")));
+       myMotor->run(RELEASE);
+       success = true;
+      }
+     }
+    }
+
+
+    if (param1.equalsIgnoreCase(F("Stepper")))
+    {
+
+
+     if (param2_is_int && p2_int > 0 && p2_int < 3)
+     {
+      Adafruit_StepperMotor *myStepper;
+      myStepper = AFMS.getStepper(Plugin_048_MotorStepsPerRevolution, p2_int);
+      myStepper->setSpeed(Plugin_048_StepperSpeed);
+      if (loglevelActiveFor(LOG_LEVEL_DEBUG_MORE)) {
+       String log = F("MotorShield: StepsPerRevolution: ");
+       log += String(Plugin_048_MotorStepsPerRevolution);
+       log += F(" Stepperspeed: ");
+       log += String(Plugin_048_StepperSpeed);
+       addLog(LOG_LEVEL_DEBUG_MORE, log);
+      }
+
+      if (param3.equalsIgnoreCase(F("Forward")))
+      {
+       if (param4_is_int && p4_int != 0)
+       {
+        int steps = p4_int;
+        if (param5.equalsIgnoreCase(F("SINGLE")))
+        {
+         AFMS.begin();
+         addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Forward Steps: ")) +
+           steps + String(F(" SINGLE")));
+         myStepper->step(steps, FORWARD, SINGLE);
+         success = true;
+        }
+        if (param5.equalsIgnoreCase(F("DOUBLE")))
+        {
+         AFMS.begin();
+         addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Forward Steps: ")) +
+           steps + String(F(" DOUBLE")));
+         myStepper->step(steps, FORWARD, DOUBLE);
+         success = true;
+        }
+        if (param5.equalsIgnoreCase(F("INTERLEAVE")))
+        {
+         AFMS.begin();
+         addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Forward Steps: ")) +
+           steps + String(F(" INTERLEAVE")));
+         myStepper->step(steps, FORWARD, INTERLEAVE);
+         success = true;
+        }
+        if (param5.equalsIgnoreCase(F("MICROSTEP")))
+        {
+         AFMS.begin();
+         addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Forward Steps: ")) +
+           steps + String(F(" MICROSTEP")));
+         myStepper->step(steps, FORWARD, MICROSTEP);
+         success = true;
+        }
+       }
+      }
+
+      if (param3.equalsIgnoreCase(F("Backward")))
+      {
+       if (param4_is_int && p4_int != 0)
+       {
+        int steps = p4_int;
+        if (param5.equalsIgnoreCase(F("SINGLE")))
+        {
+         AFMS.begin();
+         addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Backward Steps: ")) +
+           steps + String(F(" SINGLE")));
+         myStepper->step(steps, BACKWARD, SINGLE);
+         success = true;
+        }
+        if (param5.equalsIgnoreCase(F("DOUBLE")))
+        {
+         AFMS.begin();
+         addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Backward Steps: ")) +
+           steps + String(F(" DOUBLE")));
+         myStepper->step(steps, BACKWARD, DOUBLE);
+         success = true;
+        }
+        if (param5.equalsIgnoreCase(F("INTERLEAVE")))
+        {
+         AFMS.begin();
+         addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Backward Steps: ")) +
+           steps + String(F(" INTERLEAVE")));
+         myStepper->step(steps, BACKWARD, INTERLEAVE);
+         success = true;
+        }
+        if (param5.equalsIgnoreCase(F("MICROSTEP")))
+        {
+         AFMS.begin();
+         addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Backward Steps: ")) +
+           steps + String(F(" MICROSTEP")));
+         myStepper->step(steps, BACKWARD, MICROSTEP);
+         success = true;
+        }
+
+       }
+      }
+
+      if (param3.equalsIgnoreCase(F("Release")))
+      {
+       AFMS.begin();
+       addLog(LOG_LEVEL_INFO, String(F("Stepper")) + param2 + String(F("->Release.")));
+       myStepper->release();
+       success = true;
+      }
+
+     }
+    }
+
+   }
+
+   break;
+  }
+
+ }
+ return success;
+}
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P049_MHZ19.ino"
+#ifdef USES_P049
+# 28 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P049_MHZ19.ino"
+#define PLUGIN_049 
+#define PLUGIN_ID_049 49
+#define PLUGIN_NAME_049 "Gases - CO2 MH-Z19"
+#define PLUGIN_VALUENAME1_049 "PPM"
+#define PLUGIN_VALUENAME2_049 "Temperature"
+#define PLUGIN_VALUENAME3_049 "U"
+#define PLUGIN_READ_TIMEOUT 300
+
+#define PLUGIN_049_FILTER_OFF 1
+#define PLUGIN_049_FILTER_OFF_ALLSAMPLES 2
+#define PLUGIN_049_FILTER_FAST 3
+#define PLUGIN_049_FILTER_MEDIUM 4
+#define PLUGIN_049_FILTER_SLOW 5
+
+#include <ESPeasySerial.h>
+
+enum MHZ19Types {
+  MHZ19_notDetected,
+  MHZ19_A,
+  MHZ19_B
+};
+
+
+enum mhzCommands : byte { mhzCmdReadPPM,
+                          mhzCmdCalibrateZero,
+                          mhzCmdABCEnable,
+                          mhzCmdABCDisable,
+                          mhzCmdReset,
+#ifdef ENABLE_DETECTION_RANGE_COMMANDS
+                          mhzCmdMeasurementRange1000,
+                          mhzCmdMeasurementRange2000,
+                          mhzCmdMeasurementRange3000,
+                          mhzCmdMeasurementRange5000
+#endif
+                        };
+# 93 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P049_MHZ19.ino"
+const PROGMEM byte mhzCmdData[][3] = {
+  {0x86,0x00,0x00},
+  {0x87,0x00,0x00},
+  {0x79,0xA0,0x00},
+  {0x79,0x00,0x00},
+  {0x8d,0x00,0x00},
+#ifdef ENABLE_DETECTION_RANGE_COMMANDS
+  {0x99,0x03,0xE8},
+  {0x99,0x07,0xD0},
+  {0x99,0x0B,0xB8},
+  {0x99,0x13,0x88}
+#endif
+  };
+
+enum
+{
+  ABC_enabled = 0x01,
+  ABC_disabled = 0x02
+};
+
+
+struct P049_data_struct : public PluginTaskData_base {
+  P049_data_struct() {
+    reset();
+    sensorResets = 0;
+  }
+
+  ~P049_data_struct() { reset(); }
+
+  void reset() {
+    if (easySerial != nullptr) {
+      delete easySerial;
+      easySerial = nullptr;
+    }
+    linesHandled = 0;
+    checksumFailed = 0;
+    nrUnknownResponses = 0;
+    ++sensorResets;
+
+
+    ABC_Disable = false;
+    ABC_MustApply = false;
+    modelA_detected = false;
+  }
+
+  bool init(const int16_t serial_rx, const int16_t serial_tx, bool setABCdisabled) {
+    if (serial_rx < 0 || serial_tx < 0)
+      return false;
+    reset();
+    easySerial = new ESPeasySerial(serial_rx, serial_tx);
+    easySerial->begin(9600);
+    ABC_Disable = setABCdisabled;
+    if (ABC_Disable) {
+
+      ABC_MustApply = true;
+    }
+    lastInitTimestamp = millis();
+    initTimePassed = false;
+    return isInitialized();
+  }
+
+  bool isInitialized() const {
+    return easySerial != nullptr;
+  }
+
+  void setABCmode(int abcDisableSetting) {
+    boolean new_ABC_disable = (abcDisableSetting == ABC_disabled);
+    if (ABC_Disable != new_ABC_disable) {
+
+      ABC_MustApply = true;
+      ABC_Disable = new_ABC_disable;
+    }
+  }
+
+  byte calculateChecksum() const {
+    byte checksum = 0;
+    for (byte i = 1; i < 8; i++)
+      checksum += mhzResp[i];
+    checksum = 0xFF - checksum;
+    return (checksum+1);
+  }
+
+  size_t send_mhzCmd(byte CommandId)
+  {
+    if (!isInitialized()) return 0;
+
+    mhzResp[0] = 0xFF;
+    mhzResp[1] = 0x01;
+    memcpy_P(&mhzResp[2], mhzCmdData[CommandId], sizeof(mhzCmdData[0]));
+    mhzResp[6] = mhzResp[3]; mhzResp[7] = mhzResp[4];
+    mhzResp[3] = mhzResp[4] = mhzResp[5] = 0x00;
+    mhzResp[8] = calculateChecksum();
+
+    if (!initTimePassed) {
+
+      initTimePassed = timePassedSince(lastInitTimestamp) > 180000;
+    }
+
+    return easySerial->write(mhzResp, sizeof(mhzResp));
+  }
+
+  bool read_ppm(unsigned int &ppm, signed int &temp, unsigned int &s, float &u) {
+    if (!isInitialized()) return false;
+
+    byte nbBytesSent = send_mhzCmd(mhzCmdReadPPM);
+    if (nbBytesSent != 9) {
+      return false;
+    }
+
+    memset(mhzResp, 0, sizeof(mhzResp));
+
+    long timer = millis() + PLUGIN_READ_TIMEOUT;
+    int counter = 0;
+    while (!timeOutReached(timer) && (counter < 9)) {
+      if (easySerial->available() > 0) {
+        byte value = easySerial->read();
+        if ((counter == 0 && value == 0xFF) || counter > 0) {
+          mhzResp[counter++] = value;
+        }
+      } else {
+        delay(10);
+      }
+    }
+    if (counter < 9) {
+
+      return false;
+    }
+    ++linesHandled;
+    if ( !(mhzResp[8] == calculateChecksum()) ) {
+      ++checksumFailed;
+      return false;
+    }
+    if (mhzResp[0] == 0xFF && mhzResp[1] == 0x86) {
+
+      ppm = (static_cast<unsigned int>(mhzResp[2]) << 8) + mhzResp[3];
+
+
+      unsigned int mhzRespTemp = (unsigned int) mhzResp[4];
+      temp = mhzRespTemp - 40;
+
+
+      s = mhzResp[5];
+      if (s != 0) {
+        modelA_detected = true;
+      }
+
+
+      u = (static_cast<unsigned int>(mhzResp[6]) << 8) + mhzResp[7];
+      return true;
+    }
+    return false;
+  }
+
+  bool receivedCommandAcknowledgement(bool& expectReset) {
+    expectReset = false;
+    if (mhzResp[0] == 0xFF) {
+      switch (mhzResp[1]) {
+        case 0x86:
+        case 0x79:
+          break;
+        case 0x87:
+        case 0x88:
+        case 0x99:
+          expectReset = true;
+          break;
+        default:
+          ++nrUnknownResponses;
+          return false;
+      }
+      byte checksum = calculateChecksum();
+      return mhzResp[8] == checksum;
+    }
+    ++nrUnknownResponses;
+    return false;
+  }
+
+  String getBufferHexDump() {
+    String result;
+    result.reserve(27);
+    for (int i = 0; i < 9; ++i) {
+      result += ' ';
+      result += String(mhzResp[i], HEX);
+    }
+    return result;
+  }
+
+  MHZ19Types getDetectedDevice() {
+    if (linesHandled > checksumFailed) {
+      return modelA_detected ? MHZ19_A : MHZ19_B;
+    }
+    return MHZ19_notDetected;
+  }
+
+
+  uint32_t linesHandled = 0;
+  uint32_t checksumFailed = 0;
+  uint32_t sensorResets = 0;
+  uint32_t nrUnknownResponses = 0;
+  unsigned long lastInitTimestamp = 0;
+
+  ESPeasySerial *easySerial = nullptr;
+  byte mhzResp[9];
+
+  bool ABC_Disable = false;
+  bool ABC_MustApply = false;
+  bool modelA_detected = false;
+  bool initTimePassed = false;
+};
+
+
+boolean Plugin_049_Check_and_ApplyFilter(unsigned int prevVal, unsigned int &newVal, uint32_t s, const int filterValue, String& log) {
+  if (s == 1) {
+
+    return false;
+  }
+  if (prevVal < 400 || prevVal > 5000) {
+
+
+    return true;
+  }
+  boolean filterApplied = filterValue > PLUGIN_049_FILTER_OFF_ALLSAMPLES;
+  int32_t difference = newVal - prevVal;
+  if (s > 0 && s < 64 && filterValue != PLUGIN_049_FILTER_OFF) {
+# 324 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P049_MHZ19.ino"
+    difference = difference * s;
+    difference /= 64;
+    log += F("Compensate Unstable ");
+    filterApplied = true;
+  }
+  switch (filterValue) {
+    case PLUGIN_049_FILTER_OFF: {
+      if (s != 0 && s != 64) {
+        log += F("Skip Unstable ");
+        return false;
+      }
+      filterApplied = false;
+      break;
+    }
+
+    case PLUGIN_049_FILTER_OFF_ALLSAMPLES: filterApplied = false; break;
+    case PLUGIN_049_FILTER_FAST: difference /= 2; break;
+    case PLUGIN_049_FILTER_MEDIUM: difference /= 4; break;
+    case PLUGIN_049_FILTER_SLOW: difference /= 8; break;
+  }
+  if (filterApplied) {
+    log += F("Raw PPM: ");
+    log += newVal;
+    log += F(" Filtered ");
+  }
+  newVal = static_cast<unsigned int>(prevVal + difference);
+  return true;
+}
+
+boolean Plugin_049(byte function, struct EventStruct *event, String& string)
+{
+  bool success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_049;
+        Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+        Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_049);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_049));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_049));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_049));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        serialHelper_getGpioNames(event);
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        serialHelper_webformLoad(event);
+        byte choice = PCONFIG(0);
+        String options[2] = { F("Normal"), F("ABC disabled") };
+        int optionValues[2] = { ABC_enabled, ABC_disabled };
+        addFormSelector(F("Auto Base Calibration"), F("p049_abcdisable"), 2, options, optionValues, choice);
+        byte choiceFilter = PCONFIG(1);
+        String filteroptions[5] = { F("Skip Unstable"), F("Use Unstable"), F("Fast Response"), F("Medium Response"), F("Slow Response") };
+        int filteroptionValues[5] = {
+          PLUGIN_049_FILTER_OFF,
+          PLUGIN_049_FILTER_OFF_ALLSAMPLES,
+          PLUGIN_049_FILTER_FAST,
+          PLUGIN_049_FILTER_MEDIUM,
+          PLUGIN_049_FILTER_SLOW };
+        addFormSelector(F("Filter"), F("p049_filter"), 5, filteroptions, filteroptionValues, choiceFilter);
+
+        P049_html_show_stats(event);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        P049_data_struct *P049_data =
+            static_cast<P049_data_struct *>(getPluginTaskData(event->TaskIndex));
+        if (nullptr == P049_data) {
+          return success;
+        }
+        serialHelper_webformSave(event);
+        const int formValue = getFormItemInt(F("p049_abcdisable"));
+        P049_data->setABCmode(formValue);
+        PCONFIG(0) = formValue;
+        PCONFIG(1) = getFormItemInt(F("p049_filter"));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        initPluginTaskData(event->TaskIndex, new P049_data_struct());
+        success = P049_performInit(event);
+        break;
+      }
+
+    case PLUGIN_EXIT: {
+      clearPluginTaskData(event->TaskIndex);
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WRITE:
+      {
+        P049_data_struct *P049_data =
+            static_cast<P049_data_struct *>(getPluginTaskData(event->TaskIndex));
+        if (nullptr == P049_data) {
+          return success;
+        }
+
+        String command = parseString(string, 1);
+
+        if (command == F("mhzcalibratezero"))
+        {
+          P049_data->send_mhzCmd(mhzCmdCalibrateZero);
+          addLog(LOG_LEVEL_INFO, F("MHZ19: Calibrated zero point!"));
+          success = true;
+        }
+        else if (command == F("mhzreset"))
+        {
+          P049_data->send_mhzCmd(mhzCmdReset);
+          addLog(LOG_LEVEL_INFO, F("MHZ19: Sent sensor reset!"));
+          success = true;
+        }
+        else if (command == F("mhzabcenable"))
+        {
+          P049_data->send_mhzCmd(mhzCmdABCEnable);
+          addLog(LOG_LEVEL_INFO, F("MHZ19: Sent sensor ABC Enable!"));
+          success = true;
+        }
+        else if (command == F("mhzabcdisable"))
+        {
+          P049_data->send_mhzCmd(mhzCmdABCDisable);
+          addLog(LOG_LEVEL_INFO, F("MHZ19: Sent sensor ABC Disable!"));
+          success = true;
+        }
+
+#ifdef ENABLE_DETECTION_RANGE_COMMANDS
+        else if (command.startsWith(F("mhzmeasurementrange"))) {
+          if (command == F("mhzmeasurementrange1000"))
+          {
+            P049_data->send_mhzCmd(mhzCmdMeasurementRange1000);
+            addLog(LOG_LEVEL_INFO, F("MHZ19: Sent measurement range 0-1000PPM!"));
+            success = true;
+          }
+          else if (command == F("mhzmeasurementrange2000"))
+          {
+            P049_data->send_mhzCmd(mhzCmdMeasurementRange2000);
+            addLog(LOG_LEVEL_INFO, F("MHZ19: Sent measurement range 0-2000PPM!"));
+            success = true;
+          }
+          else if (command == F("mhzmeasurementrange3000"))
+          {
+            P049_data->send_mhzCmd(mhzCmdMeasurementRange3000);
+            addLog(LOG_LEVEL_INFO, F("MHZ19: Sent measurement range 0-3000PPM!"));
+            success = true;
+          }
+          else if (command == F("mhzmeasurementrange5000"))
+          {
+            P049_data->send_mhzCmd(mhzCmdMeasurementRange5000);
+            addLog(LOG_LEVEL_INFO, F("MHZ19: Sent measurement range 0-5000PPM!"));
+            success = true;
+          }
+        }
+#endif
+        break;
+
+      }
+
+    case PLUGIN_READ:
+      {
+        P049_data_struct *P049_data =
+            static_cast<P049_data_struct *>(getPluginTaskData(event->TaskIndex));
+        if (nullptr == P049_data) {
+          return success;
+        }
+        bool expectReset = false;
+        unsigned int ppm = 0;
+        signed int temp = 0;
+        unsigned int s = 0;
+        float u = 0;
+        if (P049_data->read_ppm(ppm, temp, s, u)) {
+            String log = F("MHZ19: ");
+
+
+
+            if (u == 15000) {
+              log += F("Bootup detected! ");
+              if (P049_data->ABC_Disable) {
+
+
+                P049_data->ABC_MustApply = true;
+                log += F("Will disable ABC when bootup complete. ");
+              }
+              success = false;
+
+            } else {
+              const int filterValue = PCONFIG(1);
+              if (Plugin_049_Check_and_ApplyFilter(UserVar[event->BaseVarIndex], ppm, s, filterValue, log)) {
+                UserVar[event->BaseVarIndex] = (float)ppm;
+                UserVar[event->BaseVarIndex + 1] = (float)temp;
+                UserVar[event->BaseVarIndex + 2] = (float)u;
+                if (s==0 || s==64) {
+
+                  if (P049_data->ABC_MustApply) {
+
+                    if (P049_data->ABC_Disable) {
+                      P049_data->send_mhzCmd(mhzCmdABCDisable);
+                      addLog(LOG_LEVEL_INFO, F("MHZ19: Sent sensor ABC Disable!"));
+                    } else {
+                      P049_data->send_mhzCmd(mhzCmdABCEnable);
+                      addLog(LOG_LEVEL_INFO, F("MHZ19: Sent sensor ABC Enable!"));
+                    }
+                    P049_data->ABC_MustApply = false;
+                  }
+                }
+                success = true;
+              } else {
+                success = false;
+              }
+            }
+
+
+            log += F("PPM value: ");
+            log += ppm;
+            log += F(" Temp/S/U values: ");
+            log += temp;
+            log += '/';
+            log += s;
+            log += '/';
+            log += u;
+            addLog(LOG_LEVEL_INFO, log);
+            break;
+
+
+
+        } else if (P049_data->receivedCommandAcknowledgement(expectReset)) {
+          addLog(LOG_LEVEL_INFO, F("MHZ19: Received command acknowledgment! "));
+          if (expectReset) {
+            addLog(LOG_LEVEL_INFO, F("Expecting sensor reset..."));
+          }
+          success = false;
+          break;
+
+
+
+        } else {
+          if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+            String log = F("MHZ19: Unknown response:");
+            log += P049_data->getBufferHexDump();
+            addLog(LOG_LEVEL_INFO, log);
+          }
+
+          if (P049_data->nrUnknownResponses > 10 && P049_data->initTimePassed) {
+            P049_performInit(event);
+          }
+          success = false;
+          break;
+        }
+        break;
+      }
+  }
+  return success;
+}
+
+bool P049_performInit(struct EventStruct *event) {
+  bool success = false;
+  const int16_t serial_rx = CONFIG_PIN1;
+  const int16_t serial_tx = CONFIG_PIN2;
+  P049_data_struct *P049_data =
+      static_cast<P049_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P049_data) {
+    return success;
+  }
+  if (P049_data->init(serial_rx, serial_tx, PCONFIG(0) == ABC_disabled)) {
+    success = true;
+    addLog(LOG_LEVEL_INFO, F("MHZ19: Init OK "));
+
+
+
+    schedule_task_device_timer(event->TaskIndex, millis() + 15000);
+  }
+  return success;
+}
+
+void P049_html_show_stats(struct EventStruct *event) {
+  P049_data_struct *P049_data =
+      static_cast<P049_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P049_data) {
+    return;
+  }
+
+  addRowLabel(F("Checksum (pass/fail/reset)"));
+  String chksumStats;
+  chksumStats = P049_data->linesHandled;
+  chksumStats += '/';
+  chksumStats += P049_data->checksumFailed;
+  chksumStats += '/';
+  chksumStats += P049_data->sensorResets;
+  addHtml(chksumStats);
+  addRowLabel(F("Detected"));
+  switch (P049_data->getDetectedDevice()) {
+    case MHZ19_A: addHtml(F("MH-Z19A")); break;
+    case MHZ19_B: addHtml(F("MH-Z19B")); break;
+    default: addHtml("---"); break;
+  }
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P050_TCS34725.ino"
+#ifdef USES_P050
+# 13 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P050_TCS34725.ino"
+#include "Adafruit_TCS34725.h"
+
+#define PLUGIN_050 
+#define PLUGIN_ID_050 50
+#define PLUGIN_NAME_050 "Color - TCS34725  [DEVELOPMENT]"
+#define PLUGIN_VALUENAME1_050 "Red"
+#define PLUGIN_VALUENAME2_050 "Green"
+#define PLUGIN_VALUENAME3_050 "Blue"
+#define PLUGIN_VALUENAME4_050 "Color Temperature"
+
+
+
+
+boolean Plugin_050(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_050;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 4;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_050);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_050));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_050));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_050));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3], PSTR(PLUGIN_VALUENAME4_050));
+        break;
+      }
+
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte choiceMode = PCONFIG(0);
+        String optionsMode[6];
+        optionsMode[0] = F("TCS34725_INTEGRATIONTIME_2_4MS");
+        optionsMode[1] = F("TCS34725_INTEGRATIONTIME_24MS");
+        optionsMode[2] = F("TCS34725_INTEGRATIONTIME_50MS");
+        optionsMode[3] = F("TCS34725_INTEGRATIONTIME_101MS");
+        optionsMode[4] = F("TCS34725_INTEGRATIONTIME_154MS");
+        optionsMode[5] = F("TCS34725_INTEGRATIONTIME_700MS");
+        int optionValuesMode[6];
+        optionValuesMode[0] = TCS34725_INTEGRATIONTIME_2_4MS;
+        optionValuesMode[1] = TCS34725_INTEGRATIONTIME_24MS;
+        optionValuesMode[2] = TCS34725_INTEGRATIONTIME_50MS;
+        optionValuesMode[3] = TCS34725_INTEGRATIONTIME_101MS;
+        optionValuesMode[4] = TCS34725_INTEGRATIONTIME_154MS;
+        optionValuesMode[5] = TCS34725_INTEGRATIONTIME_700MS;
+        addFormSelector(F("Integration Time"), F("p050_integrationTime"), 6, optionsMode, optionValuesMode, choiceMode);
+
+        byte choiceMode2 = PCONFIG(1);
+        String optionsMode2[4];
+        optionsMode2[0] = F("TCS34725_GAIN_1X");
+        optionsMode2[1] = F("TCS34725_GAIN_4X");
+        optionsMode2[2] = F("TCS34725_GAIN_16X");
+        optionsMode2[3] = F("TCS34725_GAIN_60X");
+        int optionValuesMode2[4];
+        optionValuesMode2[0] = TCS34725_GAIN_1X;
+        optionValuesMode2[1] = TCS34725_GAIN_4X;
+        optionValuesMode2[2] = TCS34725_GAIN_16X;
+        optionValuesMode2[3] = TCS34725_GAIN_60X;
+        addFormSelector(F("Gain"), F("p050_gain"), 4, optionsMode2, optionValuesMode2, choiceMode2);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        String plugin1 = WebServer.arg(F("p050_integrationTime"));
+        PCONFIG(0) = plugin1.toInt();
+        String plugin2 = WebServer.arg(F("p050_gain"));
+        PCONFIG(1) = plugin2.toInt();
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+       tcs34725IntegrationTime_t integrationTime;
+        if (PCONFIG(0)==TCS34725_INTEGRATIONTIME_2_4MS)
+         integrationTime = TCS34725_INTEGRATIONTIME_2_4MS;
+        if (PCONFIG(0)==TCS34725_INTEGRATIONTIME_24MS)
+         integrationTime = TCS34725_INTEGRATIONTIME_24MS;
+        if (PCONFIG(0)==TCS34725_INTEGRATIONTIME_50MS)
+         integrationTime = TCS34725_INTEGRATIONTIME_50MS;
+        if (PCONFIG(0)==TCS34725_INTEGRATIONTIME_101MS)
+         integrationTime = TCS34725_INTEGRATIONTIME_101MS;
+        if (PCONFIG(0)==TCS34725_INTEGRATIONTIME_154MS)
+         integrationTime = TCS34725_INTEGRATIONTIME_154MS;
+        if (PCONFIG(0)==TCS34725_INTEGRATIONTIME_700MS)
+         integrationTime = TCS34725_INTEGRATIONTIME_700MS;
+
+        tcs34725Gain_t gain;
+        if (PCONFIG(1)==TCS34725_GAIN_1X)
+         gain = TCS34725_GAIN_1X;
+        if (PCONFIG(1)==TCS34725_GAIN_4X)
+         gain = TCS34725_GAIN_4X;
+        if (PCONFIG(1)==TCS34725_GAIN_16X)
+         gain = TCS34725_GAIN_16X;
+        if (PCONFIG(1)==TCS34725_GAIN_60X)
+         gain = TCS34725_GAIN_60X;
+
+
+       Adafruit_TCS34725 tcs = Adafruit_TCS34725(integrationTime, gain);
+        if (tcs.begin()) {
+
+         addLog(LOG_LEVEL_DEBUG, F("Found TCS34725 sensor"));
+
+          uint16_t r, g, b, c;
+
+          tcs.getRawData(&r, &g, &b, &c);
+          tcs.calculateColorTemperature(r, g, b);
+          tcs.calculateLux(r, g, b);
+
+          UserVar[event->BaseVarIndex] = r;
+          UserVar[event->BaseVarIndex + 1] = g;
+          UserVar[event->BaseVarIndex + 2] = b;
+          UserVar[event->BaseVarIndex + 3] = tcs.calculateColorTemperature(r, g, b);
+
+          String log = F("TCS34725: Color Temp (K): ");
+          log += String(UserVar[event->BaseVarIndex + 3], DEC);
+          log += F(" R: ");
+          log += String(UserVar[event->BaseVarIndex], DEC);
+          log += F(" G: ");
+          log += String(UserVar[event->BaseVarIndex + 1], DEC);
+          log += F(" B: ");
+          log += String(UserVar[event->BaseVarIndex + 2], DEC);
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+
+        } else {
+         addLog(LOG_LEVEL_DEBUG, F("No TCS34725 found"));
+         success = false;
+        }
+
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P051_AM2320.ino"
+#ifdef USES_P051
+# 14 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P051_AM2320.ino"
+#include <AM2320.h>
+
+#define PLUGIN_051 
+#define PLUGIN_ID_051 51
+#define PLUGIN_NAME_051 "Environment - AM2320 [TESTING]"
+#define PLUGIN_VALUENAME1_051 "Temperature"
+#define PLUGIN_VALUENAME2_051 "Humidity"
+
+
+
+
+boolean Plugin_051(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_051;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_HUM;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_051);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_051));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_051));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+       AM2320 th;
+
+        switch(th.Read()) {
+          case 2:
+           addLog(LOG_LEVEL_ERROR, F("AM2320: CRC failed"));
+            break;
+          case 1:
+           addLog(LOG_LEVEL_ERROR, F("AM2320: Sensor offline"));
+            break;
+          case 0:
+          {
+           UserVar[event->BaseVarIndex] = th.t;
+           UserVar[event->BaseVarIndex + 1] = th.h;
+
+           String log = F("AM2320: Temperature: ");
+           log += UserVar[event->BaseVarIndex];
+           addLog(LOG_LEVEL_INFO, log);
+           log = F("AM2320: Humidity: ");
+           log += UserVar[event->BaseVarIndex + 1];
+           addLog(LOG_LEVEL_INFO, log);
+            success = true;
+            break;
+          }
+        }
+
+
+      }
+  }
+  return success;
+}
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P052_SenseAir.ino"
+#ifdef USES_P052
+# 22 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P052_SenseAir.ino"
+#define PLUGIN_052 
+#define PLUGIN_ID_052 52
+#define PLUGIN_NAME_052 "Gases - CO2 Senseair"
+#define PLUGIN_VALUENAME1_052 ""
+
+#define P052_MEASUREMENT_INTERVAL 60000L
+
+
+#define P052_QUERY1_CONFIG_POS 0
+#define P052_SENSOR_TYPE_INDEX P052_QUERY1_CONFIG_POS + (VARS_PER_TASK + 1)
+#define P052_NR_OUTPUT_VALUES getValueCountFromSensorType(PCONFIG(P052_SENSOR_TYPE_INDEX))
+
+#define P052_NR_OUTPUT_OPTIONS 8
+
+
+
+
+
+
+
+#define P052_RAM_ADDR_ERROR_STATUS 0x1E
+#define P052_RAM_ADDR_METER_STATUS 0x1D
+#define P052_RAM_ADDR_ALARM_STATUS 0x1C
+#define P052_RAM_ADDR_CO2 0x08
+#define P052_RAM_ADDR_DET_TEMPERATURE 0x0A
+#define P052_RAM_ADDR_SPACE_TEMPERATURE 0x12
+#define P052_RAM_ADDR_RELATIVE_HUMIDITY 0x14
+#define P052_RAM_ADDR_MIXING_RATIO 0x16
+#define P052_RAM_ADDR_HR1 0x40
+#define P052_RAM_ADDR_HR2 0x42
+#define P052_RAM_ADDR_ANIN4 0x69
+#define P052_RAM_ADDR_RTC 0x65
+#define P052_RAM_ADDR_SCR 0x60
+
+#define P052_CMD_READ_RAM 0x44
+
+
+#define P052_EEPROM_ADDR_METERCONTROL 0x03
+#define P052_EEPROM_ADDR_METERCONFIG 0x06
+#define P052_EEPROM_ADDR_ABC_PERIOD 0x40
+#define P052_EEPROM_ADDR_HEARTBEATPERIOD 0xA2
+#define P052_EEPROM_ADDR_PUMPPERIOD 0xA3
+#define P052_EEPROM_ADDR_MEASUREMENT_SLEEP_PERIOD 0xB0
+#define P052_EEPROM_ADDR_LOGGER_STRUCTURE_ADDRESS 0x200
+
+
+#define P052_SCR_FORCE_START_MEASUREMENT 0x30
+#define P052_SCR_FORCE_STOP_MEASUREMENT 0x31
+#define P052_SCR_RESTART_LOGGER 0x32
+#define P052_SCR_REINITIALIZE_LOGGER 0x33
+#define P052_SCR_WRITE_TIMESTAMP_TO_LOGGER 0x34
+#define P052_SCR_SINGLE_MEASUREMENT 0x35
+
+
+#define P052_IR_ERRORSTATUS 0
+#define P052_IR_ALARMSTATUS 1
+#define P052_IR_OUTPUTSTATUS 2
+#define P052_IR_SPACE_CO2 3
+#define P052_IR_TEMPERATURE 4
+#define P052_IR_SPACE_HUMIDITY 5
+#define P052_IR_MEASUREMENT_COUNT 6
+#define P052_IR_MEASUREMENT_CYCLE_TIME 7
+#define P052_IR_CO2_UNFILTERED 8
+
+
+
+#define P052_HR_ACK_REG 0
+#define P052_HR_SPACE_CO2 3
+#define P052_HR_ABC_PERIOD 31
+
+
+#define P052_MODBUS_SLAVE_ADDRESS 0xFE
+
+#define P052_MODBUS_TIMEOUT 180
+
+#include <ESPeasySerial.h>
+
+
+struct P052_data_struct : public PluginTaskData_base {
+  P052_data_struct() {}
+
+  ~P052_data_struct() { reset(); }
+
+  void reset() {
+    modbus.reset();
+  }
+
+  bool init(const int16_t serial_rx, const int16_t serial_tx) {
+    return modbus.init(serial_rx, serial_tx, 9600, P052_MODBUS_SLAVE_ADDRESS);
+  }
+
+  bool isInitialized() const {
+    return modbus.isInitialized();
+  }
+
+  ModbusRTU_struct modbus;
+  byte sensortype;
+};
+
+unsigned int _plugin_052_last_measurement = 0;
+
+
+String Plugin_052_valuename(byte value_nr, bool displayString) {
+  switch (value_nr) {
+    case 0: return displayString ? F("Empty") : F("");
+    case 1: return displayString ? F("Carbon Dioxide") : F("co2");
+    case 2: return displayString ? F("Temperature") : F("T");
+    case 3: return displayString ? F("Humidity") : F("H");
+    case 4: return displayString ? F("Relay Status") : F("rel");
+    case 5: return displayString ? F("Temperature Adjustment") : F("Tadj");
+    case 6: return displayString ? F("ABC period") : F("abc_per");
+    case 7: return displayString ? F("Error Status") : F("err");
+    default:
+    break;
+  }
+  return "";
+}
+
+
+
+boolean Plugin_052(byte function, struct EventStruct *event, String &string) {
+  boolean success = false;
+  switch (function) {
+
+  case PLUGIN_DEVICE_ADD: {
+    Device[++deviceCount].Number = PLUGIN_ID_052;
+    Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+    Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+    Device[deviceCount].Ports = 0;
+    Device[deviceCount].PullUpOption = false;
+    Device[deviceCount].InverseLogicOption = false;
+    Device[deviceCount].FormulaOption = true;
+    Device[deviceCount].ValueCount = 1;
+    Device[deviceCount].SendDataOption = true;
+    Device[deviceCount].TimerOption = true;
+    Device[deviceCount].GlobalSyncOption = true;
+    break;
+  }
+
+  case PLUGIN_GET_DEVICENAME: {
+    string = F(PLUGIN_NAME_052);
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES: {
+    for (byte i = 0; i < VARS_PER_TASK; ++i) {
+      if ( i < P052_NR_OUTPUT_VALUES) {
+        const byte pconfigIndex = i + P052_QUERY1_CONFIG_POS;
+        byte choice = PCONFIG(pconfigIndex);
+        safe_strncpy(
+          ExtraTaskSettings.TaskDeviceValueNames[i],
+          Plugin_052_valuename(choice, false),
+          sizeof(ExtraTaskSettings.TaskDeviceValueNames[i]));
+      } else {
+        ZERO_FILL(ExtraTaskSettings.TaskDeviceValueNames[i]);
+      }
+    }
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEGPIONAMES: {
+    serialHelper_getGpioNames(event);
+    break;
+  }
+
+  case PLUGIN_SET_DEFAULTS:
+  {
+    PCONFIG(0) = 1;
+    for (byte i = 1; i < VARS_PER_TASK; ++i) {
+      PCONFIG(i) = 0;
+    }
+
+    success = true;
+    break;
+  }
+
+
+  case PLUGIN_WRITE: {
+    String cmd = parseString(string, 1);
+    String param1 = parseString(string, 2);
+
+    if (cmd.equalsIgnoreCase(F("senseair_setrelay"))) {
+      int par1;
+      if (validIntFromString(param1, par1)) {
+        if (par1 == 0 || par1 == 1 || par1 == -1) {
+          short relaystatus = 0;
+
+          switch (par1) {
+          case 0:
+            relaystatus = 0;
+            break;
+          case 1:
+            relaystatus = 0x3FFF;
+            break;
+          default:
+            relaystatus = 0x7FFF;
+            break;
+          }
+          P052_data_struct *P052_data =
+              static_cast<P052_data_struct *>(getPluginTaskData(event->TaskIndex));
+          if (nullptr != P052_data && P052_data->isInitialized()) {
+            P052_data->modbus.writeSingleRegister(0x18, relaystatus);
+            addLog(LOG_LEVEL_INFO, String(F("Senseair command: relay=")) + param1);
+          }
+        }
+      }
+      success = true;
+    }
+# 245 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P052_SenseAir.ino"
+    break;
+  }
+
+  case PLUGIN_WEBFORM_LOAD: {
+    serialHelper_webformLoad(event);
+
+    P052_data_struct *P052_data =
+        static_cast<P052_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P052_data && P052_data->isInitialized()) {
+      addFormSubHeader(F("Device Information"));
+      {
+        String detectedString = P052_data->modbus.detected_device_description;
+        if (detectedString.length() > 0) {
+          addRowLabel(F("Detected Device"));
+          addHtml(detectedString);
+        }
+        addRowLabel(F("Checksum (pass/fail)"));
+        uint32_t reads_pass, reads_crc_failed;
+        P052_data->modbus.getStatistics(reads_pass, reads_crc_failed);
+        String chksumStats;
+        chksumStats = reads_pass;
+        chksumStats += '/';
+        chksumStats += reads_crc_failed;
+        addHtml(chksumStats);
+
+        int value = P052_data->modbus.readInputRegister(0x06);
+        if (value != -1) {
+          addRowLabel(F("Measurement Count"));
+          addHtml(String(value));
+        }
+
+        value = P052_data->modbus.readInputRegister(0x07);
+        if (value != -1) {
+          addRowLabel(F("Measurement Cycle time"));
+          addHtml(String(value * 2));
+        }
+
+        value = P052_data->modbus.readInputRegister(0x08);
+        if (value != -1) {
+          addRowLabel(F("Unfiltered CO2"));
+          addHtml(String(value));
+        }
+      }
+
+      {
+        int meas_mode = P052_data->modbus.readHoldingRegister(0x0A);
+        int period = P052_data->modbus.readHoldingRegister(0x0B);
+        int samp_meas = P052_data->modbus.readHoldingRegister(0x0C);
+        if (meas_mode != -1 && period != -1 && samp_meas != -1) {
+          addFormSubHeader(F("Device Settings"));
+
+
+
+
+
+
+
+          if (period != -1) {
+            addFormNumericBox(F("Measurement Period"), F("p052_period"), period, 2, 65534);
+            addUnit(F("s"));
+          }
+          if (samp_meas != -1) {
+            addFormNumericBox(F("Samples per measurement"), F("p052_samp_meas"), samp_meas, 1, 1024);
+          }
+        }
+      }
+    }
+    sensorTypeHelper_webformLoad_simple(event, P052_SENSOR_TYPE_INDEX);
+# 324 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P052_SenseAir.ino"
+    {
+      String options[P052_NR_OUTPUT_OPTIONS];
+      for (byte i = 0; i < P052_NR_OUTPUT_OPTIONS; ++i) {
+        options[i] = Plugin_052_valuename(i, true);
+      }
+      for (byte i = 0; i < P052_NR_OUTPUT_VALUES; ++i) {
+        const byte pconfigIndex = i + P052_QUERY1_CONFIG_POS;
+        sensorTypeHelper_loadOutputSelector(event, pconfigIndex, i, P052_NR_OUTPUT_OPTIONS, options);
+      }
+    }
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_WEBFORM_SAVE: {
+    serialHelper_webformSave(event);
+
+    for (byte i = 0; i < P052_NR_OUTPUT_VALUES; ++i) {
+      const byte pconfigIndex = i + P052_QUERY1_CONFIG_POS;
+      const byte choice = PCONFIG(pconfigIndex);
+      sensorTypeHelper_saveOutputSelector(event, pconfigIndex, i, Plugin_052_valuename(choice, false));
+    }
+    sensorTypeHelper_saveSensorType(event, P052_SENSOR_TYPE_INDEX);
+
+    P052_data_struct *P052_data =
+        static_cast<P052_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P052_data && P052_data->isInitialized()) {
+      bool changed = false;
+      uint16_t mode = getFormItemInt(F("p052_mode"), 65535);
+      if ((mode == 0 || mode == 1) && P052_data->modbus.readHoldingRegister(0x0A) != mode) {
+        P052_data->modbus.writeMultipleRegisters(0x0A, mode);
+        delay(0);
+        changed = true;
+      }
+      uint16_t period = getFormItemInt(F("p052_period"), 0);
+      if (period > 1 && P052_data->modbus.readHoldingRegister(0x0B) != period) {
+        P052_data->modbus.writeMultipleRegisters(0x0B, period);
+        delay(0);
+        changed = true;
+      }
+      uint16_t samp_meas = getFormItemInt(F("p052_samp_meas"), 0);
+      if (samp_meas > 0 && samp_meas <= 1024 && P052_data->modbus.readHoldingRegister(0x0C) != samp_meas) {
+        P052_data->modbus.writeMultipleRegisters(0x0C, samp_meas);
+        delay(0);
+        changed = true;
+      }
+      if (changed) {
+
+        P052_data->modbus.writeMultipleRegisters(0x11, 0xFF);
+
+        delay(35);
+      }
+    }
+# 386 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P052_SenseAir.ino"
+    success = true;
+    break;
+  }
+
+  case PLUGIN_INIT: {
+    const int16_t serial_rx = CONFIG_PIN1;
+    const int16_t serial_tx = CONFIG_PIN2;
+    initPluginTaskData(event->TaskIndex, new P052_data_struct());
+    P052_data_struct *P052_data =
+        static_cast<P052_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr == P052_data) {
+      return success;
+    }
+    if (P052_data->init(serial_rx, serial_tx)) {
+# 409 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P052_SenseAir.ino"
+      sensorTypeHelper_setSensorType(event, P052_SENSOR_TYPE_INDEX);
+      P052_data->modbus.setModbusTimeout(P052_MODBUS_TIMEOUT);
+
+
+
+
+      success = true;
+    } else {
+      clearPluginTaskData(event->TaskIndex);
+    }
+    break;
+  }
+
+  case PLUGIN_EXIT: {
+    clearPluginTaskData(event->TaskIndex);
+    success = true;
+    break;
+  }
+
+  case PLUGIN_READ: {
+    P052_data_struct *P052_data =
+        static_cast<P052_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P052_data && P052_data->isInitialized()) {
+      event->sensorType = PCONFIG(P052_SENSOR_TYPE_INDEX);
+      String log = F("Senseair: ");
+      for (int varnr = 0; varnr < P052_NR_OUTPUT_VALUES; ++varnr) {
+        switch (PCONFIG(varnr)) {
+          case 1: {
+            int co2 = P052_data->modbus.readInputRegister(P052_IR_SPACE_CO2);
+            UserVar[event->BaseVarIndex + varnr] = co2;
+            log += F("co2 = ");
+            log += co2;
+            break;
+          }
+          case 2: {
+            int temperatureX100 = P052_data->modbus.readInputRegister(P052_IR_TEMPERATURE);
+            if (temperatureX100 == -1) {
+
+              temperatureX100 = P052_data->modbus.read_RAM_EEPROM(
+                  P052_CMD_READ_RAM, P052_RAM_ADDR_DET_TEMPERATURE, 2);
+            }
+            float temperature = static_cast<float>(temperatureX100) / 100.0;
+            UserVar[event->BaseVarIndex + varnr] = (float)temperature;
+            log += F("temperature = ");
+            log += (float)temperature;
+            break;
+          }
+          case 3: {
+            int rhX100 = P052_data->modbus.readInputRegister(P052_IR_SPACE_HUMIDITY);
+            float rh = static_cast<float>(rhX100) / 100.0;
+            UserVar[event->BaseVarIndex + varnr] = rh;
+            log += F("humidity = ");
+            log += rh;
+            break;
+          }
+          case 4: {
+            int status = P052_data->modbus.readInputRegister(0x1C);
+            int relayStatus = (status >> 8) & 0x1;
+            UserVar[event->BaseVarIndex + varnr] = relayStatus;
+            log += F("relay status = ");
+            log += relayStatus;
+            break;
+          }
+          case 5: {
+            int temperatureAdjustment = P052_data->modbus.readInputRegister(0x0A);
+            UserVar[event->BaseVarIndex + varnr] = temperatureAdjustment;
+            log += F("temperature adjustment = ");
+            log += temperatureAdjustment;
+            break;
+          }
+
+          case 7: {
+            int errorWord = P052_data->modbus.readInputRegister(P052_IR_ERRORSTATUS);
+            for (size_t i = 0; i < 9; i++) {
+              if (bitRead(errorWord, i)) {
+                UserVar[event->BaseVarIndex + varnr] = i;
+                log += F("error code = ");
+                log += i;
+                break;
+              }
+            }
+
+            UserVar[event->BaseVarIndex + varnr] = -1;
+            log += F("error code = ");
+            log += -1;
+            break;
+          }
+          case 0:
+          default: {
+            UserVar[event->BaseVarIndex + varnr] = 0;
+            break;
+          }
+        }
+      }
+      addLog(LOG_LEVEL_INFO, log);
+
+      success = true;
+      break;
+    }
+    break;
+  }
+  }
+  return success;
+}
+# 652 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P052_SenseAir.ino"
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P053_PMSx003.ino"
+#ifdef USES_P053
+# 13 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P053_PMSx003.ino"
+#include <ESPeasySerial.h>
+
+#define PLUGIN_053 
+#define PLUGIN_ID_053 53
+#define PLUGIN_NAME_053 "Dust - PMSx003"
+#define PLUGIN_VALUENAME1_053 "pm1.0"
+#define PLUGIN_VALUENAME2_053 "pm2.5"
+#define PLUGIN_VALUENAME3_053 "pm10"
+#define PMSx003_SIG1 0X42
+#define PMSx003_SIG2 0X4d
+#define PMSx003_SIZE 32
+
+ESPeasySerial *P053_easySerial = nullptr;
+boolean Plugin_053_init = false;
+boolean values_received = false;
+
+
+
+
+void SerialRead16(uint16_t* value, uint16_t* checksum)
+{
+  uint8_t data_high, data_low;
+
+
+  if (P053_easySerial == nullptr) return;
+  data_high = P053_easySerial->read();
+  data_low = P053_easySerial->read();
+
+  *value = data_low;
+  *value |= (data_high << 8);
+
+  if (checksum != nullptr)
+  {
+    *checksum += data_high;
+    *checksum += data_low;
+  }
+
+#if 0
+
+  String log = F("PMSx003 : byte high=0x");
+  log += String(data_high,HEX);
+  log += F(" byte low=0x");
+  log += String(data_low,HEX);
+  log += F(" result=0x");
+  log += String(*value,HEX);
+  addLog(LOG_LEVEL_INFO, log);
+#endif
+}
+
+void SerialFlush() {
+  if (P053_easySerial != nullptr) {
+    P053_easySerial->flush();
+  }
+}
+
+boolean PacketAvailable(void)
+{
+  if (P053_easySerial != nullptr)
+  {
+
+
+    if (!P053_easySerial->available()) return false;
+    while ((P053_easySerial->peek() != PMSx003_SIG1) && P053_easySerial->available()) {
+      P053_easySerial->read();
+    }
+    if (P053_easySerial->available() < PMSx003_SIZE) return false;
+  }
+  return true;
+}
+
+boolean Plugin_053_process_data(struct EventStruct *event) {
+  uint16_t checksum = 0, checksum2 = 0;
+  uint16_t framelength = 0;
+  uint16_t packet_header = 0;
+  SerialRead16(&packet_header, &checksum);
+  if (packet_header != ((PMSx003_SIG1 << 8) | PMSx003_SIG2)) {
+
+    return false;
+  }
+
+  SerialRead16(&framelength, &checksum);
+  if (framelength != (PMSx003_SIZE - 4))
+  {
+    if (loglevelActiveFor(LOG_LEVEL_ERROR)) {
+      String log = F("PMSx003 : invalid framelength - ");
+      log += framelength;
+      addLog(LOG_LEVEL_ERROR, log);
+    }
+    return false;
+  }
+
+  uint16_t data[13];
+  for (int i = 0; i < 13; i++)
+    SerialRead16(&data[i], &checksum);
+
+  if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
+    String log = F("PMSx003 : pm1.0=");
+    log += data[0];
+    log += F(", pm2.5=");
+    log += data[1];
+    log += F(", pm10=");
+    log += data[2];
+    log += F(", pm1.0a=");
+    log += data[3];
+    log += F(", pm2.5a=");
+    log += data[4];
+    log += F(", pm10a=");
+    log += data[5];
+    addLog(LOG_LEVEL_DEBUG, log);
+  }
+
+  if (loglevelActiveFor(LOG_LEVEL_DEBUG_MORE)) {
+    String log = F("PMSx003 : count/0.1L : 0.3um=");
+    log += data[6];
+    log += F(", 0.5um=");
+    log += data[7];
+    log += F(", 1.0um=");
+    log += data[8];
+    log += F(", 2.5um=");
+    log += data[9];
+    log += F(", 5.0um=");
+    log += data[10];
+    log += F(", 10um=");
+    log += data[11];
+    addLog(LOG_LEVEL_DEBUG_MORE, log);
+  }
+
+
+  SerialRead16(&checksum2, nullptr);
+  SerialFlush();
+  if (checksum == checksum2)
+  {
+
+    UserVar[event->BaseVarIndex] = data[3];
+    UserVar[event->BaseVarIndex + 1] = data[4];
+    UserVar[event->BaseVarIndex + 2] = data[5];
+    values_received = true;
+    return true;
+  }
+  return false;
+}
+
+boolean Plugin_053(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_053;
+        Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+        Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_053);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_053));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_053));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_053));
+        success = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        serialHelper_getGpioNames(event);
+        event->String3 = formatGpioName_output(F("Reset"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD: {
+      serialHelper_webformLoad(event);
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SAVE: {
+      serialHelper_webformSave(event);
+      success = true;
+      break;
+    }
+
+    case PLUGIN_INIT:
+      {
+        int rxPin = CONFIG_PIN1;
+        int txPin = CONFIG_PIN2;
+        int resetPin = CONFIG_PIN3;
+
+        String log = F("PMSx003 : config ");
+        log += rxPin;
+        log += txPin;
+        log += resetPin;
+        addLog(LOG_LEVEL_DEBUG, log);
+
+        if (P053_easySerial != nullptr) {
+
+          delete P053_easySerial;
+          P053_easySerial = nullptr;
+        }
+
+
+        if (rxPin == 3 && txPin == 1)
+        {
+          log = F("PMSx003 : using hardware serial");
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        else
+        {
+          log = F("PMSx003: using software serial");
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        P053_easySerial = new ESPeasySerial(rxPin, txPin, false, 96);
+        P053_easySerial->begin(9600);
+        P053_easySerial->flush();
+
+        if (resetPin >= 0)
+        {
+
+          log = F("PMSx003: resetting module");
+          addLog(LOG_LEVEL_INFO, log);
+          pinMode(resetPin, OUTPUT);
+          digitalWrite(resetPin, LOW);
+          delay(250);
+          digitalWrite(resetPin, HIGH);
+          pinMode(resetPin, INPUT_PULLUP);
+        }
+
+        Plugin_053_init = true;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+          if (P053_easySerial)
+          {
+            delete P053_easySerial;
+            P053_easySerial=nullptr;
+          }
+          break;
+      }
+
+
+
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (Plugin_053_init)
+        {
+
+          if (PacketAvailable())
+          {
+            addLog(LOG_LEVEL_DEBUG_MORE, F("PMSx003 : Packet available"));
+            success = Plugin_053_process_data(event);
+          }
+        }
+        break;
+      }
+    case PLUGIN_READ:
+      {
+
+        success = values_received;
+        values_received = false;
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P054_DMX512.ino"
+#ifdef USES_P054
+# 54 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P054_DMX512.ino"
+#define PLUGIN_054 
+#define PLUGIN_ID_054 54
+#define PLUGIN_NAME_054 "Communication - DMX512 TX [TESTING]"
+
+byte* Plugin_054_DMXBuffer = 0;
+int16_t Plugin_054_DMXSize = 32;
+
+static inline void PLUGIN_054_Limit(int16_t& value, int16_t min, int16_t max)
+{
+  if (value < min)
+    value = min;
+  if (value > max)
+    value = max;
+}
+
+
+boolean Plugin_054(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_054;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_054);
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        CONFIG_PIN1 = 2;
+        PCONFIG(0) = Plugin_054_DMXSize;
+        addFormNote(F("Only GPIO-2 (D4) can be used as TX1!"));
+        addFormNumericBox(F("Channels"), F("channels"), Plugin_054_DMXSize, 1, 512);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        CONFIG_PIN1 = 2;
+        if (Settings.Pin_status_led == 2)
+          Settings.Pin_status_led = -1;
+        Plugin_054_DMXSize = getFormItemInt(F("channels"));
+        PLUGIN_054_Limit (Plugin_054_DMXSize, 1, 512);
+        PCONFIG(0) = Plugin_054_DMXSize;
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        CONFIG_PIN1 = 2;
+        Plugin_054_DMXSize = PCONFIG(0);
+
+        if (Plugin_054_DMXBuffer)
+          delete [] Plugin_054_DMXBuffer;
+        Plugin_054_DMXBuffer = new byte[Plugin_054_DMXSize];
+        memset(Plugin_054_DMXBuffer, 0, Plugin_054_DMXSize);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String lowerString=string;
+        lowerString.toLowerCase();
+        String command = parseString(lowerString, 1);
+
+        if (command == F("dmx"))
+        {
+          String param;
+          String paramKey;
+          String paramVal;
+          byte paramIdx = 2;
+          int16_t channel = 1;
+          int16_t value = 0;
+
+          lowerString.replace(F("  "), " ");
+          lowerString.replace(F(" ="), "=");
+          lowerString.replace(F("= "), "=");
+
+          param = parseString(lowerString, paramIdx++);
+          if (param.length())
+          {
+            while (param.length())
+            {
+              addLog(LOG_LEVEL_DEBUG_MORE, param);
+
+              if (param == F("log"))
+              {
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  String log = F("DMX  : ");
+                  for (int16_t i = 0; i < Plugin_054_DMXSize; i++)
+                  {
+                    log += Plugin_054_DMXBuffer[i];
+                    log += F(", ");
+                  }
+                  addLog(LOG_LEVEL_INFO, log);
+                }
+                success = true;
+              }
+
+              else if (param == F("test"))
+              {
+                for (int16_t i = 0; i < Plugin_054_DMXSize; i++)
+
+                  Plugin_054_DMXBuffer[i] = rand()&255;
+                success = true;
+              }
+
+              else if (param == F("on"))
+              {
+                memset(Plugin_054_DMXBuffer, 255, Plugin_054_DMXSize);
+                success = true;
+              }
+
+              else if (param == F("off"))
+              {
+                memset(Plugin_054_DMXBuffer, 0, Plugin_054_DMXSize);
+                success = true;
+              }
+
+              else
+              {
+                int16_t index = param.indexOf('=');
+                if (index > 0)
+                {
+                  paramKey = param.substring(0, index);
+                  paramVal = param.substring(index+1);
+                  channel = paramKey.toInt();
+                }
+                else
+                {
+                  paramVal = param;
+                }
+
+                value = paramVal.toInt();
+                PLUGIN_054_Limit (value, 0, 255);
+
+                if (channel > 0 && channel <= Plugin_054_DMXSize)
+                  Plugin_054_DMXBuffer[channel-1] = value;
+                channel++;
+              }
+
+              param = parseString(lowerString, paramIdx++);
+            }
+          }
+          else
+          {
+
+          }
+
+          success = true;
+        }
+
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (Plugin_054_DMXBuffer)
+        {
+          int16_t sendPin = 2;
+
+
+          Serial1.flush();
+
+
+          Serial1.end();
+          pinMode(sendPin, OUTPUT);
+          digitalWrite(sendPin, LOW);
+          delayMicroseconds(120);
+          digitalWrite(sendPin, HIGH);
+          delayMicroseconds(12);
+
+
+          Serial1.begin(250000, SERIAL_8N2);
+          Serial1.write(0);
+          Serial1.write(Plugin_054_DMXBuffer, Plugin_054_DMXSize);
+        }
+        break;
+      }
+
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P055_Chiming.ino"
+#ifdef USES_P055
+# 52 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P055_Chiming.ino"
+#define PLUGIN_055 
+#define PLUGIN_ID_055 55
+#define PLUGIN_NAME_055 "Notify - Chiming [TESTING]"
+
+#define PLUGIN_055_FIFO_SIZE 64
+#define PLUGIN_055_FIFO_MASK (PLUGIN_055_FIFO_SIZE-1)
+
+class CPlugin_055_Data
+{
+public:
+  long millisStateEnd;
+  long millisChimeTime;
+  long millisPauseTime;
+
+  int pin[4];
+  byte lowActive;
+  byte chimeClock;
+
+  char FIFO[PLUGIN_055_FIFO_SIZE];
+  byte FIFO_IndexR;
+  byte FIFO_IndexW;
+
+  void Plugin_055_Data()
+  {
+    millisStateEnd = 0;
+    millisChimeTime = 60;
+    millisPauseTime = 400;
+
+    for (byte i=0; i<4; i++)
+      pin[i] = -1;
+    lowActive = false;
+    chimeClock = true;
+
+    FIFO_IndexR = 0;
+    FIFO_IndexW = 0;
+  }
+};
+
+static CPlugin_055_Data* Plugin_055_Data = NULL;
+
+
+boolean Plugin_055(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_055;
+        Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = true;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_055);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output(F("Driver#1"));
+        event->String2 = formatGpioName_output(F("Driver#2"));
+        event->String3 = formatGpioName_output(F("Driver#4"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+        if (PCONFIG(0) <= 0)
+          PCONFIG(0) = 60;
+        if (PCONFIG(1) <= 0)
+          PCONFIG(1) = 400;
+
+
+        addFormPinSelect(formatGpioName_output(F("Driver#8")), F("TDP4"), (int)(Settings.TaskDevicePin[3][event->TaskIndex]));
+
+        addFormSubHeader(F("Timing"));
+
+        addFormNumericBox(F("Chiming/Strike Time (ct)"), F("chimetime"), PCONFIG(0));
+        addUnit(F("ms"));
+
+        addFormNumericBox(F("Normal Pause Time (t)"), F("pausetime"), PCONFIG(1));
+        addUnit(F("ms"));
+
+        addFormNote(F("'1=1'&rArr;3t, '1-1' or '11'&rArr;1t, '1.1'&rArr;&#8531;t, '1|1'&rArr;&frac12;ct"));
+
+
+        addFormSubHeader(F("Chiming Clock"));
+
+        addFormCheckBox(F("Hourly Chiming Clock Strike"), F("chimeclock"), PCONFIG(2));
+
+        addButton(F("'control?cmd=chimeplay,hours'"), F("Test 1&hellip;12"));
+
+        if (PCONFIG(2) && !Settings.UseNTP)
+          addFormNote(F("Enable and configure NTP!"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        Settings.TaskDevicePin[3][event->TaskIndex] = (int8_t)getFormItemInt(F("TDP4"));
+
+        PCONFIG(0) = getFormItemInt(F("chimetime"));
+        PCONFIG(1) = getFormItemInt(F("pausetime"));
+        PCONFIG(2) = isFormItemChecked(F("chimeclock"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        if (!Plugin_055_Data)
+          Plugin_055_Data = new CPlugin_055_Data();
+
+        Plugin_055_Data->lowActive = Settings.TaskDevicePin1Inversed[event->TaskIndex];
+        Plugin_055_Data->millisChimeTime = PCONFIG(0);
+        Plugin_055_Data->millisPauseTime = PCONFIG(1);
+        Plugin_055_Data->chimeClock = PCONFIG(2);
+
+        String log = F("Chime: GPIO: ");
+        for (byte i=0; i<4; i++)
+        {
+          int pin = Settings.TaskDevicePin[i][event->TaskIndex];
+          Plugin_055_Data->pin[i] = pin;
+          if (pin >= 0)
+          {
+            pinMode(pin, OUTPUT);
+            digitalWrite(pin, Plugin_055_Data->lowActive);
+          }
+          log += pin;
+          log += ' ';
+        }
+        if (Plugin_055_Data->lowActive)
+          log += F("!");
+        addLog(LOG_LEVEL_INFO, log);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        if (!Plugin_055_Data)
+          break;
+
+        String command = parseString(string, 1);
+
+        if (command == F("chime"))
+        {
+          String param = parseStringToEndKeepCase(string, 2);
+          if (param.length() > 0) {
+            Plugin_055_AddStringFIFO(param);
+          }
+          success = true;
+        }
+        if (command == F("chimeplay"))
+        {
+          String name = parseString(string, 2);
+          if (name.length() > 0) {
+            String param;
+            Plugin_055_ReadChime(name, param);
+            Plugin_055_AddStringFIFO(param);
+          }
+          success = true;
+        }
+        if (command == F("chimesave"))
+        {
+          String name = parseString(string, 2);
+          String param = parseStringToEndKeepCase(string, 3);
+          if (name.length() > 0 && param.length() > 0) {
+            Plugin_055_WriteChime(name, param);
+            Plugin_055_AddStringFIFO("1");
+          }
+          success = true;
+        }
+
+        break;
+      }
+
+      case PLUGIN_CLOCK_IN:
+        {
+          if (!Plugin_055_Data)
+            break;
+
+          String tokens = "";
+          byte hours = hour();
+          byte minutes = minute();
+
+          if (Plugin_055_Data->chimeClock)
+          {
+            char tmpString[8];
+
+            sprintf_P(tmpString, PSTR("%02d%02d"), hours, minutes);
+            if (Plugin_055_ReadChime(tmpString, tokens))
+              Plugin_055_AddStringFIFO(tokens);
+
+            if (minutes == 0)
+            {
+              if (Plugin_055_ReadChime("hours", tokens) == 0)
+                tokens = F("1111!,111!1,111!1!,11!11,11!11!,11!1!1,11!1!1!,1!111,1!111!,1!11!1,1!11!1!,1!1!11");
+
+
+              hours = hours % 12;
+              if (hours == 0)
+                hours = 12;
+
+              byte index = hours;
+
+              tokens = parseString(tokens, index);
+              Plugin_055_AddStringFIFO(tokens);
+            }
+          }
+
+          success = true;
+          break;
+        }
+
+
+    case PLUGIN_FIFTY_PER_SECOND:
+
+      {
+        if (!Plugin_055_Data)
+          break;
+
+        long millisAct = millis();
+
+        if (Plugin_055_Data->millisStateEnd > 0)
+        {
+          if (timeDiff(millisAct, Plugin_055_Data->millisStateEnd) <= 0)
+          {
+            for (byte i=0; i<4; i++)
+            {
+              if (Plugin_055_Data->pin[i] >= 0)
+                digitalWrite(Plugin_055_Data->pin[i], Plugin_055_Data->lowActive);
+            }
+            Plugin_055_Data->millisStateEnd = 0;
+          }
+        }
+
+        if (Plugin_055_Data->millisStateEnd == 0)
+        {
+          if (! Plugin_055_IsEmptyFIFO())
+          {
+            char c = Plugin_055_ReadFIFO();
+
+            String log = F("Chime: Process '");
+            log += c;
+            log += '\'';
+            addLog(LOG_LEVEL_DEBUG, log);
+
+            switch (c)
+            {
+              case 'a':
+              case 'b':
+              case 'c':
+              case 'd':
+              case 'e':
+              case 'f':
+              case 'A':
+              case 'B':
+              case 'C':
+              case 'D':
+              case 'E':
+              case 'F':
+                c -= 'A' - '0' - 10;
+
+
+              case '0':
+              case '1':
+              case '2':
+              case '3':
+              case '4':
+              case '5':
+              case '6':
+              case '7':
+              case '8':
+              case '9':
+              {
+                byte mask = 1;
+                for (byte i=0; i<4; i++)
+                {
+                  if (Plugin_055_Data->pin[i] >= 0)
+                    if (c & mask)
+                      digitalWrite(Plugin_055_Data->pin[i], !Plugin_055_Data->lowActive);
+                  mask <<= 1;
+                }
+                Plugin_055_Data->millisStateEnd = millisAct + Plugin_055_Data->millisChimeTime;
+                break;
+              }
+              case '=':
+              case ' ':
+              case ',':
+                Plugin_055_Data->millisStateEnd = millisAct + Plugin_055_Data->millisPauseTime*3;
+                break;
+              case '-':
+                Plugin_055_Data->millisStateEnd = millisAct + Plugin_055_Data->millisPauseTime;
+                break;
+              case '.':
+                Plugin_055_Data->millisStateEnd = millisAct + Plugin_055_Data->millisPauseTime/3;
+                break;
+              case '|':
+                Plugin_055_Data->millisStateEnd = millisAct + Plugin_055_Data->millisChimeTime/2;
+                break;
+              case '#':
+                while (Plugin_055_ReadFIFO());
+                break;
+              default:
+                break;
+            }
+          }
+
+        }
+        success = true;
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+
+void Plugin_055_WriteFIFO(char c)
+{
+  if (Plugin_055_Data->FIFO_IndexR == ((Plugin_055_Data->FIFO_IndexW+1) & PLUGIN_055_FIFO_MASK))
+    return;
+
+  Plugin_055_Data->FIFO[Plugin_055_Data->FIFO_IndexW] = c;
+  Plugin_055_Data->FIFO_IndexW++;
+  Plugin_055_Data->FIFO_IndexW &= PLUGIN_055_FIFO_MASK;
+}
+
+char Plugin_055_ReadFIFO()
+{
+  if (Plugin_055_IsEmptyFIFO())
+    return '\0';
+
+  char c = Plugin_055_Data->FIFO[Plugin_055_Data->FIFO_IndexR];
+  Plugin_055_Data->FIFO_IndexR++;
+  Plugin_055_Data->FIFO_IndexR &= PLUGIN_055_FIFO_MASK;
+
+  return c;
+}
+
+char Plugin_055_PeekFIFO()
+{
+  if (Plugin_055_IsEmptyFIFO())
+    return '\0';
+
+  return Plugin_055_Data->FIFO[Plugin_055_Data->FIFO_IndexR];
+}
+
+boolean Plugin_055_IsEmptyFIFO()
+{
+  return (Plugin_055_Data->FIFO_IndexR == Plugin_055_Data->FIFO_IndexW);
+}
+
+void Plugin_055_AddStringFIFO(const String& param)
+{
+  if (param.length() == 0)
+    return;
+
+  byte i = 0;
+  char c = param[i];
+  char c_last = '\0';
+
+  while (c != 0)
+  {
+    if (isDigit(c) && isDigit(c_last))
+      Plugin_055_WriteFIFO('-');
+    if (c == '!')
+    {
+      Plugin_055_WriteFIFO('|');
+      c = c_last;
+    }
+    Plugin_055_WriteFIFO(c);
+    c_last = c;
+
+    c = param[++i];
+  }
+
+  Plugin_055_WriteFIFO('=');
+}
+
+
+
+void Plugin_055_WriteChime(const String& name, const String& tokens)
+{
+  String fileName = F("chime_");
+  fileName += name;
+  fileName += F(".txt");
+
+  String log = F("Chime: write ");
+  log += fileName;
+  log += ' ';
+
+  fs::File f = tryOpenFile(fileName, "w");
+  if (f)
+  {
+    f.print(tokens);
+    f.close();
+
+    log += tokens;
+  }
+
+  addLog(LOG_LEVEL_INFO, log);
+}
+
+byte Plugin_055_ReadChime(const String& name, String& tokens)
+{
+  String fileName = F("chime_");
+  fileName += name;
+  fileName += F(".txt");
+
+  String log = F("Chime: read ");
+  log += fileName;
+  log += ' ';
+
+  tokens = "";
+  fs::File f = tryOpenFile(fileName, "r");
+  if (f)
+  {
+    tokens.reserve(f.size());
+    char c;
+    while (f.available())
+    {
+      c = f.read();
+      tokens += c;
+    }
+    f.close();
+
+    log += tokens;
+  }
+
+  addLog(LOG_LEVEL_INFO, log);
+
+  return tokens.length();
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P056_SDS011-Dust.ino"
+#ifdef USES_P056
+# 12 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P056_SDS011-Dust.ino"
+#ifdef ESP8266
+
+#define PLUGIN_056 
+#define PLUGIN_ID_056 56
+#define PLUGIN_NAME_056 "Dust - SDS011/018/198"
+#define PLUGIN_VALUENAME1_056 "PM2.5"
+#define PLUGIN_VALUENAME2_056 "PM10"
+
+#include <jkSDS011.h>
+
+
+CjkSDS011 *Plugin_056_SDS = NULL;
+
+
+boolean Plugin_056(byte function, struct EventStruct *event, String& string)
+{
+  bool success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_056;
+        Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+        Device[deviceCount].VType = SENSOR_TYPE_DUAL;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_056);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_056));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_056));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        serialHelper_getGpioNames(event, false, true);
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        serialHelper_webformLoad(event);
+
+
+        if (Plugin_056_hasTxPin(event)) {
+          addFormNumericBox(F("Sleep time"), F("p056_sleeptime"),
+                            PCONFIG(0),
+                            0, 30);
+          addUnit(F("Minutes"));
+          addFormNote(F("0 = continous, 1..30 = Work 30 seconds and sleep n*60-30 seconds"));
+        }
+        break;
+      }
+      case PLUGIN_WEBFORM_SAVE:
+        {
+          serialHelper_webformSave(event);
+
+          if (Plugin_056_hasTxPin(event)) {
+
+            const int newsleeptime = getFormItemInt(F("p056_sleeptime"));
+            if (PCONFIG(0) != newsleeptime) {
+              PCONFIG(0) = getFormItemInt(F("p056_sleeptime"));
+              Plugin_056_setWorkingPeriod(newsleeptime);
+            }
+          }
+          success = true;
+          break;
+        }
+
+    case PLUGIN_INIT:
+      {
+        if (Plugin_056_SDS)
+          delete Plugin_056_SDS;
+        const int16_t serial_rx = CONFIG_PIN1;
+        const int16_t serial_tx = CONFIG_PIN2;
+        Plugin_056_SDS = new CjkSDS011(serial_rx, serial_tx);
+        String log = F("SDS  : Init OK  ESP GPIO-pin RX:");
+        log += serial_rx;
+        log += F(" TX:");
+        log += serial_tx;
+        addLog(LOG_LEVEL_INFO, log);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+
+
+
+
+
+        shouldReboot=true;
+        break;
+      }
+
+    case PLUGIN_FIFTY_PER_SECOND:
+      {
+        if (!Plugin_056_SDS)
+          break;
+
+        Plugin_056_SDS->Process();
+
+        if (Plugin_056_SDS->available())
+        {
+          const float pm2_5 = Plugin_056_SDS->GetPM2_5();
+          const float pm10 = Plugin_056_SDS->GetPM10_();
+          String log = F("SDS  : act ");
+          log += pm2_5;
+          log += ' ';
+          log += pm10;
+          addLog(LOG_LEVEL_DEBUG, log);
+
+          if (Settings.TaskDeviceTimer[event->TaskIndex] == 0)
+          {
+            UserVar[event->BaseVarIndex + 0] = pm2_5;
+            UserVar[event->BaseVarIndex + 1] = pm10;
+            event->sensorType = SENSOR_TYPE_DUAL;
+            sendData(event);
+          }
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        if (!Plugin_056_SDS)
+          break;
+
+        float pm25, pm10;
+        if (Plugin_056_SDS->ReadAverage(pm25, pm10)) {
+          UserVar[event->BaseVarIndex + 0] = pm25;
+          UserVar[event->BaseVarIndex + 1] = pm10;
+          success = true;
+        }
+        break;
+      }
+  }
+
+  return success;
+}
+
+boolean Plugin_056_hasTxPin(struct EventStruct *event) {
+  const int16_t serial_tx = CONFIG_PIN2;
+  return serial_tx >= 0;
+}
+
+String Plugin_056_ErrorToString(int error) {
+  String log;
+  if (error < 0) {
+    log = F("comm error: ");
+    log += error;
+  }
+  return log;
+}
+
+String Plugin_056_WorkingPeriodToString(int workingPeriod) {
+  if (workingPeriod < 0) {
+    return Plugin_056_ErrorToString(workingPeriod);
+  }
+  String log;
+  if (workingPeriod > 0) {
+    log += workingPeriod;
+    log += F(" minutes");
+  } else {
+    log += F(" continuous");
+  }
+  return log;
+}
+
+void Plugin_056_setWorkingPeriod(int minutes) {
+  if (!Plugin_056_SDS)
+    return;
+  Plugin_056_SDS->SetWorkingPeriod(minutes);
+  String log = F("SDS  : Working Period set to: ");
+  log += Plugin_056_WorkingPeriodToString(minutes);
+  addLog(LOG_LEVEL_INFO, log);
+}
+
+#endif
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P057_HT16K33_LED.ino"
+#ifdef USES_P057
+# 66 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P057_HT16K33_LED.ino"
+#define PLUGIN_057 
+#define PLUGIN_ID_057 57
+#define PLUGIN_NAME_057 "Display - HT16K33 [TESTING]"
+
+#include <HT16K33.h>
+
+CHT16K33* Plugin_057_M = NULL;
+
+
+boolean Plugin_057(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_057;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_057);
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte addr = PCONFIG(0);
+
+        int optionValues[8] = { 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77 };
+        addFormSelectorI2C(F("i2c_addr"), 8, optionValues, addr);
+
+
+        addFormSubHeader(F("7-Seg. Clock"));
+
+        int16_t choice = PCONFIG(1);
+        String options[3] = {F("none"), F("7-Seg. HH:MM (24 hour)"), F("7-Seg. HH:MM (12 hour)")};
+        addFormSelector(F("Clock Type"), F("clocktype"), 3, options, NULL, choice);
+
+        addFormNumericBox(F("Seg. for <b>X</b>x:xx"), F("clocksegh10"), PCONFIG(2), 0, 7);
+        addFormNumericBox(F("Seg. for x<b>X</b>:xx"), F("clocksegh1"), PCONFIG(3), 0, 7);
+        addFormNumericBox(F("Seg. for xx:<b>X</b>x"), F("clocksegm10"), PCONFIG(4), 0, 7);
+        addFormNumericBox(F("Seg. for xx:x<b>X</b>"), F("clocksegm1"), PCONFIG(5), 0, 7);
+
+        addFormNumericBox(F("Seg. for Colon"), F("clocksegcol"), PCONFIG(6), -1, 7);
+        addHtml(F(" Value "));
+        addNumericBox(F("clocksegcolval"), PCONFIG(7), 0, 255);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("i2c_addr"));
+
+        PCONFIG(1) = getFormItemInt(F("clocktype"));
+
+        PCONFIG(2) = getFormItemInt(F("clocksegh10"));
+        PCONFIG(3) = getFormItemInt(F("clocksegh1"));
+        PCONFIG(4) = getFormItemInt(F("clocksegm10"));
+        PCONFIG(5) = getFormItemInt(F("clocksegm1"));
+        PCONFIG(6) = getFormItemInt(F("clocksegcol"));
+        PCONFIG(7) = getFormItemInt(F("clocksegcolval"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        byte addr = PCONFIG(0);
+
+        if (!Plugin_057_M)
+          Plugin_057_M = new CHT16K33;
+
+        Plugin_057_M->Init(addr);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        if (!Plugin_057_M)
+          return false;
+
+        String command = parseString(string, 1);
+
+        if (command == F("mprint"))
+        {
+          String text = parseStringToEnd(string, 2);
+          if (text.length() > 0) {
+            byte seg = 0;
+
+            Plugin_057_M->ClearRowBuffer();
+            while (text[seg] && seg < 8)
+            {
+
+              char c = text[seg];
+              Plugin_057_M->SetDigit(seg, c);
+              seg++;
+            }
+            Plugin_057_M->TransmitRowBuffer();
+            success = true;
+          }
+        }
+        else if (command == F("mbr")) {
+          String param = parseString(string, 2);
+          int brightness;
+          if (validIntFromString(param, brightness)) {
+            if (brightness >= 0 && brightness <= 255)
+              Plugin_057_M->SetBrightness(brightness);
+          }
+          success = true;
+        }
+        else if (command == F("m") || command == F("mx") || command == F("mnum"))
+        {
+          String param;
+          String paramKey;
+          String paramVal;
+          byte paramIdx = 2;
+          uint8_t seg = 0;
+          uint16_t value = 0;
+
+          String lowerString=string;
+          lowerString.toLowerCase();
+          lowerString.replace(F("  "), " ");
+          lowerString.replace(F(" ="), "=");
+          lowerString.replace(F("= "), "=");
+
+          param = parseString(lowerString, paramIdx++);
+          if (param.length())
+          {
+            while (param.length())
+            {
+              addLog(LOG_LEVEL_DEBUG_MORE, param);
+
+              if (param == F("log"))
+              {
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  String log = F("MX   : ");
+                  for (byte i = 0; i < 8; i++)
+                  {
+                    log += String(Plugin_057_M->GetRow(i), 16);
+                    log += F("h, ");
+                  }
+                  addLog(LOG_LEVEL_INFO, log);
+                }
+                success = true;
+              }
+
+              else if (param == F("test"))
+              {
+                for (byte i = 0; i < 8; i++)
+                  Plugin_057_M->SetRow(i, 1 << i);
+                success = true;
+              }
+
+              else if (param == F("clear"))
+              {
+                Plugin_057_M->ClearRowBuffer();
+                success = true;
+              }
+
+              else
+              {
+                int index = param.indexOf('=');
+                if (index > 0)
+                {
+                  paramKey = param.substring(0, index);
+                  paramVal = param.substring(index+1);
+                  seg = paramKey.toInt();
+                }
+                else
+                {
+                  paramVal = param;
+                }
+
+                if (command == F("mnum"))
+                {
+                  value = paramVal.toInt();
+                  if (value < 16)
+                    Plugin_057_M->SetDigit(seg, value);
+                  else
+                    Plugin_057_M->SetRow(seg, value);
+                }
+                else if (command == F("mx"))
+                {
+                  char* ep;
+                  value = strtol(paramVal.c_str(), &ep, 16);
+                  Plugin_057_M->SetRow(seg, value);
+                }
+                else
+                {
+                  value = paramVal.toInt();
+                  Plugin_057_M->SetRow(seg, value);
+                }
+
+                success = true;
+                seg++;
+              }
+
+              param = parseString(lowerString, paramIdx++);
+            }
+          }
+          else
+          {
+
+          }
+
+          if (success)
+            Plugin_057_M->TransmitRowBuffer();
+          success = true;
+        }
+
+        break;
+      }
+
+    case PLUGIN_CLOCK_IN:
+      {
+        if (!Plugin_057_M || PCONFIG(1) == 0)
+          break;
+
+        byte hours = hour();
+        byte minutes = minute();
+
+
+        Plugin_057_M->SetDigit(PCONFIG(5), minutes % 10);
+        Plugin_057_M->SetDigit(PCONFIG(4), minutes / 10);
+
+        if (PCONFIG(1) == 1) {
+
+          Plugin_057_M->SetDigit(PCONFIG(2), hours / 10);
+          Plugin_057_M->SetDigit(PCONFIG(3), hours % 10);
+        } else if (PCONFIG(1) == 2) {
+          if (hours < 12) {
+
+            Plugin_057_M->SetRow(PCONFIG(5), (Plugin_057_M->GetRow(PCONFIG(5)) | 0x80));
+          }
+
+          hours = hours % 12;
+          if (hours == 0) {
+            hours = 12;
+          }
+
+          Plugin_057_M->SetDigit(PCONFIG(3), hours % 10);
+
+          if (hours < 10) {
+
+            Plugin_057_M->SetRow(PCONFIG(2), 0);
+          } else {
+            Plugin_057_M->SetDigit(PCONFIG(2), hours / 10);
+          }
+        }
+
+
+
+        Plugin_057_M->TransmitRowBuffer();
+
+        success = true;
+
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (!Plugin_057_M || PCONFIG(1) == 0)
+          break;
+
+        if (PCONFIG(6) >= 0)
+        {
+          uint8_t act = ((uint16_t)millis() >> 9) & 1;
+          static uint8_t last = 0;
+          if (act != last)
+          {
+            last = act;
+            Plugin_057_M->SetRow(PCONFIG(6), (act) ? PCONFIG(7) : 0);
+            Plugin_057_M->TransmitRowBuffer();
+          }
+        }
+      }
+
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P058_HT16K33_KeyPad.ino"
+#ifdef USES_P058
+# 31 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P058_HT16K33_KeyPad.ino"
+#define PLUGIN_058 
+#define PLUGIN_ID_058 58
+#define PLUGIN_NAME_058 "Keypad - HT16K33 [TESTING]"
+#define PLUGIN_VALUENAME1_058 "ScanCode"
+
+#include <HT16K33.h>
+
+CHT16K33* Plugin_058_K = NULL;
+
+
+boolean Plugin_058(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_058;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_058);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_058));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte addr = PCONFIG(0);
+
+        int optionValues[8] = { 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77 };
+        addFormSelectorI2C(F("i2c_addr"), 8, optionValues, addr);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("i2c_addr"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        byte addr = PCONFIG(0);
+
+        if (!Plugin_058_K)
+          Plugin_058_K = new CHT16K33;
+
+        Plugin_058_K->Init(addr);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (Plugin_058_K)
+        {
+          static uint8_t keyLast = 0;
+
+          uint8_t key = Plugin_058_K->ReadKeys();
+
+          if (keyLast != key)
+          {
+            keyLast = key;
+            UserVar[event->BaseVarIndex] = (float)key;
+            event->sensorType = SENSOR_TYPE_SWITCH;
+
+            String log = F("Mkey : key=0x");
+            log += String(key, 16);
+            addLog(LOG_LEVEL_INFO, log);
+
+            sendData(event);
+          }
+
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        if (Plugin_058_K)
+        {
+        }
+        success = true;
+        break;
+      }
+
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P059_Encoder.ino"
+#ifdef USES_P059
+# 18 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P059_Encoder.ino"
+#define PLUGIN_059 
+#define PLUGIN_ID_059 59
+#define PLUGIN_NAME_059 "Switch Input - Rotary Encoder"
+#define PLUGIN_VALUENAME1_059 "Counter"
+
+#include <QEIx4.h>
+
+std::map<unsigned int, std::shared_ptr<QEIx4> > P_059_sensordefs;
+
+boolean Plugin_059(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_059;
+        Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_059);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_059));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_input(F("A (CLK)"));
+        event->String2 = formatGpioName_input(F("B (DT)"));
+        event->String3 = formatGpioName_input_optional(F("I (Z)"));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+        if (PCONFIG_LONG(0) == 0 && PCONFIG_LONG(1) == 0)
+          PCONFIG_LONG(1) = 100;
+
+        String options[3] = { F("1 pulse per cycle"), F("2 pulses per cycle"), F("4 pulses per cycle") };
+        int optionValues[3] = { 1, 2, 4 };
+        addFormSelector(F("Mode"), F("qei_mode"), 3, options, optionValues, PCONFIG(0));
+
+        addFormNumericBox(F("Limit min."), F("qei_limitmin"), PCONFIG_LONG(0));
+        addFormNumericBox(F("Limit max."), F("qei_limitmax"), PCONFIG_LONG(1));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("qei_mode"));
+
+        PCONFIG_LONG(0) = getFormItemInt(F("qei_limitmin"));
+        PCONFIG_LONG(1) = getFormItemInt(F("qei_limitmax"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        portStatusStruct newStatus;
+
+
+        P_059_sensordefs.erase(event->TaskIndex);
+        P_059_sensordefs[event->TaskIndex] = std::shared_ptr<QEIx4>(new QEIx4);
+
+        P_059_sensordefs[event->TaskIndex]->begin(CONFIG_PIN1,CONFIG_PIN2,CONFIG_PIN3,PCONFIG(0));
+        P_059_sensordefs[event->TaskIndex]->setLimit(PCONFIG_LONG(0), PCONFIG_LONG(1));
+        P_059_sensordefs[event->TaskIndex]->setIndexTrigger(true);
+
+        ExtraTaskSettings.TaskDeviceValueDecimals[event->BaseVarIndex] = 0;
+
+        String log = F("QEI  : GPIO: ");
+        for (byte i=0; i<3; i++)
+        {
+          int pin = PIN(i);
+          if (pin >= 0)
+          {
+
+            const uint32_t key = createKey(PLUGIN_ID_059,pin);
+
+            newStatus = globalMapPortStatus[key];
+            newStatus.task++;
+            newStatus.mode = PIN_MODE_INPUT;
+            newStatus.state = 0;
+            savePortStatus(key,newStatus);
+
+          }
+          log += pin;
+          log += ' ';
+        }
+        addLog(LOG_LEVEL_INFO, log);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+        P_059_sensordefs.erase(event->TaskIndex);
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (P_059_sensordefs.count(event->TaskIndex) != 0)
+        {
+          if (P_059_sensordefs[event->TaskIndex]->hasChanged())
+          {
+            long c = P_059_sensordefs[event->TaskIndex]->read();
+            UserVar[event->BaseVarIndex] = (float)c;
+            event->sensorType = SENSOR_TYPE_SWITCH;
+
+            String log = F("QEI  : ");
+            log += c;
+            addLog(LOG_LEVEL_INFO, log);
+
+            sendData(event);
+          }
+
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        if (P_059_sensordefs.count(event->TaskIndex) != 0)
+        {
+          UserVar[event->BaseVarIndex] = (float)P_059_sensordefs[event->TaskIndex]->read();
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        if (P_059_sensordefs.count(event->TaskIndex) != 0)
+        {
+            String log = "";
+            String command = parseString(string, 1);
+            if (command == F("encwrite"))
+            {
+              if (event->Par1 >= 0)
+              {
+                log = String(F("QEI  : ")) + string;
+                addLog(LOG_LEVEL_INFO, log);
+                P_059_sensordefs[event->TaskIndex]->write(event->Par1);
+              }
+              success = true;
+            }
+        }
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P060_MCP3221.ino"
+#ifdef USES_P060
+# 10 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P060_MCP3221.ino"
+#define PLUGIN_060 
+#define PLUGIN_ID_060 60
+#define PLUGIN_NAME_060 "Analog input - MCP3221 [TESTING]"
+#define PLUGIN_VALUENAME1_060 "Analog"
+
+uint32_t Plugin_060_OversamplingValue = 0;
+uint16_t Plugin_060_OversamplingCount = 0;
+
+
+uint16_t readMCP3221(byte addr)
+{
+  uint16_t value;
+  Wire.requestFrom(addr, (uint8_t)2);
+  if (Wire.available() == 2)
+  {
+    value = (Wire.read() << 8) | Wire.read();
+  }
+  else
+    value = 9999;
+
+  return value;
+}
+
+boolean Plugin_060(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_060;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_060);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_060));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte addr = PCONFIG(0);
+
+        int optionValues[8] = { 0x4D, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4E, 0x4F };
+        addFormSelectorI2C(F("i2c_addr"), 8, optionValues, addr);
+
+        addFormCheckBox(F("Oversampling"), F("p060_oversampling"), PCONFIG(1));
+
+        addFormSubHeader(F("Two Point Calibration"));
+
+        addFormCheckBox(F("Calibration Enabled"), F("p060_cal"), PCONFIG(3));
+
+        addFormNumericBox(F("Point 1"), F("p060_adc1"), PCONFIG_LONG(0), 0, 4095);
+        html_add_estimate_symbol();
+        addTextBox(F("p060_out1"), String(PCONFIG_FLOAT(0), 3), 10);
+
+        addFormNumericBox(F("Point 2"), F("p060_adc2"), PCONFIG_LONG(1), 0, 4095);
+        html_add_estimate_symbol();
+        addTextBox(F("p060_out2"), String(PCONFIG_FLOAT(1), 3), 10);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("i2c_addr"));
+
+        PCONFIG(1) = isFormItemChecked(F("p060_oversampling"));
+
+        PCONFIG(3) = isFormItemChecked(F("p060_cal"));
+
+        PCONFIG_LONG(0) = getFormItemInt(F("p060_adc1"));
+        PCONFIG_FLOAT(0) = getFormItemFloat(F("p060_out1"));
+
+        PCONFIG_LONG(1) = getFormItemInt(F("p060_adc2"));
+        PCONFIG_FLOAT(1) = getFormItemFloat(F("p060_out2"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (PCONFIG(1))
+        {
+          Plugin_060_OversamplingValue += readMCP3221(PCONFIG(0));
+          Plugin_060_OversamplingCount ++;
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        String log = F("ADMCP: Analog value: ");
+
+        if (Plugin_060_OversamplingCount > 0)
+        {
+          UserVar[event->BaseVarIndex] = (float)Plugin_060_OversamplingValue / Plugin_060_OversamplingCount;
+          Plugin_060_OversamplingValue = 0;
+          Plugin_060_OversamplingCount = 0;
+
+          log += String(UserVar[event->BaseVarIndex], 3);
+        }
+        else
+        {
+          int16_t value = readMCP3221(PCONFIG(0));
+          UserVar[event->BaseVarIndex] = (float)value;
+
+          log += value;
+        }
+
+        if (PCONFIG(3))
+        {
+          int adc1 = PCONFIG_LONG(0);
+          int adc2 = PCONFIG_LONG(1);
+          float out1 = PCONFIG_FLOAT(0);
+          float out2 = PCONFIG_FLOAT(1);
+          if (adc1 != adc2)
+          {
+            float normalized = (float)(UserVar[event->BaseVarIndex] - adc1) / (float)(adc2 - adc1);
+            UserVar[event->BaseVarIndex] = normalized * (out2 - out1) + out1;
+
+            log += F(" = ");
+            log += String(UserVar[event->BaseVarIndex], 3);
+          }
+        }
+
+        addLog(LOG_LEVEL_INFO,log);
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P061_KeyPad.ino"
+#ifdef USES_P061
+# 56 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P061_KeyPad.ino"
+#define PLUGIN_061 
+#define PLUGIN_ID_061 61
+#define PLUGIN_NAME_061 "Keypad - PCF8574 / MCP23017 [TESTING]"
+#define PLUGIN_VALUENAME1_061 "ScanCode"
+
+
+
+
+boolean Plugin_061(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_061;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_061);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_061));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte addr = PCONFIG(0);
+
+        int optionValues[16] = { 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F };
+        addFormSelectorI2C(F("i2c_addr"), (PCONFIG(1) == 0) ? 8 : 16, optionValues, addr);
+        if (PCONFIG(1) != 0)
+          addFormNote(F("PCF8574 uses address 0x20+; PCF8574<b>A</b> uses address 0x38+"));
+
+        String options[3] = { F("MCP23017 (Matrix 9x8)"), F("PCF8574 (Matrix 5x4)"), F("PCF8574 (Direct 8)") };
+        addFormSelector(F("Chip (Mode)"), F("chip"), 3, options, NULL, PCONFIG(1));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("i2c_addr"));
+
+        PCONFIG(1) = getFormItemInt(F("chip"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        switch (PCONFIG(1))
+        {
+          case 0: MCP23017_KeyPadMatrixInit(PCONFIG(0)); break;
+          case 1: PCF8574_KeyPadMatrixInit(PCONFIG(0)); break;
+          case 2: PCF8574_KeyPadDirectInit(PCONFIG(0)); break;
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_FIFTY_PER_SECOND:
+      {
+        static byte lastScanCode = 0xFF;
+       static byte sentScanCode = 0xFF;
+        byte actScanCode = 0;
+
+        switch (PCONFIG(1))
+        {
+          case 0: actScanCode = MCP23017_KeyPadMatrixScan(PCONFIG(0)); break;
+          case 1: actScanCode = PCF8574_KeyPadMatrixScan(PCONFIG(0)); break;
+          case 2: actScanCode = PCF8574_KeyPadDirectScan(PCONFIG(0)); break;
+        }
+
+       if (lastScanCode == actScanCode)
+       {
+        if (sentScanCode != actScanCode)
+        {
+            UserVar[event->BaseVarIndex] = (float)actScanCode;
+            event->sensorType = SENSOR_TYPE_SWITCH;
+
+            String log = F("KPad : ScanCode=0x");
+            log += String(actScanCode, 16);
+            addLog(LOG_LEVEL_INFO, log);
+
+            sendData(event);
+
+         sentScanCode = actScanCode;
+        }
+       }
+       else
+        lastScanCode = actScanCode;
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+        success = true;
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+
+
+#define MCP23017_IODIRA 0x00
+#define MCP23017_IODIRB 0x01
+#define MCP23017_IPOLA 0x02
+#define MCP23017_IPOLB 0x03
+#define MCP23017_GPINTENA 0x04
+#define MCP23017_GPINTENB 0x05
+#define MCP23017_DEFVALA 0x06
+#define MCP23017_DEFVALB 0x07
+#define MCP23017_INTCONA 0x08
+#define MCP23017_INTCONB 0x09
+#define MCP23017_IOCON 0x0A
+#define MCP23017_GPPUA 0x0C
+#define MCP23017_GPPUB 0x0D
+#define MCP23017_INTFA 0x0E
+#define MCP23017_INTFB 0x0F
+#define MCP23017_INTCAPA 0x10
+#define MCP23017_INTCAPB 0x11
+#define MCP23017_GPIOA 0x12
+#define MCP23017_GPIOB 0x13
+#define MCP23017_OLATA 0x14
+#define MCP23017_OLATB 0x15
+
+
+void MCP23017_setReg(byte addr, byte reg, byte data)
+{
+ Wire.beginTransmission(addr);
+ Wire.write(reg);
+ Wire.write(data);
+ Wire.endTransmission();
+}
+
+byte MCP23017_getReg(byte addr, byte reg)
+{
+ Wire.beginTransmission(addr);
+ Wire.write(reg);
+ Wire.endTransmission();
+ Wire.requestFrom(addr, (uint8_t)0x1);
+ if (Wire.available())
+ {
+  return Wire.read();
+ }
+ return 0xFF;
+}
+
+void MCP23017_KeyPadMatrixInit(byte addr)
+{
+ MCP23017_setReg(addr, MCP23017_IODIRA, 0x00);
+ MCP23017_setReg(addr, MCP23017_GPIOA, 0x00);
+ MCP23017_setReg(addr, MCP23017_IODIRB, 0xFF);
+ MCP23017_setReg(addr, MCP23017_GPPUA, 0xFF);
+ MCP23017_setReg(addr, MCP23017_GPPUB, 0xFF);
+}
+
+byte MCP23017_KeyPadMatrixScan(byte addr)
+{
+ byte rowMask = 1;
+ byte colData;
+
+ colData = MCP23017_getReg(addr, MCP23017_GPIOB);
+ if (colData == 0xFF)
+  return 0;
+
+ for (byte row = 0; row <= 8; row++)
+ {
+    if (row == 0)
+    MCP23017_setReg(addr, MCP23017_IODIRA, 0xFF);
+    else
+    {
+      MCP23017_setReg(addr, MCP23017_IODIRA, ~rowMask);
+      rowMask <<= 1;
+    }
+
+  colData = MCP23017_getReg(addr, MCP23017_GPIOB);
+  if (colData != 0xFF)
+  {
+   byte colMask = 1;
+   for (byte col = 1; col <= 8; col++)
+   {
+    if ((colData & colMask) == 0)
+    {
+     MCP23017_setReg(addr, MCP23017_IODIRA, 0x00);
+     return ((row << 4) | col);
+    }
+    colMask <<= 1;
+   }
+  }
+ }
+
+ MCP23017_setReg(addr, MCP23017_IODIRA, 0x00);
+ return 0;
+}
+
+
+
+void PCF8574_setReg(byte addr, byte data)
+{
+ Wire.beginTransmission(addr);
+ Wire.write(data);
+ Wire.endTransmission();
+}
+
+byte PCF8574_getReg(byte addr)
+{
+ Wire.requestFrom(addr, (uint8_t)0x1);
+ if (Wire.available())
+ {
+  return Wire.read();
+ }
+ return 0xFF;
+}
+
+void PCF8574_KeyPadMatrixInit(byte addr)
+{
+ PCF8574_setReg(addr, 0xF0);
+}
+
+byte PCF8574_KeyPadMatrixScan(byte addr)
+{
+ byte rowMask = 1;
+ byte colData;
+
+ colData = PCF8574_getReg(addr) & 0xF0;
+ if (colData == 0xF0)
+  return 0;
+
+ for (byte row = 0; row <= 4; row++)
+ {
+    if (row == 0)
+      PCF8574_setReg(addr, 0xFF);
+    else
+    {
+      PCF8574_setReg(addr, ~rowMask);
+      rowMask <<= 1;
+    }
+
+    colData = PCF8574_getReg(addr) & 0xF0;
+  if (colData != 0xF0)
+  {
+   byte colMask = 0x10;
+   for (byte col = 1; col <= 4; col++)
+   {
+    if ((colData & colMask) == 0)
+    {
+     PCF8574_setReg(addr, 0xF0);
+     return ((row << 4) | col);
+    }
+    colMask <<= 1;
+   }
+  }
+ }
+
+ PCF8574_setReg(addr, 0xF0);
+ return 0;
+}
+
+
+
+void PCF8574_KeyPadDirectInit(byte addr)
+{
+ PCF8574_setReg(addr, 0xFF);
+}
+
+byte PCF8574_KeyPadDirectScan(byte addr)
+{
+ byte colData;
+
+ colData = PCF8574_getReg(addr);
+ if (colData == 0xFF)
+  return 0;
+
+ byte colMask = 0x01;
+ for (byte col = 1; col <= 8; col++)
+ {
+  if ((colData & colMask) == 0)
+  {
+   return (col);
+  }
+  colMask <<= 1;
+ }
+
+ return 0;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P062_MPR121_KeyPad.ino"
+#ifdef USES_P062
+# 19 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P062_MPR121_KeyPad.ino"
+#define PLUGIN_062 
+#define PLUGIN_ID_062 62
+#define PLUGIN_NAME_062 "Keypad - MPR121 Touch [TESTING]"
+#define PLUGIN_VALUENAME1_062 "ScanCode"
+
+#include <Adafruit_MPR121.h>
+
+Adafruit_MPR121* Plugin_062_K = NULL;
+
+
+boolean Plugin_062(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_062;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_062);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_062));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte addr = PCONFIG(0);
+
+        int optionValues[4] = { 0x5A, 0x5B, 0x5C, 0x5D };
+        addFormSelectorI2C(F("i2c_addr"), 4, optionValues, addr);
+
+        addFormCheckBox(F("ScanCode"), F("scancode"), PCONFIG(1));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("i2c_addr"));
+
+        PCONFIG(1) = isFormItemChecked(F("scancode"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        byte addr = PCONFIG(0);
+
+        if (!Plugin_062_K)
+          Plugin_062_K = new Adafruit_MPR121;
+
+        Plugin_062_K->begin(addr);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        if (Plugin_062_K)
+        {
+          static uint16_t keyLast = 0;
+
+          uint16_t key = Plugin_062_K->touched();
+
+          if (key && PCONFIG(1))
+          {
+            uint16_t colMask = 0x01;
+            for (byte col = 1; col <= 12; col++)
+            {
+              if (key & colMask)
+              {
+                key = col;
+                break;
+              }
+              colMask <<= 1;
+            }
+          }
+
+          if (keyLast != key)
+          {
+            keyLast = key;
+            UserVar[event->BaseVarIndex] = (float)key;
+            event->sensorType = SENSOR_TYPE_SWITCH;
+
+            String log = F("Tkey : ");
+            if (PCONFIG(1))
+              log = F("ScanCode=0x");
+            else
+              log = F("KeyMap=0x");
+            log += String(key, 16);
+            addLog(LOG_LEVEL_INFO, log);
+
+            sendData(event);
+          }
+
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        if (Plugin_062_K)
+        {
+        }
+        success = true;
+        break;
+      }
+
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P063_TTP229_KeyPad.ino"
+#ifdef USES_P063
+# 26 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P063_TTP229_KeyPad.ino"
+#define PLUGIN_063 
+#define PLUGIN_ID_063 63
+#define PLUGIN_NAME_063 "Keypad - TTP229 Touch"
+#define PLUGIN_VALUENAME1_063 "ScanCode"
+
+
+
+
+uint16_t readTTP229(int16_t pinSCL, int16_t pinSDO)
+{
+  uint16_t value = 0;
+  uint16_t mask = 1;
+
+  pinMode(pinSDO, OUTPUT);
+  digitalWrite(pinSDO, HIGH);
+  delayMicroseconds(100);
+
+  digitalWrite(pinSDO, LOW);
+  delayMicroseconds(10);
+
+  pinMode(pinSDO, INPUT);
+  for (byte i = 0; i < 16; i++)
+  {
+    digitalWrite(pinSCL, HIGH);
+    delayMicroseconds(1);
+    digitalWrite(pinSCL, LOW);
+    if (!digitalRead(pinSDO))
+      value |= mask;
+    delayMicroseconds(1);
+    mask <<= 1;
+  }
+
+  return value;
+}
+
+
+boolean Plugin_063(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_063;
+        Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 1;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_063);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_063));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output("SCL");
+        event->String2 = formatGpioName_bidirectional("SDO");
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        addFormCheckBox(F("ScanCode"), F("scancode"), PCONFIG(1));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(1) = isFormItemChecked(F("scancode"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        portStatusStruct newStatus;
+
+        int16_t pinSCL = CONFIG_PIN1;
+        int16_t pinSDO = CONFIG_PIN2;
+
+        String log = F("Tkey : GPIO: ");
+        log += pinSCL;
+        log += ' ';
+        log += pinSDO;
+        addLog(LOG_LEVEL_INFO, log);
+
+        if (pinSCL >= 0 && pinSDO >= 0)
+        {
+          pinMode(pinSCL, OUTPUT);
+          digitalWrite(pinSCL, LOW);
+          uint32_t key = createKey(PLUGIN_ID_063,pinSCL);
+
+          newStatus = globalMapPortStatus[key];
+          newStatus.task++;
+          newStatus.mode = PIN_MODE_OUTPUT;
+          newStatus.state = 0;
+          savePortStatus(key,newStatus);
+
+
+          pinMode(pinSDO, OUTPUT);
+          digitalWrite(pinSDO, LOW);
+          key = createKey(PLUGIN_ID_063,pinSDO);
+
+          newStatus = globalMapPortStatus[key];
+          newStatus.task++;
+          newStatus.mode = PIN_MODE_INPUT;
+          newStatus.state = 0;
+          savePortStatus(key,newStatus);
+
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_TEN_PER_SECOND:
+      {
+        static uint16_t keyLast = 0;
+        int16_t pinSCL = CONFIG_PIN1;
+        int16_t pinSDO = CONFIG_PIN2;
+
+        if (pinSCL >= 0 && pinSDO >= 0)
+        {
+          uint16_t key = readTTP229(pinSCL, pinSDO);
+
+          if (key && PCONFIG(1))
+          {
+            uint16_t colMask = 0x01;
+            for (byte col = 1; col <= 16; col++)
+            {
+              if (key & colMask)
+              {
+                key = col;
+                break;
+              }
+              colMask <<= 1;
+            }
+          }
+
+          if (keyLast != key)
+          {
+            keyLast = key;
+            UserVar[event->BaseVarIndex] = (float)key;
+            event->sensorType = SENSOR_TYPE_SWITCH;
+
+            String log = F("Tkey : ");
+            if (PCONFIG(1))
+              log = F("ScanCode=0x");
+            else
+              log = F("KeyMap=0x");
+            log += String(key, 16);
+            addLog(LOG_LEVEL_INFO, log);
+
+            sendData(event);
+          }
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+
+        success = true;
+        break;
+      }
+
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P064_APDS9960.ino"
+#ifdef USES_P064
+# 19 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P064_APDS9960.ino"
+#define PLUGIN_064 
+#define PLUGIN_ID_064 64
+#define PLUGIN_NAME_064 "Gesture - APDS9960 [DEVELOPMENT]"
+#define PLUGIN_VALUENAME1_064 "Gesture"
+#define PLUGIN_VALUENAME2_064 "Proximity"
+#define PLUGIN_VALUENAME3_064 "Light"
+
+
+
+
+
+
+#include <SparkFun_APDS9960.h>
+
+SparkFun_APDS9960* PLUGIN_064_pds = NULL;
+
+
+boolean Plugin_064(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_064;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_SWITCH;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_064);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_064));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_064));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_064));
+
+
+
+
+
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        byte addr = 0x39;
+
+        int optionValues[1] = { 0x39 };
+        addFormSelectorI2C(F("i2c_addr"), 1, optionValues, addr);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        if (PLUGIN_064_pds)
+          delete PLUGIN_064_pds;
+        PLUGIN_064_pds = new SparkFun_APDS9960();
+
+        String log = F("APDS : ");
+        if ( PLUGIN_064_pds->init() )
+        {
+          log += F("Init");
+
+          PLUGIN_064_pds->enablePower();
+
+          if (! PLUGIN_064_pds->enableLightSensor(false))
+            log += F(" - Error during light sensor init!");
+          if (! PLUGIN_064_pds->enableProximitySensor(false))
+            log += F(" - Error during proximity sensor init!");
+
+          if (! PLUGIN_064_pds->enableGestureSensor(false))
+            log += F(" - Error during gesture sensor init!");
+        }
+        else
+        {
+          log += F("Error during APDS-9960 init!");
+        }
+
+        addLog(LOG_LEVEL_INFO, log);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_FIFTY_PER_SECOND:
+      {
+        if (!PLUGIN_064_pds)
+          break;
+
+        if ( !PLUGIN_064_pds->isGestureAvailable() )
+          break;
+
+        int gesture = PLUGIN_064_pds->readGesture();
+# 145 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P064_APDS9960.ino"
+        if (gesture >= 0)
+        {
+          String log = F("APDS : Gesture=");
+
+          switch ( gesture )
+          {
+            case DIR_UP: log += F("UP"); break;
+            case DIR_DOWN: log += F("DOWN"); break;
+            case DIR_LEFT: log += F("LEFT"); break;
+            case DIR_RIGHT: log += F("RIGHT"); break;
+            case DIR_NEAR: log += F("NEAR"); break;
+            case DIR_FAR: log += F("FAR"); break;
+            default: log += F("NONE"); break;
+          }
+          log += " (";
+          log += gesture;
+          log += ')';
+
+          UserVar[event->BaseVarIndex] = (float)gesture;
+          event->sensorType = SENSOR_TYPE_SWITCH;
+
+          sendData(event);
+
+          addLog(LOG_LEVEL_INFO, log);
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        if (!PLUGIN_064_pds)
+          break;
+
+
+
+        if (1)
+        {
+          uint8_t proximity_data = 0;
+          PLUGIN_064_pds->readProximity(proximity_data);
+          UserVar[event->BaseVarIndex + 1] = (float)proximity_data;
+
+          uint16_t ambient_light = 0;
+          PLUGIN_064_pds->readAmbientLight(ambient_light);
+          UserVar[event->BaseVarIndex + 2] = (float)ambient_light;
+# 203 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P064_APDS9960.ino"
+        }
+
+        success = true;
+        break;
+      }
+
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P065_DRF0299_MP3.ino"
+#ifdef USES_P065
+# 31 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P065_DRF0299_MP3.ino"
+#define PLUGIN_065 
+#define PLUGIN_ID_065 65
+#define PLUGIN_NAME_065 "Notify - DFPlayer-Mini MP3 [TESTING]"
+#define PLUGIN_VALUENAME1_065 ""
+
+#include <ESPeasySerial.h>
+
+
+ESPeasySerial* P065_easySerial = NULL;
+
+
+boolean Plugin_065(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_065;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].GlobalSyncOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_065);
+        break;
+      }
+
+      case PLUGIN_GET_DEVICEGPIONAMES:
+        {
+          event->String1 = formatGpioName_TX(false);
+          break;
+        }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+          addFormNumericBox(F("Volume"), F("volume"), PCONFIG(0), 1, 30);
+
+          success = true;
+          break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = getFormItemInt(F("volume"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        #pragma GCC diagnostic push
+
+        #pragma GCC diagnostic warning "-Wdelete-non-virtual-dtor"
+        if (P065_easySerial)
+          delete P065_easySerial;
+        #pragma GCC diagnostic pop
+
+
+        P065_easySerial = new ESPeasySerial(-1, CONFIG_PIN1);
+
+        P065_easySerial->begin(9600);
+
+        Plugin_065_SetVol(PCONFIG(0));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        if (!P065_easySerial)
+          break;
+
+        String command = parseString(string, 1);
+        String param = parseString(string, 2);
+
+        if (command == F("play"))
+        {
+          int track;
+          if (validIntFromString(param, track)) {
+            Plugin_065_Play(track);
+            if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+              String log = F("MP3  : play=");
+              log += track;
+              addLog(LOG_LEVEL_INFO, log);
+            }
+          }
+          success = true;
+        }
+
+        if (command == F("stop"))
+        {
+          String log = F("MP3  : stop");
+
+          Plugin_065_SendCmd(0x0E, 0);
+
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+        }
+
+        if (command == F("vol"))
+        {
+          String log = F("MP3  : vol=");
+
+          int8_t vol = param.toInt();
+          if (vol == 0) vol = 30;
+          PCONFIG(0) = vol;
+          Plugin_065_SetVol(vol);
+          log += vol;
+
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+        }
+
+        if (command == F("eq"))
+        {
+          String log = F("MP3  : eq=");
+
+          int8_t eq = param.toInt();
+          Plugin_065_SetEQ(eq);
+          log += eq;
+
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+        }
+
+        break;
+      }
+  }
+  return success;
+}
+
+
+void Plugin_065_Play(uint16_t track)
+{
+  Plugin_065_SendCmd(0x03, track);
+}
+
+void Plugin_065_SetVol(int8_t vol)
+{
+  if (vol < 1) vol = 1;
+  if (vol > 30) vol = 30;
+  Plugin_065_SendCmd(0x06, vol);
+}
+
+void Plugin_065_SetEQ(int8_t eq)
+{
+  if (eq < 0) eq = 0;
+  if (eq > 5) eq = 5;
+  Plugin_065_SendCmd(0x07, eq);
+}
+
+void Plugin_065_SendCmd(byte cmd, int16_t data)
+{
+  if (!P065_easySerial)
+    return;
+
+  byte buffer[10] = { 0x7E, 0xFF, 0x06, 0, 0x00, 0, 0, 0, 0, 0xEF };
+
+  buffer[3] = cmd;
+  buffer[5] = data >> 8;
+  buffer[6] = data & 0xFF;
+
+  int16_t checksum = -(buffer[1] + buffer[2] + buffer[3] + buffer[4] + buffer[5] + buffer[6]);
+  buffer[7] = checksum >> 8;
+  buffer[8] = checksum & 0xFF;
+
+  P065_easySerial->write(buffer, 10);
+
+  String log = F("MP3  : Send Cmd ");
+  for (byte i=0; i<10; i++)
+  {
+    log += String(buffer[i], 16);
+    log += ' ';
+  }
+  addLog(LOG_LEVEL_DEBUG, log);
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P066_VEML6040.ino"
+#ifdef USES_P066
+# 14 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P066_VEML6040.ino"
+#define PLUGIN_066 
+#define PLUGIN_ID_066 66
+#define PLUGIN_NAME_066 "Color - VEML6040 [TESTING]"
+#define PLUGIN_VALUENAME1_066 "R"
+#define PLUGIN_VALUENAME2_066 "G"
+#define PLUGIN_VALUENAME3_066 "B"
+#define PLUGIN_VALUENAME4_066 "W"
+
+#define VEML6040_ADDR 0x10
+
+
+#include <math.h>
+
+
+boolean Plugin_066(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_066;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 4;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_066);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_066));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_066));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_066));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3], PSTR(PLUGIN_VALUENAME4_066));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        int optionValues[1] = { VEML6040_ADDR };
+        addFormSelectorI2C(F("i2c_addr"), 1, optionValues, VEML6040_ADDR);
+
+        String optionsMode[6] = { F("40ms (16496)"), F("80ms (8248)"), F("160ms (4124)"), F("320ms (2062)"), F("640ms (1031)"), F("1280ms (515)") };
+        addFormSelector(F("Integration Time (Max Lux)"), F("itime"), 6, optionsMode, NULL, PCONFIG(1));
+
+        String optionsVarMap[6] = {
+          F("R, G, B, W"),
+          F("r, g, b, W - relative rgb [&#37;]"),
+          F("r, g, b, W - relative rgb^Gamma [&#37;]"),
+          F("R, G, B, Color Temperature [K]"),
+          F("R, G, B, Ambient Light [Lux]"),
+          F("Color Temperature [K], Ambient Light [Lux], Y, W") };
+        addFormSelector(F("Value Mapping"), F("map"), 6, optionsVarMap, NULL, PCONFIG(2));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+
+        PCONFIG(1) = getFormItemInt(F("itime"));
+        PCONFIG(2) = getFormItemInt(F("map"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        VEML6040_Init(PCONFIG(1));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        float R, G, B, W;
+
+        R = VEML6040_GetValue(0x08);
+        G = VEML6040_GetValue(0x09);
+        B = VEML6040_GetValue(0x0A);
+        W = VEML6040_GetValue(0x0B);
+
+        switch (PCONFIG(2))
+        {
+          default:
+          case 0:
+          {
+            UserVar[event->BaseVarIndex + 0] = R;
+            UserVar[event->BaseVarIndex + 1] = G;
+            UserVar[event->BaseVarIndex + 2] = B;
+            UserVar[event->BaseVarIndex + 3] = W;
+            break;
+          }
+          case 1:
+          {
+            UserVar[event->BaseVarIndex + 0] = Plugin_066_CalcRelW(R, W) * 100.0;
+            UserVar[event->BaseVarIndex + 1] = Plugin_066_CalcRelW(G, W) * 100.0;
+            UserVar[event->BaseVarIndex + 2] = Plugin_066_CalcRelW(B, W) * 100.0;
+            UserVar[event->BaseVarIndex + 3] = W;
+            break;
+          }
+          case 2:
+          {
+            UserVar[event->BaseVarIndex + 0] = pow(Plugin_066_CalcRelW(R, W), 0.4545) * 100.0;
+            UserVar[event->BaseVarIndex + 1] = pow(Plugin_066_CalcRelW(G, W), 0.4545) * 100.0;
+            UserVar[event->BaseVarIndex + 2] = pow(Plugin_066_CalcRelW(B, W), 0.4545) * 100.0;
+            UserVar[event->BaseVarIndex + 3] = W;
+            break;
+          }
+          case 3:
+          {
+            UserVar[event->BaseVarIndex + 0] = R;
+            UserVar[event->BaseVarIndex + 1] = G;
+            UserVar[event->BaseVarIndex + 2] = B;
+            UserVar[event->BaseVarIndex + 3] = Plugin_066_CalcCCT(R, G, B);
+            break;
+          }
+          case 4:
+          {
+            UserVar[event->BaseVarIndex + 0] = R;
+            UserVar[event->BaseVarIndex + 1] = G;
+            UserVar[event->BaseVarIndex + 2] = B;
+            UserVar[event->BaseVarIndex + 3] = Plugin_066_CalcAmbientLight(G, PCONFIG(1));
+            break;
+          }
+          case 5:
+          {
+            UserVar[event->BaseVarIndex + 0] = Plugin_066_CalcCCT(R, G, B);
+            UserVar[event->BaseVarIndex + 1] = Plugin_066_CalcAmbientLight(G, PCONFIG(1));
+            UserVar[event->BaseVarIndex + 2] = (R + G + B) / 3.0;
+            UserVar[event->BaseVarIndex + 3] = W;
+            break;
+          }
+        }
+        success = true;
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+
+
+void VEML6040_setControlReg(byte data)
+{
+ Wire.beginTransmission(VEML6040_ADDR);
+  Wire.write(0);
+ Wire.write(data);
+  Wire.write(0);
+ Wire.endTransmission();
+}
+
+float VEML6040_GetValue(byte reg)
+{
+ Wire.beginTransmission(VEML6040_ADDR);
+ Wire.write(reg);
+ Wire.endTransmission(false);
+ Wire.requestFrom((uint8_t)VEML6040_ADDR, (uint8_t)0x2);
+ if (Wire.available() == 2)
+ {
+    uint16_t lsb = Wire.read();
+    uint16_t msb = Wire.read();
+  return (float)((msb << 8) | lsb);
+ }
+ return -1.0;
+}
+
+void VEML6040_Init(byte it)
+{
+  VEML6040_setControlReg(it << 4);
+}
+
+
+float Plugin_066_CalcCCT(float R, float G, float B)
+{
+  if (G == 0)
+    return 0;
+
+  float CCTi = (R - B) / G + 0.5;
+  float CCT = 4278.6 * pow(CCTi, -1.2455);
+  return CCT;
+}
+
+float Plugin_066_CalcAmbientLight(float G, byte it)
+{
+  float Sensitivity[6] = { 0.25168, 0.12584, 0.06292, 0.03146, 0.01573, 0.007865 };
+
+  return G * Sensitivity[it];
+}
+
+float Plugin_066_CalcRelW(float X, float W)
+{
+  if (W == 0)
+    return 0;
+
+  return X / W;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P067_HX711_Load_Cell.ino"
+#ifdef USES_P067
+# 19 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P067_HX711_Load_Cell.ino"
+#define PLUGIN_067 
+#define PLUGIN_ID_067 67
+#define PLUGIN_NAME_067 "Weight - HX711 Load Cell [TESTING]"
+#define PLUGIN_VALUENAME1_067 "WeightChanA"
+#define PLUGIN_VALUENAME2_067 "WeightChanB"
+
+
+
+
+
+#define BIT_POS_OS_CHAN_A 0
+#define BIT_POS_OS_CHAN_B 1
+#define BIT_POS_MODE_CHAN_A64 2
+#define BIT_POS_MODE_CHAN_A128 3
+#define BIT_POS_MODE_CHAN_B32 4
+#define BIT_POS_CALIB_CHAN_A 5
+#define BIT_POS_CALIB_CHAN_B 6
+
+std::map<byte, int32_t> Plugin_067_OversamplingValueChanA;
+std::map<byte, int16_t> Plugin_067_OversamplingCountChanA;
+std::map<byte, int32_t> Plugin_067_OversamplingValueChanB;
+std::map<byte, int16_t> Plugin_067_OversamplingCountChanB;
+
+enum {modeAoff, modeA64, modeA128};
+enum {modeBoff, modeB32};
+enum {chanA128, chanB32, chanA64};
+
+void initHX711(int16_t pinSCL, int16_t pinDOUT)
+{
+  digitalWrite(pinSCL, LOW);
+  pinMode(pinSCL, OUTPUT);
+
+  pinMode(pinDOUT, INPUT_PULLUP);
+}
+
+boolean isReadyHX711(int16_t pinSCL, int16_t pinDOUT)
+{
+  return (!digitalRead(pinDOUT));
+}
+
+int32_t readHX711(int16_t pinSCL, int16_t pinDOUT, int16_t config0, uint8_t *channelRead)
+{
+  static uint8_t channelToggle = 0;
+  static uint8_t nextChannel = chanA128;
+  int32_t value = 0;
+  int32_t mask = 0x00800000;
+  int8_t modeChanA = (config0 >> BIT_POS_MODE_CHAN_A64) & 0x03;
+  int8_t modeChanB = (config0 >> BIT_POS_MODE_CHAN_B32) & 0x01;
+
+
+  *channelRead = nextChannel;
+
+  if ((modeChanA == modeAoff) && (modeChanB == modeBoff))
+  {
+    digitalWrite(pinSCL, HIGH);
+    return 0;
+  }
+
+  if ((modeChanA != modeAoff) && (modeChanB != modeBoff))
+  {
+
+    channelToggle = 1 - channelToggle;
+    if (channelToggle)
+    {
+      if (modeChanA == modeA64)
+        nextChannel = chanA64;
+      else
+        nextChannel = chanA128;
+    } else {
+      nextChannel = chanB32;
+    }
+  }
+  else
+  {
+
+    if (modeChanA == modeA64)
+      nextChannel = chanA64;
+    if (modeChanA == modeA128)
+      nextChannel = chanA128;
+    if (modeChanB == modeB32)
+      nextChannel = chanB32;
+  }
+
+  for (byte i = 0; i < 24; i++)
+  {
+    digitalWrite(pinSCL, HIGH);
+    delayMicroseconds(1);
+    digitalWrite(pinSCL, LOW);
+    if (digitalRead(pinDOUT))
+      value |= mask;
+    delayMicroseconds(1);
+    mask >>= 1;
+  }
+
+  for (byte i = 0; i < (nextChannel + 1); i++)
+  {
+    digitalWrite(pinSCL, HIGH);
+    delayMicroseconds(1);
+    digitalWrite(pinSCL, LOW);
+    delayMicroseconds(1);
+  }
+
+  if (value & 0x00800000)
+    value |= 0xFF000000;
+
+  return value;
+}
+
+void float2int(float valFloat, int16_t *valInt0, int16_t *valInt1)
+{
+  int16_t *fti = (int16_t *)&valFloat;
+  *valInt0 = *fti++;
+  *valInt1 = *fti;
+}
+
+void int2float(int16_t valInt0, int16_t valInt1, float *valFloat)
+{
+  float offset;
+  int16_t *itf = (int16_t *)&offset;
+  *itf++ = valInt0;
+  *itf = valInt1;
+  *valFloat = offset;
+}
+
+boolean Plugin_067(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_067;
+        Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_DUAL;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_067);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_067));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_067));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        event->String1 = formatGpioName_output("SCL");
+        event->String2 = formatGpioName_input("DOUT");
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        float valFloat;
+
+        addFormSubHeader(F("Measurement Channel A"));
+
+        addFormCheckBox(F("Oversampling"), F("oversamplingChanA"), PCONFIG(0) & (1 << BIT_POS_OS_CHAN_A));
+
+        String optionsModeChanA[3] = { F("off"), F("Gain 64"), F("Gain 128") };
+        addFormSelector(F("Mode"), F("modeChanA"), 3, optionsModeChanA, NULL, (PCONFIG(0) >> BIT_POS_MODE_CHAN_A64) & 0x03);
+
+        int2float(PCONFIG(1), PCONFIG(2), &valFloat);
+        addFormTextBox(F("Offset"), F("p067_offset_chanA"), String(valFloat, 3), 25);
+        addHtml(F(" &nbsp; &nbsp; &#8617; Tare: "));
+        addCheckBox(F("tareChanA"), 0);
+
+
+        addFormSubHeader(F("Measurement Channel B"));
+
+        addFormCheckBox(F("Oversampling"), F("oversamplingChanB"), PCONFIG(0) & (1 << BIT_POS_OS_CHAN_B));
+
+        String optionsModeChanB[2] = { F("off"), F("Gain 32") };
+        addFormSelector(F("Mode"), F("modeChanB"), 2, optionsModeChanB, NULL, (PCONFIG(0) >> BIT_POS_MODE_CHAN_B32) & 0x01);
+
+        int2float(PCONFIG(3), PCONFIG(4), &valFloat);
+        addFormTextBox(F("Offset"), F("p067_offset_chanB"), String(valFloat, 3), 25);
+        addHtml(F(" &nbsp; &nbsp; &#8617; Tare: "));
+        addCheckBox(F("tareChanB"), 0);
+
+
+        addFormSubHeader(F("Two Point Calibration Channel A"));
+        addFormCheckBox(F("Calibration Enabled"), F("p067_cal_chanA"), PCONFIG(0) & (1 << BIT_POS_CALIB_CHAN_A));
+
+        addFormNumericBox(F("Point 1"), F("p067_adc1_chanA"), PCONFIG_LONG(0));
+        html_add_estimate_symbol();
+        addTextBox(F("p067_out1_chanA"), String(PCONFIG_FLOAT(0), 3), 10);
+
+        addFormNumericBox(F("Point 2"), F("p067_adc2_chanA"), PCONFIG_LONG(1));
+        html_add_estimate_symbol();
+        addTextBox(F("p067_out2_chanA"), String(PCONFIG_FLOAT(1), 3), 10);
+
+
+        addFormSubHeader(F("Two Point Calibration Channel B"));
+
+        addFormCheckBox(F("Calibration Enabled"), F("p067_cal_chanB"), PCONFIG(0) & (1 << BIT_POS_CALIB_CHAN_B));
+
+        addFormNumericBox(F("Point 1"), F("p067_adc1_chanB"), PCONFIG_LONG(2));
+        html_add_estimate_symbol();
+        addTextBox(F("p067_out1_chanB"), String(PCONFIG_FLOAT(2), 3), 10);
+
+        addFormNumericBox(F("Point 2"), F("p067_adc2_chanB"), PCONFIG_LONG(3));
+        html_add_estimate_symbol();
+        addTextBox(F("p067_out2_chanB"), String(PCONFIG_FLOAT(3), 3), 10);
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        float valFloat;
+
+        PCONFIG(0) = 0;
+        if (isFormItemChecked(F("oversamplingChanA")))
+          PCONFIG(0) |= (1 << BIT_POS_OS_CHAN_A);
+        if (isFormItemChecked(F("oversamplingChanB")))
+          PCONFIG(0) |= (1 << BIT_POS_OS_CHAN_B);
+        if (getFormItemInt(F("modeChanA")) == modeA64)
+          PCONFIG(0) |= (1 << BIT_POS_MODE_CHAN_A64);
+        if (getFormItemInt(F("modeChanA")) == modeA128)
+          PCONFIG(0) |= (1 << BIT_POS_MODE_CHAN_A128);
+        if (getFormItemInt(F("modeChanB")) == modeB32)
+          PCONFIG(0) |= (1 << BIT_POS_MODE_CHAN_B32);
+
+        if (isFormItemChecked(F("p067_cal_chanA")))
+          PCONFIG(0) |= (1 << BIT_POS_CALIB_CHAN_A);
+        if (isFormItemChecked(F("p067_cal_chanB")))
+          PCONFIG(0) |= (1 << BIT_POS_CALIB_CHAN_B);
+
+        if (isFormItemChecked(F("tareChanA")))
+        {
+          valFloat = -UserVar[event->BaseVarIndex + 2];
+          Plugin_067_OversamplingValueChanA[event->TaskIndex] = 0;
+          Plugin_067_OversamplingCountChanA[event->TaskIndex] = 0;
+        }
+        else
+        {
+          valFloat = getFormItemFloat(F("p067_offset_chanA"));
+        }
+        float2int(valFloat, &PCONFIG(1), &PCONFIG(2));
+
+        if (isFormItemChecked(F("tareChanB")))
+        {
+          valFloat = -UserVar[event->BaseVarIndex + 3];
+          Plugin_067_OversamplingValueChanB[event->TaskIndex] = 0;
+          Plugin_067_OversamplingCountChanB[event->TaskIndex] = 0;
+        }
+        else
+        {
+          valFloat = getFormItemFloat(F("p067_offset_chanB"));
+        }
+        float2int(valFloat, &PCONFIG(3), &PCONFIG(4));
+
+        PCONFIG_LONG(0) = getFormItemInt(F("p067_adc1_chanA"));
+        PCONFIG_FLOAT(0) = getFormItemFloat(F("p067_out1_chanA"));
+
+        PCONFIG_LONG(1) = getFormItemInt(F("p067_adc2_chanA"));
+        PCONFIG_FLOAT(1) = getFormItemFloat(F("p067_out2_chanA"));
+
+        PCONFIG_LONG(2) = getFormItemInt(F("p067_adc1_chanB"));
+        PCONFIG_FLOAT(2) = getFormItemFloat(F("p067_out1_chanB"));
+
+        PCONFIG_LONG(3) = getFormItemInt(F("p067_adc2_chanB"));
+        PCONFIG_FLOAT(3) = getFormItemFloat(F("p067_out2_chanB"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        int16_t pinSCL = CONFIG_PIN1;
+        int16_t pinDOUT = CONFIG_PIN2;
+
+        String log = F("HX711: GPIO: SCL=");
+        log += pinSCL;
+        log += F(" DOUT=");
+        log += pinDOUT;
+        addLog(LOG_LEVEL_INFO, log);
+
+        if (pinSCL >= 0 && pinDOUT >= 0)
+        {
+          Plugin_067_OversamplingValueChanA[event->TaskIndex] = 0;
+          Plugin_067_OversamplingCountChanA[event->TaskIndex] = 0;
+          Plugin_067_OversamplingValueChanB[event->TaskIndex] = 0;
+          Plugin_067_OversamplingCountChanB[event->TaskIndex] = 0;
+          initHX711(pinSCL, pinDOUT);
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_FIFTY_PER_SECOND:
+      {
+        int16_t pinSCL = CONFIG_PIN1;
+        int16_t pinDOUT = CONFIG_PIN2;
+
+        if (pinSCL >= 0 && pinDOUT >= 0)
+        if (isReadyHX711(pinSCL, pinDOUT))
+        {
+          uint8_t channelRead;
+          int32_t value = readHX711(pinSCL, pinDOUT, PCONFIG(0), &channelRead);
+
+          switch (channelRead)
+          {
+            case chanA64:
+            case chanA128: if (PCONFIG(0) & (1 << BIT_POS_OS_CHAN_A))
+                            {
+                              if (Plugin_067_OversamplingCountChanA[event->TaskIndex] < 250)
+                              {
+                                Plugin_067_OversamplingValueChanA[event->TaskIndex] += value;
+                                Plugin_067_OversamplingCountChanA[event->TaskIndex]++;
+                              }
+                            } else {
+                              Plugin_067_OversamplingValueChanA[event->TaskIndex] = value;
+                              Plugin_067_OversamplingCountChanA[event->TaskIndex] = 1;
+                            }
+                            break;
+            case chanB32: if (PCONFIG(0) & (1 << BIT_POS_OS_CHAN_B))
+                            {
+                              if (Plugin_067_OversamplingCountChanB[event->TaskIndex] < 250)
+                              {
+                                Plugin_067_OversamplingValueChanB[event->TaskIndex] += value;
+                                Plugin_067_OversamplingCountChanB[event->TaskIndex]++;
+                              }
+                            } else {
+                              Plugin_067_OversamplingValueChanB[event->TaskIndex] = value;
+                              Plugin_067_OversamplingCountChanB[event->TaskIndex] = 1;
+                            }
+                            break;
+          }
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        String log;
+        int8_t modeChanA = (PCONFIG(0) >> 2) & 0x03;
+        int8_t modeChanB = (PCONFIG(0) >> 4) & 0x01;
+        float valFloat;
+
+        if ((modeChanA == modeAoff) && (modeChanB == modeBoff))
+        {
+          log = F("HX711: No channel selected");
+          addLog(LOG_LEVEL_INFO,log);
+        }
+
+
+        if (modeChanA != modeAoff)
+        {
+          log = F("HX711: ChanA: ");
+
+          if (Plugin_067_OversamplingCountChanA[event->TaskIndex] > 0)
+          {
+            UserVar[event->BaseVarIndex + 2] = (float)Plugin_067_OversamplingValueChanA[event->TaskIndex] / Plugin_067_OversamplingCountChanA[event->TaskIndex];
+
+            Plugin_067_OversamplingValueChanA[event->TaskIndex] = 0;
+            Plugin_067_OversamplingCountChanA[event->TaskIndex] = 0;
+
+            int2float(PCONFIG(1), PCONFIG(2), &valFloat);
+            UserVar[event->BaseVarIndex] = UserVar[event->BaseVarIndex + 2] + valFloat;
+
+            log += String(UserVar[event->BaseVarIndex], 3);
+
+            if (PCONFIG(0) & (1 << BIT_POS_CALIB_CHAN_A))
+            {
+              int adc1 = PCONFIG_LONG(0);
+              int adc2 = PCONFIG_LONG(1);
+              float out1 = PCONFIG_FLOAT(0);
+              float out2 = PCONFIG_FLOAT(1);
+              if (adc1 != adc2)
+              {
+                float normalized = (float)(UserVar[event->BaseVarIndex] - adc1) / (float)(adc2 - adc1);
+                UserVar[event->BaseVarIndex] = normalized * (out2 - out1) + out1;
+
+                log += F(" = ");
+                log += String(UserVar[event->BaseVarIndex], 3);
+              }
+            }
+          }
+          else
+          {
+            log += F("NO NEW VALUE");
+          }
+          addLog(LOG_LEVEL_INFO,log);
+        }
+
+
+        if (modeChanB != modeBoff)
+        {
+          log = F("HX711: ChanB: ");
+
+          if (Plugin_067_OversamplingCountChanB[event->TaskIndex] > 0)
+          {
+            UserVar[event->BaseVarIndex + 3] = (float)Plugin_067_OversamplingValueChanB[event->TaskIndex] / Plugin_067_OversamplingCountChanB[event->TaskIndex];
+
+            Plugin_067_OversamplingValueChanB[event->TaskIndex] = 0;
+            Plugin_067_OversamplingCountChanB[event->TaskIndex] = 0;
+
+            int2float(PCONFIG(3), PCONFIG(4), &valFloat);
+            UserVar[event->BaseVarIndex + 1] = UserVar[event->BaseVarIndex + 3] + valFloat;
+
+            log += String(UserVar[event->BaseVarIndex + 1], 3);
+
+            if (PCONFIG(0) & (1 << BIT_POS_CALIB_CHAN_B))
+            {
+              int adc1 = PCONFIG_LONG(2);
+              int adc2 = PCONFIG_LONG(3);
+              float out1 = PCONFIG_FLOAT(2);
+              float out2 = PCONFIG_FLOAT(3);
+              if (adc1 != adc2)
+              {
+                float normalized = (float)(UserVar[event->BaseVarIndex + 1] - adc1) / (float)(adc2 - adc1);
+                UserVar[event->BaseVarIndex + 1] = normalized * (out2 - out1) + out1;
+
+                log += F(" = ");
+                log += String(UserVar[event->BaseVarIndex + 1], 3);
+              }
+            }
+          }
+          else
+          {
+            log += F("NO NEW VALUE");
+          }
+          addLog(LOG_LEVEL_INFO,log);
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String command = parseString(string, 1);
+        if (command.equalsIgnoreCase(F("tarechana")))
+        {
+          String log = F("HX711: tare channel A");
+
+          float2int(-UserVar[event->BaseVarIndex + 2], &PCONFIG(1), &PCONFIG(2));
+          Plugin_067_OversamplingValueChanA[event->TaskIndex] = 0;
+          Plugin_067_OversamplingCountChanA[event->TaskIndex] = 0;
+
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+        }
+
+        if (command.equalsIgnoreCase(F("tarechanb")))
+        {
+          String log = F("HX711: tare channel B");
+
+          float2int(-UserVar[event->BaseVarIndex + 3], &PCONFIG(3), &PCONFIG(4));
+          Plugin_067_OversamplingValueChanB[event->TaskIndex] = 0;
+          Plugin_067_OversamplingCountChanB[event->TaskIndex] = 0;
+
+          addLog(LOG_LEVEL_INFO, log);
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+        Plugin_067_OversamplingValueChanA.erase(event->TaskIndex);
+        Plugin_067_OversamplingCountChanA.erase(event->TaskIndex);
+        Plugin_067_OversamplingValueChanB.erase(event->TaskIndex);
+        Plugin_067_OversamplingCountChanB.erase(event->TaskIndex);
+        break;
+      }
+
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P068_SHT3x.ino"
+#ifdef USES_P068
+# 14 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P068_SHT3x.ino"
+#define PLUGIN_068 
+#define PLUGIN_ID_068 68
+#define PLUGIN_NAME_068 "Environment - SHT30/31/35 [TESTING]"
+#define PLUGIN_VALUENAME1_068 "Temperature"
+#define PLUGIN_VALUENAME2_068 "Humidity"
+
+
+
+
+# ifndef SHT3X_H
+#define SHT3X_H 
+
+class SHT3X: public PluginTaskData_base
+{
+public:
+ SHT3X(uint8_t addr);
+
+ void readFromSensor(void);
+ bool CRC8(uint8_t MSB, uint8_t LSB, uint8_t CRC);
+
+ float tmp=0;
+ float hum=0;
+
+private:
+ uint8_t _i2c_device_address;
+};
+
+#endif
+
+
+
+
+SHT3X::SHT3X(uint8_t addr)
+{
+ _i2c_device_address = addr;
+
+
+
+ I2C_write8_reg(
+  _i2c_device_address,
+  0x20,
+  0x32
+ );
+}
+
+void SHT3X::readFromSensor()
+{
+ uint16_t data[6];
+
+  I2C_write8_reg(
+  _i2c_device_address,
+  0xE0,
+  0x00
+ );
+
+
+ Wire.requestFrom(_i2c_device_address, (uint8_t)6);
+ if (Wire.available() == 6)
+ {
+  data[0] = Wire.read();
+  data[1] = Wire.read();
+  data[2] = Wire.read();
+  data[3] = Wire.read();
+  data[4] = Wire.read();
+  data[5] = Wire.read();
+
+
+  if (CRC8(data[0], data[1], data[2]) &&
+      CRC8(data[3], data[4], data[5]))
+  {
+   tmp = ((((data[0] << 8) | data[1]) * 175.0) / 65535.0) - 45.0;
+   hum = ((((data[3] << 8) | data[4]) * 100.0) / 65535.0);
+  }
+ }
+ else
+ {
+  tmp = NAN;
+  hum = NAN;
+
+
+  Wire.beginTransmission(_i2c_device_address);
+  Wire.write(0x20);
+  Wire.write(0x32);
+  Wire.endTransmission();
+ }
+}
+
+
+
+
+bool SHT3X::CRC8(uint8_t MSB, uint8_t LSB, uint8_t CRC)
+{
+# 115 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P068_SHT3x.ino"
+ uint8_t crc = 0xFF;
+ for (uint8_t bytenr = 0; bytenr < 2; ++bytenr) {
+  crc ^= (bytenr == 0) ? MSB : LSB;
+  for (uint8_t i = 0; i < 8; ++i) {
+   crc = crc & 0x80 ? (crc << 1) ^ 0x31 : crc << 1;
+  }
+ }
+ return (crc == CRC);
+}
+
+
+
+
+
+boolean Plugin_068(byte function, struct EventStruct *event, String& string)
+{
+ boolean success = false;
+
+ switch (function)
+ {
+  case PLUGIN_DEVICE_ADD:
+  {
+   Device[++deviceCount].Number = PLUGIN_ID_068;
+   Device[deviceCount].Type = DEVICE_TYPE_I2C;
+   Device[deviceCount].VType = SENSOR_TYPE_TEMP_HUM;
+   Device[deviceCount].Ports = 0;
+   Device[deviceCount].PullUpOption = false;
+   Device[deviceCount].InverseLogicOption = false;
+   Device[deviceCount].FormulaOption = true;
+   Device[deviceCount].ValueCount = 2;
+   Device[deviceCount].SendDataOption = true;
+   Device[deviceCount].TimerOption = true;
+   Device[deviceCount].GlobalSyncOption = true;
+   break;
+  }
+
+  case PLUGIN_GET_DEVICENAME:
+  {
+   string = F(PLUGIN_NAME_068);
+   break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES:
+  {
+   strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_068));
+   strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_068));
+   break;
+  }
+
+  case PLUGIN_WEBFORM_LOAD:
+  {
+   int optionValues[2] = { 0x44, 0x45 };
+   addFormSelectorI2C(F("i2c_addr"), 2, optionValues, PCONFIG(0));
+
+   success = true;
+   break;
+  }
+
+  case PLUGIN_WEBFORM_SAVE:
+  {
+   PCONFIG(0) = getFormItemInt(F("i2c_addr"));
+
+   success = true;
+   break;
+  }
+
+  case PLUGIN_INIT:
+  {
+   initPluginTaskData(event->TaskIndex, new SHT3X(PCONFIG(0)));
+   success = true;
+   break;
+  }
+
+  case PLUGIN_READ:
+  {
+   SHT3X* sht3x = static_cast<SHT3X*>(getPluginTaskData(event->TaskIndex));
+   if (nullptr == sht3x) {
+     return success;
+   }
+
+   sht3x->readFromSensor();
+   UserVar[event->BaseVarIndex + 0] = sht3x->tmp;
+   UserVar[event->BaseVarIndex + 1] = sht3x->hum;
+   String log = F("SHT3x: Temperature: ");
+   log += UserVar[event->BaseVarIndex + 0];
+   addLog(LOG_LEVEL_INFO, log);
+   log = F("SHT3x: Humidity: ");
+   log += UserVar[event->BaseVarIndex + 1];
+   addLog(LOG_LEVEL_INFO, log);
+   success = true;
+   break;
+  }
+ }
+ return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P069_LM75A.ino"
+#ifdef USES_P069
+# 14 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P069_LM75A.ino"
+#define PLUGIN_069 
+#define PLUGIN_ID_069 69
+#define PLUGIN_NAME_069 "Environment - LM75A"
+#define PLUGIN_VALUENAME1_069 "Temperature"
+
+
+#ifndef LM75A_h
+#define LM75A_h 
+
+#define INVALID_LM75A_TEMPERATURE 1000
+
+namespace LM75AConstValues
+{
+  const int LM75A_BASE_ADDRESS = 0x48;
+  const float LM75A_DEGREES_RESOLUTION = 0.125;
+  const int LM75A_REG_ADDR_TEMP = 0;
+}
+
+using namespace LM75AConstValues;
+
+class LM75A
+{
+public:
+  LM75A(bool A0_value = false, bool A1_value = false, bool A2_value = false)
+  {
+    _i2c_device_address = LM75A_BASE_ADDRESS;
+
+    if (A0_value) {
+      _i2c_device_address += 1;
+    }
+
+    if (A1_value) {
+      _i2c_device_address += 2;
+    }
+
+    if (A2_value) {
+      _i2c_device_address += 4;
+    }
+
+
+  }
+
+  LM75A(uint8_t addr)
+  {
+    _i2c_device_address = addr;
+
+  }
+
+  float getTemperatureInDegrees() const
+  {
+    float real_result = INVALID_LM75A_TEMPERATURE;
+    int16_t value = 0;
+
+
+    Wire.beginTransmission(_i2c_device_address);
+    Wire.write(LM75A_REG_ADDR_TEMP);
+    if (Wire.endTransmission())
+    {
+
+      return real_result;
+    }
+
+
+    Wire.requestFrom(_i2c_device_address, (uint8_t)2);
+    if (Wire.available() == 2)
+    {
+      value = (Wire.read() << 8) | Wire.read();
+    }
+    else
+    {
+
+      return real_result;
+    }
+
+
+    value >>= 5;
+
+
+    if (value & 0x0400)
+    {
+      value |= 0xFC00;
+    }
+
+
+    real_result = (float)value * LM75A_DEGREES_RESOLUTION;
+
+    return real_result;
+  }
+
+private:
+  uint8_t _i2c_device_address;
+};
+
+#endif
+
+
+LM75A* PLUGIN_069_LM75A = NULL;
+
+
+boolean Plugin_069(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+    {
+      Device[++deviceCount].Number = PLUGIN_ID_069;
+      Device[deviceCount].Type = DEVICE_TYPE_I2C;
+      Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+      Device[deviceCount].Ports = 0;
+      Device[deviceCount].PullUpOption = false;
+      Device[deviceCount].InverseLogicOption = false;
+      Device[deviceCount].FormulaOption = true;
+      Device[deviceCount].ValueCount = 1;
+      Device[deviceCount].SendDataOption = true;
+      Device[deviceCount].TimerOption = true;
+      Device[deviceCount].GlobalSyncOption = true;
+      break;
+    }
+
+    case PLUGIN_GET_DEVICENAME:
+    {
+      string = F(PLUGIN_NAME_069);
+      break;
+    }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+    {
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_069));
+      break;
+    }
+
+    case PLUGIN_WEBFORM_LOAD:
+    {
+      int optionValues[8] = { 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F };
+      addFormSelectorI2C(F("i2c_addr"), 8, optionValues, PCONFIG(0));
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SAVE:
+    {
+      PCONFIG(0) = getFormItemInt(F("i2c_addr"));
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_INIT:
+    {
+      if (PLUGIN_069_LM75A)
+        delete PLUGIN_069_LM75A;
+      PLUGIN_069_LM75A = new LM75A((uint8_t)PCONFIG(0));
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_READ:
+    {
+      if (!PLUGIN_069_LM75A)
+        return success;
+
+      float tempC = PLUGIN_069_LM75A->getTemperatureInDegrees();
+
+      if (tempC == INVALID_LM75A_TEMPERATURE)
+      {
+        String log = F("LM75A: No reading!");
+        addLog(LOG_LEVEL_INFO, log);
+        UserVar[event->BaseVarIndex] = NAN;
+      }
+      else
+      {
+        UserVar[event->BaseVarIndex] = tempC;
+        String log = F("LM75A: Temperature: ");
+        log += UserVar[event->BaseVarIndex];
+        addLog(LOG_LEVEL_INFO, log);
+        success = true;
+      }
+      break;
+    }
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P070_NeoPixel_Clock.ino"
+#ifdef USES_P070
+# 16 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P070_NeoPixel_Clock.ino"
+#include <Adafruit_NeoPixel.h>
+
+#define NUMBER_LEDS 60
+
+struct P070_data_struct : public PluginTaskData_base {
+
+  P070_data_struct() {}
+
+  ~P070_data_struct() { reset(); }
+
+  void reset() {
+    if (Plugin_070_pixels != nullptr) {
+      delete Plugin_070_pixels;
+      Plugin_070_pixels = nullptr;
+    }
+  }
+
+  void init(struct EventStruct *event) {
+    if (!Plugin_070_pixels)
+    {
+      Plugin_070_pixels = new Adafruit_NeoPixel(NUMBER_LEDS, CONFIG_PIN1, NEO_GRB + NEO_KHZ800);
+      Plugin_070_pixels->begin();
+    }
+    set(event);
+  }
+
+  void set(struct EventStruct *event) {
+    display_enabled = PCONFIG(0);
+    brightness = PCONFIG(1);
+    brightness_hour_marks = PCONFIG(2);
+    offset_12h_mark = PCONFIG(3);
+    thick_12_mark = PCONFIG(4);
+  }
+
+
+
+  void Clock_update()
+  {
+    clearClock();
+    if (display_enabled > 0) {
+      int Hours = hour();
+      int Minutes = minute();
+      int Seconds = second();
+      timeToStrip(Hours, Minutes, Seconds);
+    }
+    Plugin_070_pixels->show();
+  }
+
+  void calculateMarks()
+  {
+    for (int i = 0; i < 12; i++) {
+      marks[i] = 5 * i + (offset_12h_mark % 5);
+    }
+    if (thick_12_mark) {
+      if (offset_12h_mark == 0) {
+        marks[12] = 1;
+        marks[13] = 59;
+      }
+      else if (offset_12h_mark == 59) {
+        marks[12] = 0;
+        marks[13] = 58;
+      }
+      else {
+        marks[12] = offset_12h_mark + 1;
+        marks[13] = offset_12h_mark - 1;
+      }
+    }
+    else {
+      marks[12] = 255;
+      marks[13] = 255;
+    }
+  }
+
+  void clearClock() {
+    for (int i = 0; i < NUMBER_LEDS; i++) {
+      Plugin_070_pixels->setPixelColor(i, Plugin_070_pixels->Color(0, 0, 0));
+    }
+  }
+
+  void timeToStrip(int hours, int minutes, int seconds) {
+    if (hours > 11) hours = hours - 12;
+    hours = (hours * 5) + (minutes / 12) + offset_12h_mark;
+    if (hours > 59) hours = hours - 60;
+    minutes = minutes + offset_12h_mark;
+    if (minutes > 59) minutes = minutes - 60;
+    seconds = seconds + offset_12h_mark;
+    if (seconds > 59) seconds = seconds - 60;
+    for (int i = 0 ; i < 14; i ++) {
+      if ((marks[i] != hours) && (marks[i] != minutes) && (marks[i] != seconds) && (marks[i] != 255)) {
+        Plugin_070_pixels->setPixelColor(marks[i], Plugin_070_pixels->Color(brightness_hour_marks, brightness_hour_marks, brightness_hour_marks));
+      }
+    }
+    uint32_t currentColor;
+    uint8_t r_val, g_val, b_val;
+    for (int i = 0; i < NUMBER_LEDS; i++) {
+      if (i == hours) {
+        Plugin_070_pixels->setPixelColor(i, Plugin_070_pixels->Color(brightness, 0, 0));
+      }
+      if (i == minutes) {
+        currentColor = Plugin_070_pixels->getPixelColor(i);
+        r_val = (uint8_t)(currentColor >> 16);
+        Plugin_070_pixels->setPixelColor(i, Plugin_070_pixels->Color(r_val, brightness, 0));
+      }
+      if (i == seconds) {
+        currentColor = Plugin_070_pixels->getPixelColor(i);
+        r_val = (uint8_t)(currentColor >> 16);
+        g_val = (uint8_t)(currentColor >> 8);
+        Plugin_070_pixels->setPixelColor(i, Plugin_070_pixels->Color(r_val, g_val, brightness));
+      }
+    }
+  }
+
+  boolean display_enabled;
+  byte brightness;
+  byte brightness_hour_marks;
+  byte offset_12h_mark;
+  boolean thick_12_mark;
+  byte marks[14];
+
+  Adafruit_NeoPixel * Plugin_070_pixels = nullptr;
+
+};
+
+
+#define PLUGIN_070 
+#define PLUGIN_ID_070 70
+#define PLUGIN_NAME_070 "Output - NeoPixel Ring Clock [TESTING]"
+#define PLUGIN_VALUENAME1_070 "Enabled"
+#define PLUGIN_VALUENAME2_070 "Brightness"
+#define PLUGIN_VALUENAME3_070 "Marks"
+boolean Plugin_070(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_070;
+        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+        Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].GlobalSyncOption = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_070);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_070));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_070));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_070));
+        break;
+      }
+
+ case PLUGIN_GET_DEVICEGPIONAMES:
+   {
+      event->String1 = formatGpioName_output("LED");
+        break;
+   }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        addFormSubHeader(F("Clock configuration"));
+        addFormNumericBox(F("12 o'clock LED position"), F("offset"), PCONFIG(3), 0, 59);
+        addFormNote(F("Position of the 12 o'clock LED in the strip"));
+        addFormCheckBox(F("Thick 12 o'clock mark"), F("thick_12_mark"), PCONFIG(4));
+        addFormNote(F("Check to have 3 LEDs marking the 12 o'clock position"));
+        addFormCheckBox(F("Clock display enabled"), F("enabled"), PCONFIG(0));
+        addFormNote(F("LED activation"));
+        addFormNumericBox(F("LED brightness"), F("brightness"), PCONFIG(1), 0, 255);
+        addFormNote(F("Brightness level of the H/M/S hands (0-255)"));
+        addFormNumericBox(F("Hour mark brightness"), F("marks"), PCONFIG(2), 0, 255);
+        addFormNote(F("Brightness level of the hour marks (0-255)"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        PCONFIG(0) = isFormItemChecked(F("enabled"));
+        PCONFIG(1) = getFormItemInt(F("brightness"));
+        PCONFIG(2) = getFormItemInt(F("marks"));
+        PCONFIG(3) = getFormItemInt(F("offset"));
+        PCONFIG(4) = isFormItemChecked(F("thick_12_mark"));
+        P070_data_struct* P070_data = static_cast<P070_data_struct*>(getPluginTaskData(event->TaskIndex));
+        if (nullptr != P070_data) {
+          P070_data->display_enabled = PCONFIG(0);
+          P070_data->brightness = PCONFIG(1);
+          P070_data->brightness_hour_marks = PCONFIG(2);
+          P070_data->offset_12h_mark = PCONFIG(3);
+          P070_data->thick_12_mark = PCONFIG(4);
+          P070_data->calculateMarks();
+        }
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+      {
+        clearPluginTaskData(event->TaskIndex);
+        success = true;
+        break;
+      }
+
+
+    case PLUGIN_INIT:
+      {
+        initPluginTaskData(event->TaskIndex, new P070_data_struct());
+        P070_data_struct* P070_data = static_cast<P070_data_struct*>(getPluginTaskData(event->TaskIndex));
+        if (nullptr == P070_data) {
+          return success;
+        }
+        P070_data->init(event);
+        P070_data->calculateMarks();
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_ONCE_A_SECOND:
+      {
+        Clock_update();
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String lowerString=string;
+        lowerString.toLowerCase();
+        String command = parseString(lowerString, 1);
+        String param1 = parseString(lowerString, 2);
+        String param2 = parseString(lowerString, 3);
+        String param3 = parseString(lowerString, 4);
+
+        P070_data_struct* P070_data = static_cast<P070_data_struct*>(getPluginTaskData(event->TaskIndex));
+        if (nullptr != P070_data && command == F("clock")) {
+          int val_Mode;
+          if (validIntFromString(param1, val_Mode)) {
+            if (val_Mode > -1 && val_Mode < 2) {
+              P070_data->display_enabled = val_Mode;
+              PCONFIG(0) = P070_data->display_enabled;
+            }
+          }
+          int val_Bright;
+          if (validIntFromString(param2, val_Bright)) {
+            if (val_Bright > -1 && val_Bright < 256) {
+              P070_data->brightness = val_Bright;
+              PCONFIG(1) = P070_data->brightness;
+            }
+          }
+          int val_Marks;
+          if (validIntFromString(param3, val_Marks)) {
+            if (val_Marks > -1 && val_Marks < 256) {
+              P070_data->brightness_hour_marks = val_Marks;
+              PCONFIG(2) = P070_data->brightness_hour_marks;
+            }
+          }
+# 302 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P070_NeoPixel_Clock.ino"
+          success = true;
+        }
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        P070_data_struct* P070_data = static_cast<P070_data_struct*>(getPluginTaskData(event->TaskIndex));
+        if (nullptr != P070_data) {
+          UserVar[event->BaseVarIndex] = display_enabled;
+          UserVar[event->BaseVarIndex + 1] = brightness;
+          UserVar[event->BaseVarIndex + 2] = brightness_hour_marks;
+
+          success = true;
+        }
+      }
+
+  }
+  return success;
+}
+
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P071_Kamstrup401.ino"
+#ifdef USES_P071
+# 14 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P071_Kamstrup401.ino"
+#include <ESPeasySerial.h>
+#define PLUGIN_071 
+#define PLUGIN_ID_071 71
+#define PLUGIN_NAME_071 "Communication - Kamstrup Multical 401 [TESTING]"
+#define PLUGIN_VALUENAME1_071 "Heat"
+#define PLUGIN_VALUENAME2_071 "Volume"
+
+boolean Plugin_071_init = false;
+byte PIN_KAMSER_RX = 0;
+byte PIN_KAMSER_TX = 0;
+
+boolean Plugin_071(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_071;
+        Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+        Device[deviceCount].VType = SENSOR_TYPE_DUAL;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_071);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_071));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_071));
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        serialHelper_getGpioNames(event);
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        Plugin_071_init = true;
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        serialHelper_webformLoad(event);
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE: {
+      serialHelper_webformSave(event);
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_READ:
+      {
+        PIN_KAMSER_RX = CONFIG_PIN1;
+        PIN_KAMSER_TX = CONFIG_PIN2;
+
+        ESPeasySerial kamSer(PIN_KAMSER_RX, PIN_KAMSER_TX, false);
+
+        pinMode(PIN_KAMSER_RX,INPUT);
+        pinMode(PIN_KAMSER_TX,OUTPUT);
+
+
+        byte sendmsg1[] = { 175,163,177 };
+
+        byte r = 0;
+        byte to = 0;
+        byte i;
+        char message[255];
+        int parityerrors;
+
+
+        kamSer.begin(300);
+        for (int x = 0; x < 3; x++) {
+          kamSer.write(sendmsg1[x]);
+        }
+
+        kamSer.flush();
+
+        kamSer.begin(1200);
+
+        to = 0;
+        r = 0;
+        i = 0;
+        parityerrors = 0;
+        char *tmpstr;
+        double m_energy, m_volume;
+        float m_tempin, m_tempout, m_tempdiff, m_power;
+        long m_hours, m_flow;
+
+        while(r != 0x0A)
+        {
+          if (kamSer.available())
+          {
+
+            r = kamSer.read();
+
+            if (parity_check(r))
+            {
+               parityerrors += 1;
+            }
+            r = r & 127;
+
+            message[i++] = char(r);
+          }
+          else
+          {
+            to++;
+            delay(25);
+          }
+
+          if (i>=79)
+          {
+            if ( parityerrors == 0 )
+            {
+
+
+              message[i] = 0;
+
+              tmpstr = strtok(message, " ");
+              if (tmpstr){
+               m_energy = atol(tmpstr)/3.6*1000;
+              }
+              else
+               m_energy = 0;
+
+              tmpstr = strtok(NULL, " ");
+              if (tmpstr)
+               m_volume = atol(tmpstr);
+              else
+               m_volume = 0;
+
+              tmpstr = strtok(NULL, " ");
+              if (tmpstr)
+               m_hours = atol(tmpstr);
+              else
+               m_hours = 0;
+
+              tmpstr = strtok(NULL, " ");
+              if (tmpstr)
+               m_tempin = atol(tmpstr)/100.0;
+              else
+               m_tempin = 0;
+
+              tmpstr = strtok(NULL, " ");
+              if (tmpstr)
+               m_tempout = atol(tmpstr)/100.0;
+              else
+               m_tempout = 0;
+
+              tmpstr = strtok(NULL, " ");
+              if (tmpstr)
+               m_tempdiff = atol(tmpstr)/100.0;
+              else
+               m_tempdiff = 0;
+
+              tmpstr = strtok(NULL, " ");
+              if (tmpstr)
+               m_power = atol(tmpstr)/10.0;
+              else
+               m_power = 0;
+
+              tmpstr = strtok(NULL, " ");
+              if (tmpstr)
+               m_flow = atol(tmpstr);
+              else
+               m_flow = 0;
+
+               String log = F("Kamstrup output: ");
+               log += m_energy;
+               log += F(" MJ;  ");
+               log += m_volume;
+               log += F(" L; ");
+               log += m_hours;
+               log += F(" h; ");
+               log += m_tempin;
+               log += F(" C; ");
+               log += m_tempout;
+               log += F(" C; ");
+               log += m_tempdiff;
+               log += F(" C; ");
+               log += m_power;
+               log += ' ';
+               log += m_flow;
+               log += F(" L/H");
+
+
+              UserVar[event->BaseVarIndex] = m_energy;
+              UserVar[event->BaseVarIndex+1] = m_volume;
+
+              log = F("Kamstrup  : Heat value: ");
+              log += m_energy/1000;
+              log += F(" kWh");
+              addLog(LOG_LEVEL_INFO, log);
+              log = F("Kamstrup  : Volume value: ");
+              log += m_volume;
+              log += F(" Liter");
+              addLog(LOG_LEVEL_INFO, log);
+            }
+            else
+            {
+              message[i] = 0;
+              String log = F("ERR(PARITY):" );
+              serialPrint("par");
+              log += message;
+              addLog(LOG_LEVEL_INFO, log);
+
+
+            }
+            break;
+          }
+          if (to>100)
+          {
+            message[i] = 0;
+            String log = F("ERR(TIMEOUT):" );
+            log += message;
+            addLog(LOG_LEVEL_INFO, log);
+
+
+
+            break;
+          }
+        }
+
+
+
+
+        success = true;
+        break;
+      }
+  }
+  return success;
+}
+
+bool parity_check(unsigned input) {
+    bool inputparity = input & 128;
+    int x = input & 127;
+
+    int parity = 0;
+    while(x != 0) {
+        parity ^= x;
+        x >>= 1;
+    }
+
+    if ( (parity & 0x1) != inputparity )
+      return(1);
+    else
+      return(0);
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P072_HDC1080.ino"
+#ifdef USES_P072
+
+
+
+
+
+#define PLUGIN_072 
+#define PLUGIN_ID_072 72
+#define PLUGIN_NAME_072 "Environment - HDC1080 (I2C) [TESTING]"
+#define PLUGIN_VALUENAME1_072 "Temperature"
+#define PLUGIN_VALUENAME2_072 "Humidity"
+
+boolean Plugin_072_init = false;
+
+#define HDC1080_I2C_ADDRESS 0x40
+
+boolean Plugin_072(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_072;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].VType = SENSOR_TYPE_TEMP_HUM;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_072);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_072));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_072));
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        byte hdc1080_msb, hdc1080_lsb;
+        uint16_t hdc1080_rawtemp, hdc1080_rawhum;
+        float hdc1080_temp, hdc1080_hum;
+
+        Wire.beginTransmission(HDC1080_I2C_ADDRESS);
+        Wire.write(0x02);
+        Wire.write(0b00000000);
+        Wire.write(0x00);
+        Wire.endTransmission();
+        delay(10);
+
+        Wire.beginTransmission(HDC1080_I2C_ADDRESS);
+        Wire.write(0x00);
+        Wire.endTransmission();
+        delay(9);
+        Wire.requestFrom(HDC1080_I2C_ADDRESS, 2);
+        hdc1080_msb = Wire.read();
+        hdc1080_lsb = Wire.read();
+        hdc1080_rawtemp = hdc1080_msb << 8 | hdc1080_lsb;
+        hdc1080_temp = (hdc1080_rawtemp / pow(2,16)) * 165 -40;
+
+        Wire.beginTransmission(HDC1080_I2C_ADDRESS);
+        Wire.write(0x01);
+        Wire.endTransmission();
+        delay(9);
+        Wire.requestFrom(HDC1080_I2C_ADDRESS, 2);
+        hdc1080_msb = Wire.read();
+        hdc1080_lsb = Wire.read();
+        hdc1080_rawhum = hdc1080_msb << 8 | hdc1080_lsb;
+        hdc1080_hum = (hdc1080_rawhum / pow(2,16)) * 100;
+
+        UserVar[event->BaseVarIndex] = hdc1080_temp;
+        UserVar[event->BaseVarIndex + 1] = hdc1080_hum;
+        String log = F("HDC1080: Temperature: ");
+        log += UserVar[event->BaseVarIndex];
+        addLog(LOG_LEVEL_INFO, log);
+        log = F("HDC1080: Humidity: ");
+        log += UserVar[event->BaseVarIndex + 1];
+        addLog(LOG_LEVEL_INFO, log);
+        success = true;
+        break;
+
+      }
+  }
+  return success;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P073_7DGT.ino"
+#ifdef USES_P073
+# 31 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P073_7DGT.ino"
+#define PLUGIN_073 
+#define PLUGIN_ID_073 73
+#define PLUGIN_NAME_073 "Display - 7-segment display"
+#define PLUGIN_073_DEBUG false
+
+#define P073_TM1637_4DGTCOLON 0
+#define P073_TM1637_4DGTDOTS 1
+#define P073_TM1637_6DGT 2
+#define P073_MAX7219_8DGT 3
+
+#define P073_DISP_MANUAL 0
+#define P073_DISP_CLOCK24BLNK 1
+#define P073_DISP_CLOCK24 2
+#define P073_DISP_CLOCK12BLNK 3
+#define P073_DISP_CLOCK12 4
+#define P073_DISP_DATE 5
+
+struct P073_data_struct : public PluginTaskData_base {
+  P073_data_struct()
+      : dotpos(-1), pin1(-1), pin2(-1), pin3(-1), displayModel(0), output(0),
+        brightness(0), timesep(false), shift(false) {
+    ClearBuffer();
+  }
+
+  void FillBufferWithTime(boolean sevendgt_now, byte sevendgt_hours,
+                          byte sevendgt_minutes, byte sevendgt_seconds,
+                          boolean flag12h) {
+    ClearBuffer();
+    if (sevendgt_now) {
+      sevendgt_hours = hour();
+      sevendgt_minutes = minute();
+      sevendgt_seconds = second();
+    }
+    if (flag12h && sevendgt_hours > 12)
+      sevendgt_hours -= 12;
+    if (flag12h && sevendgt_hours == 0)
+      sevendgt_hours = 12;
+
+    showbuffer[0] = static_cast<uint8_t>(sevendgt_hours / 10);
+    showbuffer[1] = sevendgt_hours % 10;
+    showbuffer[2] = static_cast<uint8_t>(sevendgt_minutes / 10);
+    showbuffer[3] = sevendgt_minutes % 10;
+    showbuffer[4] = static_cast<uint8_t>(sevendgt_seconds / 10);
+    showbuffer[5] = sevendgt_seconds % 10;
+  }
+
+  void FillBufferWithDate(boolean sevendgt_now, byte sevendgt_day,
+                          byte sevendgt_month, int sevendgt_year) {
+    ClearBuffer();
+    int sevendgt_year0 = sevendgt_year;
+    if (sevendgt_now) {
+      sevendgt_day = day();
+      sevendgt_month = month();
+      sevendgt_year0 = year();
+    } else {
+      if (sevendgt_year0 < 100) {
+        sevendgt_year0 += 2000;
+      }
+    }
+    byte sevendgt_year1 = static_cast<uint8_t>(sevendgt_year0 / 100);
+    byte sevendgt_year2 = static_cast<uint8_t>(sevendgt_year0 % 100);
+
+    showbuffer[0] = static_cast<uint8_t>(sevendgt_day / 10);
+    showbuffer[1] = sevendgt_day % 10;
+    showbuffer[2] = static_cast<uint8_t>(sevendgt_month / 10);
+    showbuffer[3] = sevendgt_month % 10;
+    showbuffer[4] = static_cast<uint8_t>(sevendgt_year1 / 10);
+    showbuffer[5] = sevendgt_year1 % 10;
+    showbuffer[6] = static_cast<uint8_t>(sevendgt_year2 / 10);
+    showbuffer[7] = sevendgt_year2 % 10;
+  }
+
+  void FillBufferWithNumber(const String &number) {
+    ClearBuffer();
+    byte p073_numlenght = number.length();
+    byte p073_index = 7;
+    dotpos = -1;
+    for (int i = p073_numlenght - 1; i >= 0 && p073_index >= 0; --i) {
+      char p073_tmpchar = number.charAt(i);
+      if (p073_tmpchar == '.') {
+        dotpos = p073_index;
+      } else {
+        showbuffer[p073_index] = P073_mapCharToFontPosition(p073_tmpchar);
+        p073_index--;
+      }
+    }
+  }
+
+  void FillBufferWithTemp(long temperature) {
+    ClearBuffer();
+    char p073_digit[8];
+    sprintf(p073_digit, "%7d", static_cast<int>(temperature));
+    int p073_numlenght = strlen(p073_digit);
+    for (int i = 0; i < p073_numlenght; i++) {
+      showbuffer[i] = P073_mapCharToFontPosition(p073_digit[i]);
+    }
+    showbuffer[7] = 12;
+  }
+
+  void FillBufferWithString(const String &textToShow) {
+    ClearBuffer();
+    String tmpText;
+    int p073_txtlength = textToShow.length();
+    if (p073_txtlength > 8)
+      p073_txtlength = 8;
+    tmpText = textToShow.substring(0, p073_txtlength);
+    for (int i = 0; i < p073_txtlength; i++) {
+      showbuffer[i] = P073_mapCharToFontPosition(tmpText.charAt(i));
+    }
+  }
+
+
+  void FillBufferWithDash() {
+    memset(showbuffer, 11, sizeof(showbuffer));
+  }
+
+  void ClearBuffer() {
+    memset(showbuffer, 10, sizeof(showbuffer));
+  }
+
+  int dotpos;
+  uint8_t showbuffer[8];
+  byte spidata[2];
+  uint8_t pin1, pin2, pin3;
+  byte displayModel;
+  byte output;
+  byte brightness;
+  bool timesep;
+  bool shift;
+};
+
+#define TM1637_POWER_ON B10001000
+#define TM1637_POWER_OFF B10000000
+#define TM1637_CLOCKDELAY 40
+#define TM1637_4DIGIT 4
+#define TM1637_6DIGIT 2
+# 178 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P073_7DGT.ino"
+static const byte CharTableTM1637[42] PROGMEM = {
+    B00111111, B00000110, B01011011, B01001111, B01100110, B01101101,
+    B01111101, B00000111, B01111111, B01101111, B00000000, B01000000,
+    B01100011, B01001000, B01001001, B00001000, B01110111, B01111100,
+    B00111001, B01011110, B01111001, B01110001, B00111101, B01110110,
+    B00110000, B00011110, B01110101, B00111000, B00010101, B00110111,
+    B00111111, B01110011, B01101011, B00110011, B01101101, B01111000,
+    B00111110, B00111110, B00101010, B01110110, B01101110, B01011011};
+static const byte CharTableMAX7219[42] PROGMEM = {
+    B01111110, B00110000, B01101101, B01111001, B00110011, B01011011,
+    B01011111, B01110000, B01111111, B01111011, B00000000, B00000001,
+    B01100011, B00001001, B01001001, B00001000, B01110111, B00011111,
+    B01001110, B00111101, B01001111, B01000111, B01011110, B00110111,
+    B00000110, B00111100, B01010111, B00001110, B01010100, B01110110,
+    B01111110, B01100111, B01101011, B01100110, B01011011, B00001111,
+    B00111110, B00111110, B00101010, B00110111, B00111011, B01101101};
+
+uint8_t P073_mapCharToFontPosition(char character) {
+  uint8_t position = 10;
+  if (character >= '0' && character <= '9') {
+    position = character - '0';
+  } else if (character >= 'A' && character <= 'Z') {
+    position = character - 'A' + 16;
+  } else if (character >= 'a' && character <= 'a') {
+    position = character - 'a' + 16;
+  } else {
+    switch (character) {
+      case ' ': position = 10; break;
+      case '-': position = 11; break;
+      case '^': position = 12; break;
+      case '=': position = 13; break;
+      case '/': position = 14; break;
+      case '_': position = 15; break;
+    }
+  }
+  return position;
+}
+
+boolean Plugin_073(byte function, struct EventStruct *event, String &string) {
+  boolean success = false;
+
+  switch (function) {
+    case PLUGIN_DEVICE_ADD: {
+      Device[++deviceCount].Number = PLUGIN_ID_073;
+      Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+      Device[deviceCount].VType = SENSOR_TYPE_NONE;
+      Device[deviceCount].Ports = 0;
+      Device[deviceCount].PullUpOption = false;
+      Device[deviceCount].InverseLogicOption = false;
+      Device[deviceCount].FormulaOption = false;
+      Device[deviceCount].ValueCount = 0;
+      Device[deviceCount].SendDataOption = false;
+      Device[deviceCount].TimerOption = false;
+      Device[deviceCount].TimerOptional = false;
+      Device[deviceCount].GlobalSyncOption = true;
+      break;
+    }
+
+    case PLUGIN_GET_DEVICENAME: {
+      string = F(PLUGIN_NAME_073);
+      break;
+    }
+
+    case PLUGIN_WEBFORM_LOAD: {
+      addFormNote(F("TM1637:  1st=CLK-Pin, 2nd=DIO-Pin"));
+      addFormNote(F("MAX7219: 1st=DIN-Pin, 2nd=CLK-Pin, 3rd=CS-Pin"));
+      String displtype[5] = {F("TM1637 - 4 digit (colon)"),
+                             F("TM1637 - 4 digit (dots)"),
+                             F("TM1637 - 6 digit"),
+                             F("MAX7219 - 8 digit")};
+      addFormSelector(F("Display Type"), F("plugin_073_displtype"), 4, displtype,
+                      NULL, PCONFIG(0));
+      String displout[6] = {F("Manual"),
+                            F("Clock 24h - Blink"),
+                            F("Clock 24h - No Blink"),
+                            F("Clock 12h - Blink"),
+                            F("Clock 12h - No Blink"),
+                            F("Date")};
+      addFormSelector(F("Display Output"), F("plugin_073_displout"), 6, displout,
+                      NULL, PCONFIG(1));
+      addFormNumericBox(F("Brightness"), F("plugin_073_brightness"), PCONFIG(2),
+                        0, 15);
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SAVE: {
+      PCONFIG(0) = getFormItemInt(F("plugin_073_displtype"));
+      PCONFIG(1) = getFormItemInt(F("plugin_073_displout"));
+      PCONFIG(2) = getFormItemInt(F("plugin_073_brightness"));
+      P073_data_struct *P073_data =
+          static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+      if (nullptr != P073_data) {
+        P073_data->pin1 = CONFIG_PIN1;
+        P073_data->pin2 = CONFIG_PIN2;
+        P073_data->pin3 = CONFIG_PIN3;
+        P073_data->displayModel = PCONFIG(0);
+        P073_data->output = PCONFIG(1);
+        P073_data->brightness = PCONFIG(2);
+        P073_data->timesep = true;
+        switch (PCONFIG(0)) {
+        case P073_TM1637_4DGTCOLON:
+        case P073_TM1637_4DGTDOTS:
+        case P073_TM1637_6DGT: {
+          int tm1637_bright = PCONFIG(2) / 2;
+          tm1637_SetPowerBrightness(CONFIG_PIN1, CONFIG_PIN2, tm1637_bright,
+                                    true);
+          if (PCONFIG(1) == P073_DISP_MANUAL)
+            tm1637_ClearDisplay(CONFIG_PIN1, CONFIG_PIN2);
+          break;
+        }
+        case P073_MAX7219_8DGT:
+        {
+          max7219_SetPowerBrightness(event, CONFIG_PIN1, CONFIG_PIN2, CONFIG_PIN3,
+                                     PCONFIG(2), true);
+          if (PCONFIG(1) == P073_DISP_MANUAL)
+            max7219_ClearDisplay(event, CONFIG_PIN1, CONFIG_PIN2, CONFIG_PIN3);
+          break;
+        }
+        }
+      }
+      success = true;
+      break;
+    }
+
+    case PLUGIN_EXIT: {
+      clearPluginTaskData(event->TaskIndex);
+      success = true;
+      break;
+    }
+
+    case PLUGIN_INIT: {
+      initPluginTaskData(event->TaskIndex, new P073_data_struct());
+      P073_data_struct *P073_data =
+          static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+      if (nullptr == P073_data) {
+        return success;
+      }
+      P073_data->pin1 = CONFIG_PIN1;
+      P073_data->pin2 = CONFIG_PIN2;
+      P073_data->pin3 = CONFIG_PIN3;
+      P073_data->displayModel = PCONFIG(0);
+      P073_data->output = PCONFIG(1);
+      P073_data->brightness = PCONFIG(2);
+      switch (PCONFIG(0)) {
+        case P073_TM1637_4DGTCOLON:
+        case P073_TM1637_4DGTDOTS:
+        case P073_TM1637_6DGT: {
+          tm1637_InitDisplay(CONFIG_PIN1, CONFIG_PIN2);
+          int tm1637_bright = PCONFIG(2) / 2;
+          tm1637_SetPowerBrightness(CONFIG_PIN1, CONFIG_PIN2, tm1637_bright, true);
+          break;
+        }
+        case P073_MAX7219_8DGT: {
+          max7219_InitDisplay(event, CONFIG_PIN1, CONFIG_PIN2, CONFIG_PIN3);
+          max7219_SetPowerBrightness(event, CONFIG_PIN1, CONFIG_PIN2, CONFIG_PIN3,
+                                     PCONFIG(2), true);
+          break;
+        }
+      }
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WRITE: {
+      success = p073_plugin_write(event, string);
+      break;
+    }
+
+    case PLUGIN_ONCE_A_SECOND: {
+      P073_data_struct *P073_data =
+          static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+      if (nullptr == P073_data) {
+        break;
+      }
+      if (P073_data->output == P073_DISP_MANUAL)
+        break;
+
+      if (P073_data->output == P073_DISP_CLOCK24BLNK ||
+          P073_data->output == P073_DISP_CLOCK12BLNK) {
+        P073_data->timesep = !P073_data->timesep;
+      } else {
+        P073_data->timesep = true;
+      }
+
+      if (P073_data->output == P073_DISP_DATE)
+        P073_data->FillBufferWithDate(true, 0, 0, 0);
+      else if (P073_data->output == P073_DISP_CLOCK24BLNK ||
+               P073_data->output == P073_DISP_CLOCK24)
+        P073_data->FillBufferWithTime(true, 0, 0, 0, false);
+      else
+        P073_data->FillBufferWithTime(true, 0, 0, 0, true);
+
+      switch (P073_data->displayModel) {
+        case P073_TM1637_4DGTCOLON:
+        case P073_TM1637_4DGTDOTS: {
+          tm1637_ShowTimeTemp4(event, P073_data->timesep, 0);
+          break;
+        }
+        case P073_TM1637_6DGT: {
+          if (PCONFIG(1) == P073_DISP_DATE)
+            tm1637_ShowDate6(event);
+          else
+            tm1637_ShowTime6(event);
+          break;
+        }
+        case P073_MAX7219_8DGT: {
+          if (PCONFIG(1) == P073_DISP_DATE)
+            max7219_ShowDate(event, P073_data->pin1, P073_data->pin2,
+                             P073_data->pin3);
+          else
+            max7219_ShowTime(event, P073_data->pin1, P073_data->pin2,
+                             P073_data->pin3, P073_data->timesep);
+          break;
+        }
+      }
+    }
+  }
+  return success;
+}
+
+bool p073_plugin_write(struct EventStruct *event, const String &string) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return false;
+  }
+
+  String tmpString = string;
+  int argIndex = tmpString.indexOf(',');
+  if (argIndex) {
+    tmpString = tmpString.substring(0, argIndex);
+  }
+  tmpString.toLowerCase();
+
+  if (tmpString.equals(F("7dn"))) {
+    return p073_plugin_write_7dn(event, string);
+  } else if (tmpString.equals(F("7dt"))) {
+    return p073_plugin_write_7dt(event, string);
+  } else if (tmpString.equals(F("7dst"))) {
+    return p073_plugin_write_7dst(event, string);
+  } else if (tmpString.equals(F("7dsd"))) {
+    return p073_plugin_write_7dsd(event, string);
+  } else if (tmpString.equals(F("7dtext"))) {
+    return p073_plugin_write_7dtext(event, string);
+  } else {
+    bool p073_validcmd = false;
+    bool p073_displayon;
+    if (tmpString.equals(F("7don"))) {
+      addLog(LOG_LEVEL_INFO, F("7DGT : Display ON"));
+      p073_displayon = true;
+      p073_validcmd = true;
+    } else if (tmpString.equals(F("7doff"))) {
+      addLog(LOG_LEVEL_INFO, F("7DGT : Display OFF"));
+      p073_displayon = false;
+      p073_validcmd = true;
+    } else if (tmpString.equals(F("7db"))) {
+      if (event->Par1 >= 0 && event->Par1 < 16) {
+        if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+          String log = F("7DGT : Brightness=");
+          log += event->Par1;
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        P073_data->brightness = event->Par1;
+        p073_displayon = true;
+        p073_validcmd = true;
+      }
+    }
+    if (p073_validcmd) {
+      switch (P073_data->displayModel) {
+        case P073_TM1637_4DGTCOLON:
+        case P073_TM1637_4DGTDOTS:
+        case P073_TM1637_6DGT: {
+          int tm1637_bright = P073_data->brightness / 2;
+          tm1637_SetPowerBrightness(P073_data->pin1, P073_data->pin2,
+                                    tm1637_bright, p073_displayon);
+          break;
+        }
+        case P073_MAX7219_8DGT: {
+          max7219_SetPowerBrightness(event, P073_data->pin1, P073_data->pin2,
+                                     P073_data->pin3, P073_data->brightness,
+                                     p073_displayon);
+          break;
+        }
+      }
+    }
+    return p073_validcmd;
+  }
+  return false;
+}
+
+bool p073_plugin_write_7dn(struct EventStruct *event, const String &tmpStr) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return false;
+  }
+
+  if (P073_data->output != P073_DISP_MANUAL) {
+    return false;
+  }
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    String log = F("7DGT : Show Number=");
+    log += event->Par1;
+    addLog(LOG_LEVEL_INFO, log);
+  }
+
+  int comma1 = tmpStr.indexOf(',');
+  switch (P073_data->displayModel) {
+    case P073_TM1637_4DGTCOLON: {
+      if (event->Par1 > -1000 && event->Par1 < 10000)
+        P073_data->FillBufferWithNumber(String(int(event->Par1)));
+      else
+        P073_data->FillBufferWithDash();
+      tm1637_ShowBuffer(event, TM1637_4DIGIT, 8);
+      break;
+    }
+    case P073_TM1637_4DGTDOTS: {
+      if (event->Par1 > -1000 && event->Par1 < 10000)
+        P073_data->FillBufferWithNumber(tmpStr.substring(comma1 + 1).c_str());
+      else
+        P073_data->FillBufferWithDash();
+      tm1637_ShowBuffer(event, TM1637_4DIGIT, 8);
+      break;
+    }
+    case P073_TM1637_6DGT: {
+      if (event->Par1 > -100000 && event->Par1 < 1000000)
+        P073_data->FillBufferWithNumber(tmpStr.substring(comma1 + 1).c_str());
+      else
+        P073_data->FillBufferWithDash();
+      tm1637_SwapDigitInBuffer(event, 2);
+      tm1637_ShowBuffer(event, TM1637_6DIGIT, 8);
+      break;
+    }
+    case P073_MAX7219_8DGT: {
+      if (comma1 > 0) {
+        if (event->Par1 > -10000000 && event->Par1 < 100000000) {
+          P073_data->FillBufferWithNumber(tmpStr.substring(comma1 + 1).c_str());
+        } else
+          P073_data->FillBufferWithDash();
+        max7219_ShowBuffer(event, P073_data->pin1, P073_data->pin2,
+                           P073_data->pin3);
+      }
+      break;
+    }
+  }
+  return true;
+}
+
+bool p073_plugin_write_7dt(struct EventStruct *event, const String &tmpStr) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return false;
+  }
+  if (P073_data->output != P073_DISP_MANUAL) {
+    return false;
+  }
+  double p073_temptemp = 0;
+  bool p073_tempflagdot = false;
+  int comma1 = tmpStr.indexOf(',');
+  if (comma1 > 0)
+    p073_temptemp = atof(tmpStr.substring(comma1 + 1).c_str());
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    String log = F("7DGT : Show Temperature=");
+    log += p073_temptemp;
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  switch (P073_data->displayModel) {
+    case P073_TM1637_4DGTCOLON:
+    case P073_TM1637_4DGTDOTS: {
+      if (p073_temptemp > 999 || p073_temptemp < -99.9)
+        P073_data->FillBufferWithDash();
+      else {
+        if (p073_temptemp < 100 && p073_temptemp > -10) {
+          p073_temptemp = int(p073_temptemp * 10);
+          p073_tempflagdot = true;
+        }
+        P073_data->FillBufferWithTemp(p073_temptemp);
+        if (p073_temptemp == 0 && p073_tempflagdot)
+          P073_data->showbuffer[5] = 0;
+      }
+      tm1637_ShowTimeTemp4(event, p073_tempflagdot, 4);
+      break;
+    }
+    case P073_TM1637_6DGT: {
+      if (p073_temptemp > 999 || p073_temptemp < -99.9)
+        P073_data->FillBufferWithDash();
+      else {
+        if (p073_temptemp < 100 && p073_temptemp > -10) {
+          p073_temptemp = int(p073_temptemp * 10);
+          p073_tempflagdot = true;
+        }
+        P073_data->FillBufferWithTemp(p073_temptemp);
+        if (p073_temptemp == 0 && p073_tempflagdot)
+          P073_data->showbuffer[5] = 0;
+      }
+      tm1637_ShowTemp6(event, p073_tempflagdot);
+      break;
+    }
+    case P073_MAX7219_8DGT: {
+      p073_temptemp = int(p073_temptemp * 10);
+      P073_data->FillBufferWithTemp(p073_temptemp);
+      if (p073_temptemp == 0)
+        P073_data->showbuffer[5] = 0;
+      max7219_ShowTemp(event, P073_data->pin1, P073_data->pin2, P073_data->pin3);
+      break;
+    }
+  }
+  return true;
+}
+
+bool p073_plugin_write_7dst(struct EventStruct *event, const String &string) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return false;
+  }
+
+  if (P073_data->output != P073_DISP_MANUAL) {
+    return false;
+  }
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    String log = F("7DGT : Show Time=");
+    log += event->Par1;
+    log += ":";
+    log += event->Par2;
+    log += ":";
+    log += event->Par3;
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  P073_data->timesep = true;
+  P073_data->FillBufferWithTime(false, event->Par1, event->Par2, event->Par3, false);
+  switch (P073_data->displayModel) {
+    case P073_TM1637_4DGTCOLON:
+    case P073_TM1637_4DGTDOTS: {
+      tm1637_ShowTimeTemp4(event, P073_data->timesep, 0);
+      break;
+    }
+    case P073_TM1637_6DGT: {
+      tm1637_ShowTime6(event);
+      break;
+    }
+    case P073_MAX7219_8DGT: {
+      max7219_ShowTime(event, P073_data->pin1, P073_data->pin2, P073_data->pin3,
+                       P073_data->timesep);
+      break;
+    }
+  }
+  return true;
+}
+
+bool p073_plugin_write_7dsd(struct EventStruct *event, const String &string) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return false;
+  }
+
+  if (P073_data->output != P073_DISP_MANUAL) {
+    return false;
+  }
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    String log = F("7DGT : Show Date=");
+    log += event->Par1;
+    log += "-";
+    log += event->Par2;
+    log += "-";
+    log += event->Par3;
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  P073_data->FillBufferWithDate(false, event->Par1, event->Par2, event->Par3);
+  switch (P073_data->displayModel) {
+    case P073_TM1637_4DGTCOLON:
+    case P073_TM1637_4DGTDOTS: {
+      tm1637_ShowTimeTemp4(event, P073_data->timesep, 0);
+      break;
+    }
+    case P073_TM1637_6DGT: {
+      tm1637_ShowDate6(event);
+      break;
+    }
+    case P073_MAX7219_8DGT: {
+      max7219_ShowDate(event, P073_data->pin1, P073_data->pin2, P073_data->pin3);
+      break;
+    }
+  }
+  return true;
+}
+
+bool p073_plugin_write_7dtext(struct EventStruct *event, const String &string) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return false;
+  }
+
+  if (P073_data->output != P073_DISP_MANUAL) {
+    return false;
+  }
+  String tmpString = string;
+  int argIndex = tmpString.indexOf(',');
+  if (argIndex)
+    tmpString = tmpString.substring(argIndex + 1);
+  else
+    tmpString = "";
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    String log = F("7DGT : Show Text=");
+    log += tmpString;
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  P073_data->FillBufferWithString(tmpString);
+  switch (P073_data->displayModel) {
+    case P073_TM1637_4DGTCOLON:
+    case P073_TM1637_4DGTDOTS: {
+      tm1637_ShowBuffer(event, 0, 4);
+      break;
+    }
+    case P073_TM1637_6DGT: {
+      tm1637_SwapDigitInBuffer(event, 0);
+      tm1637_ShowBuffer(event, 0, 6);
+      break;
+    }
+    case P073_MAX7219_8DGT: {
+      P073_data->dotpos = -1;
+      max7219_ShowBuffer(event, P073_data->pin1, P073_data->pin2,
+                         P073_data->pin3);
+      break;
+    }
+  }
+  return true;
+}
+
+
+
+
+
+#define CLK_HIGH() digitalWrite(clk_pin, HIGH)
+#define CLK_LOW() digitalWrite(clk_pin, LOW)
+#define DIO_HIGH() pinMode(dio_pin, INPUT)
+#define DIO_LOW() pinMode(dio_pin, OUTPUT)
+
+void tm1637_i2cStart(uint8_t clk_pin, uint8_t dio_pin) {
+  if (PLUGIN_073_DEBUG) {
+    String log = F("7DGT : Comm Start");
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  DIO_HIGH();
+  CLK_HIGH();
+  delayMicroseconds(TM1637_CLOCKDELAY);
+  DIO_LOW();
+}
+
+void tm1637_i2cStop(uint8_t clk_pin, uint8_t dio_pin) {
+  if (PLUGIN_073_DEBUG) {
+    String log = F("7DGT : Comm Stop");
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  CLK_LOW();
+  delayMicroseconds(TM1637_CLOCKDELAY);
+  DIO_LOW();
+  delayMicroseconds(TM1637_CLOCKDELAY);
+  CLK_HIGH();
+  delayMicroseconds(TM1637_CLOCKDELAY);
+  DIO_HIGH();
+}
+
+void tm1637_i2cAck(uint8_t clk_pin, uint8_t dio_pin) {
+  bool dummyAck = false;
+  CLK_LOW();
+  pinMode(dio_pin, INPUT_PULLUP);
+
+  delayMicroseconds(TM1637_CLOCKDELAY);
+
+  dummyAck = digitalRead(dio_pin);
+  if (PLUGIN_073_DEBUG) {
+    String log = F("7DGT : Comm ACK=");
+    if (dummyAck == 0) {
+      log += F("TRUE");
+    } else {
+      log += F("FALSE");
+    }
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  CLK_HIGH();
+  delayMicroseconds(TM1637_CLOCKDELAY);
+  CLK_LOW();
+  pinMode(dio_pin, OUTPUT);
+}
+
+void tm1637_i2cWrite_ack(uint8_t clk_pin, uint8_t dio_pin,
+                         uint8_t bytesToPrint[], byte length) {
+  tm1637_i2cStart(clk_pin, dio_pin);
+  for (byte i = 0; i < length; ++i) {
+    tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint[i]);
+  }
+  tm1637_i2cStop(clk_pin, dio_pin);
+}
+
+void tm1637_i2cWrite_ack(uint8_t clk_pin, uint8_t dio_pin,
+                         uint8_t bytetoprint) {
+  tm1637_i2cWrite(clk_pin, dio_pin, bytetoprint);
+  tm1637_i2cAck(clk_pin, dio_pin);
+}
+
+void tm1637_i2cWrite(uint8_t clk_pin, uint8_t dio_pin, uint8_t bytetoprint) {
+  if (PLUGIN_073_DEBUG) {
+    String log = F("7DGT : WriteByte");
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  uint8_t i;
+  for (i = 0; i < 8; i++) {
+    CLK_LOW();
+    if (bytetoprint & B00000001) {
+      DIO_HIGH();
+    } else {
+      DIO_LOW();
+    }
+    delayMicroseconds(TM1637_CLOCKDELAY);
+    bytetoprint = bytetoprint >> 1;
+    CLK_HIGH();
+    delayMicroseconds(TM1637_CLOCKDELAY);
+  }
+}
+
+void tm1637_ClearDisplay(uint8_t clk_pin, uint8_t dio_pin) {
+  uint8_t bytesToPrint[7] = {0};
+  bytesToPrint[0] = 0xC0;
+  tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint, 7);
+}
+
+void tm1637_SetPowerBrightness(uint8_t clk_pin, uint8_t dio_pin,
+                               uint8_t brightlvl, bool poweron) {
+  if (PLUGIN_073_DEBUG) {
+    String log = F("7DGT : Set BRIGHT");
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  uint8_t brightvalue = (brightlvl & 0b111);
+  if (poweron) {
+    brightvalue = TM1637_POWER_ON | brightvalue;
+  } else {
+    brightvalue = TM1637_POWER_OFF | brightvalue;
+  }
+
+  uint8_t bytesToPrint[1] = {0};
+  bytesToPrint[0] = brightvalue;
+  tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint, 1);
+}
+
+void tm1637_InitDisplay(uint8_t clk_pin, uint8_t dio_pin) {
+  pinMode(clk_pin, OUTPUT);
+  pinMode(dio_pin, OUTPUT);
+  CLK_HIGH();
+  DIO_HIGH();
+
+
+  uint8_t bytesToPrint[1] = {0};
+  bytesToPrint[0] = 0x40;
+  tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint, 1);
+  tm1637_ClearDisplay(clk_pin, dio_pin);
+}
+
+uint8_t tm1637_separator(uint8_t value, bool sep) {
+  if (sep) {
+    value |= 0b10000000;
+  }
+  return value;
+}
+
+void tm1637_ShowTime6(struct EventStruct *event) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+
+  uint8_t clk_pin = P073_data->pin1;
+  uint8_t dio_pin = P073_data->pin2;
+  bool sep = P073_data->timesep;
+  uint8_t bytesToPrint[7] = {0};
+  bytesToPrint[0] = 0xC0;
+  bytesToPrint[1] = CharTableTM1637[P073_data->showbuffer[2]];
+  bytesToPrint[2] =
+      tm1637_separator(CharTableTM1637[P073_data->showbuffer[1]], sep);
+  bytesToPrint[3] = CharTableTM1637[P073_data->showbuffer[0]];
+  bytesToPrint[4] = CharTableTM1637[P073_data->showbuffer[5]];
+  bytesToPrint[5] = CharTableTM1637[P073_data->showbuffer[4]];
+  bytesToPrint[6] =
+      tm1637_separator(CharTableTM1637[P073_data->showbuffer[3]], sep);
+  tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint, 7);
+}
+
+void tm1637_ShowDate6(struct EventStruct *event) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+  uint8_t clk_pin = P073_data->pin1;
+  uint8_t dio_pin = P073_data->pin2;
+  bool sep = P073_data->timesep;
+
+  uint8_t bytesToPrint[7] = {0};
+  bytesToPrint[0] = 0xC0;
+  bytesToPrint[1] = CharTableTM1637[P073_data->showbuffer[2]];
+  bytesToPrint[2] =
+      tm1637_separator(CharTableTM1637[P073_data->showbuffer[1]], sep);
+  bytesToPrint[3] = CharTableTM1637[P073_data->showbuffer[0]];
+  bytesToPrint[4] = CharTableTM1637[P073_data->showbuffer[7]];
+  bytesToPrint[5] = CharTableTM1637[P073_data->showbuffer[6]];
+  bytesToPrint[6] =
+      tm1637_separator(CharTableTM1637[P073_data->showbuffer[3]], sep);
+  tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint, 7);
+}
+
+void tm1637_ShowTemp6(struct EventStruct *event, bool sep) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+  uint8_t clk_pin = P073_data->pin1;
+  uint8_t dio_pin = P073_data->pin2;
+
+  uint8_t bytesToPrint[7] = {0};
+  bytesToPrint[0] = 0xC0;
+  bytesToPrint[1] =
+      tm1637_separator(CharTableTM1637[P073_data->showbuffer[5]], sep);
+  bytesToPrint[2] = CharTableTM1637[P073_data->showbuffer[4]];
+  bytesToPrint[3] = CharTableTM1637[10];
+  bytesToPrint[4] = CharTableTM1637[10];
+  bytesToPrint[5] = CharTableTM1637[P073_data->showbuffer[7]];
+  bytesToPrint[6] = CharTableTM1637[P073_data->showbuffer[6]];
+  tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint, 7);
+}
+
+void tm1637_ShowTimeTemp4(struct EventStruct *event, bool sep, byte bufoffset) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+  uint8_t clk_pin = P073_data->pin1;
+  uint8_t dio_pin = P073_data->pin2;
+
+  uint8_t bytesToPrint[7] = {0};
+  bytesToPrint[0] = 0xC0;
+  bytesToPrint[1] = CharTableTM1637[P073_data->showbuffer[0 + bufoffset]];
+  bytesToPrint[2] = tm1637_separator(
+      CharTableTM1637[P073_data->showbuffer[1 + bufoffset]], sep);
+  bytesToPrint[3] = CharTableTM1637[P073_data->showbuffer[2 + bufoffset]];
+  bytesToPrint[4] = CharTableTM1637[P073_data->showbuffer[3 + bufoffset]];
+  tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint, 5);
+}
+
+void tm1637_SwapDigitInBuffer(struct EventStruct *event, byte startPos) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+  uint8_t p073_temp;
+  p073_temp = P073_data->showbuffer[2 + startPos];
+  P073_data->showbuffer[2 + startPos] = P073_data->showbuffer[0 + startPos];
+  P073_data->showbuffer[0 + startPos] = p073_temp;
+  p073_temp = P073_data->showbuffer[3 + startPos];
+  P073_data->showbuffer[3 + startPos] = P073_data->showbuffer[5 + startPos];
+  P073_data->showbuffer[5 + startPos] = p073_temp;
+  switch (P073_data->dotpos) {
+    case 2: {
+      P073_data->dotpos = 4;
+      break;
+    }
+    case 4: {
+      P073_data->dotpos = 2;
+      break;
+    }
+    case 5: {
+      P073_data->dotpos = 7;
+      break;
+    }
+    case 7: {
+      P073_data->dotpos = 5;
+      break;
+    }
+  }
+}
+
+void tm1637_ShowBuffer(struct EventStruct *event, byte firstPos, byte lastPos) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+  uint8_t clk_pin = P073_data->pin1;
+  uint8_t dio_pin = P073_data->pin2;
+
+  uint8_t bytesToPrint[8] = {0};
+  bytesToPrint[0] = 0xC0;
+  byte length = 1;
+  for (int i = firstPos; i < lastPos; i++) {
+    byte p073_datashowpos1 = tm1637_separator(
+        CharTableTM1637[P073_data->showbuffer[i]], P073_data->dotpos == i);
+    bytesToPrint[length] = p073_datashowpos1;
+    ++length;
+  }
+  tm1637_i2cWrite_ack(clk_pin, dio_pin, bytesToPrint, length);
+}
+
+
+
+
+
+#define OP_DECODEMODE 9
+#define OP_INTENSITY 10
+#define OP_SCANLIMIT 11
+#define OP_SHUTDOWN 12
+#define OP_DISPLAYTEST 15
+
+void max7219_spiTransfer(struct EventStruct *event, uint8_t din_pin,
+                         uint8_t clk_pin, uint8_t cs_pin, volatile byte opcode,
+                         volatile byte data) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+
+  P073_data->spidata[0] = (byte)0;
+  P073_data->spidata[1] = (byte)0;
+  P073_data->spidata[1] = opcode;
+  P073_data->spidata[0] = data;
+  digitalWrite(cs_pin, LOW);
+  shiftOut(din_pin, clk_pin, MSBFIRST, P073_data->spidata[1]);
+  shiftOut(din_pin, clk_pin, MSBFIRST, P073_data->spidata[0]);
+  digitalWrite(cs_pin, HIGH);
+}
+
+void max7219_ClearDisplay(struct EventStruct *event, uint8_t din_pin,
+                          uint8_t clk_pin, uint8_t cs_pin) {
+  for (int i = 0; i < 8; i++) {
+    max7219_spiTransfer(event, din_pin, clk_pin, cs_pin, i + 1, 0);
+  }
+}
+
+void max7219_SetPowerBrightness(struct EventStruct *event, uint8_t din_pin,
+                                uint8_t clk_pin, uint8_t cs_pin,
+                                uint8_t brightlvl, bool poweron) {
+  max7219_spiTransfer(event, din_pin, clk_pin, cs_pin, OP_INTENSITY, brightlvl);
+  max7219_spiTransfer(event, din_pin, clk_pin, cs_pin, OP_SHUTDOWN,
+                      poweron ? 1 : 0);
+}
+
+void max7219_SetDigit(struct EventStruct *event, uint8_t din_pin,
+                      uint8_t clk_pin, uint8_t cs_pin, int dgtpos,
+                      byte dgtvalue, boolean showdot) {
+  byte p073_tempvalue;
+  p073_tempvalue = CharTableMAX7219[dgtvalue];
+  if (showdot)
+    p073_tempvalue |= 0b10000000;
+  max7219_spiTransfer(event, din_pin, clk_pin, cs_pin, dgtpos + 1,
+                      p073_tempvalue);
+}
+
+void max7219_InitDisplay(struct EventStruct *event, uint8_t din_pin,
+                         uint8_t clk_pin, uint8_t cs_pin) {
+  pinMode(din_pin, OUTPUT);
+  pinMode(clk_pin, OUTPUT);
+  pinMode(cs_pin, OUTPUT);
+  digitalWrite(cs_pin, HIGH);
+  max7219_spiTransfer(event, din_pin, clk_pin, cs_pin, OP_DISPLAYTEST, 0);
+  max7219_spiTransfer(event, din_pin, clk_pin, cs_pin, OP_SCANLIMIT, 7);
+  max7219_spiTransfer(event, din_pin, clk_pin, cs_pin, OP_DECODEMODE, 0);
+  max7219_ClearDisplay(event, din_pin, clk_pin, cs_pin);
+  max7219_SetPowerBrightness(event, din_pin, clk_pin, cs_pin, 0, false);
+}
+
+void max7219_ShowTime(struct EventStruct *event, uint8_t din_pin,
+                      uint8_t clk_pin, uint8_t cs_pin, bool sep) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 0, P073_data->showbuffer[5], false);
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 1, P073_data->showbuffer[4], false);
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 3, P073_data->showbuffer[3], false);
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 4, P073_data->showbuffer[2], false);
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 6, P073_data->showbuffer[1], false);
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 7, P073_data->showbuffer[0], false);
+  uint8_t sepChar = P073_mapCharToFontPosition(sep ? '-' : ' ');
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 2, sepChar, false);
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 5, sepChar, false);
+}
+
+void max7219_ShowTemp(struct EventStruct *event, uint8_t din_pin,
+                      uint8_t clk_pin, uint8_t cs_pin) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+
+  max7219_SetDigit(event, din_pin, clk_pin, cs_pin, 0, 10, false);
+  byte dotflags[8] = {false, false, false, false, false, true, false, false};
+  for (int i = 1; i < 8; i++)
+    max7219_SetDigit(event, din_pin, clk_pin, cs_pin, i,
+                     P073_data->showbuffer[8 - i], dotflags[8 - i]);
+}
+
+void max7219_ShowDate(struct EventStruct *event, uint8_t din_pin,
+                      uint8_t clk_pin, uint8_t cs_pin) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+
+  byte dotflags[8] = {false, true, false, true, false, false, false, false};
+  for (int i = 0; i < 8; i++)
+    max7219_SetDigit(event, din_pin, clk_pin, cs_pin, i,
+                     P073_data->showbuffer[7 - i], dotflags[7 - i]);
+}
+
+void max7219_ShowBuffer(struct EventStruct *event, uint8_t din_pin,
+                        uint8_t clk_pin, uint8_t cs_pin) {
+  P073_data_struct *P073_data =
+      static_cast<P073_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P073_data) {
+    return;
+  }
+
+  byte dotflags[8] = {false, false, false, false, false, false, false, false};
+  if (P073_data->dotpos >= 0)
+    dotflags[P073_data->dotpos] = true;
+  for (int i = 0; i < 8; i++)
+    max7219_SetDigit(event, din_pin, clk_pin, cs_pin, i,
+                     P073_data->showbuffer[7 - i], dotflags[7 - i]);
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P074_TSL2591.ino"
+#ifdef USES_P074
+# 17 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P074_TSL2591.ino"
+#define PLUGIN_074 
+#define PLUGIN_ID_074 74
+#define PLUGIN_NAME_074 "Light/Lux - TSL2591 [TESTING]"
+#define PLUGIN_VALUENAME1_074 "Lux"
+#define PLUGIN_VALUENAME2_074 "Full"
+#define PLUGIN_VALUENAME3_074 "Visible"
+#define PLUGIN_VALUENAME4_074 "IR"
+
+#include "Adafruit_TSL2591.h"
+#include <Adafruit_Sensor.h>
+
+struct P074_data_struct : public PluginTaskData_base {
+
+  P074_data_struct() {
+    tsl = Adafruit_TSL2591(2591);
+
+  }
+
+
+
+
+  void setIntegrationTime(int time) {
+    switch (time) {
+    default:
+    case 0: tsl.setTiming(TSL2591_INTEGRATIONTIME_100MS); break;
+    case 1: tsl.setTiming(TSL2591_INTEGRATIONTIME_200MS); break;
+    case 2: tsl.setTiming(TSL2591_INTEGRATIONTIME_300MS); break;
+    case 3: tsl.setTiming(TSL2591_INTEGRATIONTIME_400MS); break;
+    case 4: tsl.setTiming(TSL2591_INTEGRATIONTIME_500MS); break;
+    case 5: tsl.setTiming(TSL2591_INTEGRATIONTIME_600MS); break;
+    }
+  }
+
+
+
+  void setGain(int gain) {
+    switch (gain) {
+    default:
+    case 0: tsl.setGain(TSL2591_GAIN_LOW); break;
+    case 1: tsl.setGain(TSL2591_GAIN_MED); break;
+    case 2: tsl.setGain(TSL2591_GAIN_HIGH); break;
+    case 3: tsl.setGain(TSL2591_GAIN_MAX); break;
+    }
+  }
+
+  Adafruit_TSL2591 tsl;
+};
+
+boolean Plugin_074(byte function, struct EventStruct *event, String &string) {
+  boolean success = false;
+
+  switch (function) {
+    case PLUGIN_DEVICE_ADD: {
+      Device[++deviceCount].Number = PLUGIN_ID_074;
+      Device[deviceCount].Type = DEVICE_TYPE_I2C;
+      Device[deviceCount].Ports = 0;
+      Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+      Device[deviceCount].PullUpOption = false;
+      Device[deviceCount].InverseLogicOption = false;
+      Device[deviceCount].FormulaOption = true;
+      Device[deviceCount].ValueCount = 4;
+      Device[deviceCount].SendDataOption = true;
+      Device[deviceCount].TimerOption = true;
+      Device[deviceCount].TimerOptional = false;
+      Device[deviceCount].GlobalSyncOption = true;
+      break;
+    }
+
+    case PLUGIN_GET_DEVICENAME: {
+      string = F(PLUGIN_NAME_074);
+      break;
+    }
+
+    case PLUGIN_GET_DEVICEVALUENAMES: {
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_074));
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_074));
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_074));
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3], PSTR(PLUGIN_VALUENAME4_074));
+      break;
+    }
+
+    case PLUGIN_WEBFORM_LOAD: {
+      int optionValues[1] = {TSL2591_ADDR};
+      addFormSelectorI2C(F("p074_i2c_addr"), 1, optionValues,
+                         TSL2591_ADDR);
+# 116 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P074_TSL2591.ino"
+      String optionsMode[6] = {F("100ms"), F("200ms"), F("300ms"),
+                               F("400ms"), F("500ms"), F("600ms")};
+      addFormSelector(F("Integration Time"), F("p074_itime"), 6, optionsMode,
+                      NULL, PCONFIG(1));
+
+
+
+
+
+
+      String optionsGain[4] = {F("low gain (1x)"), F("medium gain (25x)"),
+                               F("medium gain (428x)"), F("max gain (9876x)")};
+      addFormSelector(F("Value Mapping"), F("p074_gain"), 4, optionsGain, NULL,
+                      PCONFIG(2));
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SAVE: {
+
+      PCONFIG(1) = getFormItemInt(F("p074_itime"));
+      PCONFIG(2) = getFormItemInt(F("p074_gain"));
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_INIT: {
+      initPluginTaskData(event->TaskIndex, new P074_data_struct());
+      P074_data_struct *P074_data =
+          static_cast<P074_data_struct *>(getPluginTaskData(event->TaskIndex));
+      if (nullptr == P074_data) {
+        return success;
+      }
+      if (P074_data->tsl.begin()) {
+        P074_data->setIntegrationTime(PCONFIG(1));
+        P074_data->setGain(PCONFIG(2));
+        if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+          String log = F("TSL2591: Address: 0x");
+          log += String(TSL2591_ADDR, HEX);
+          log += F(": Integration Time: ");
+          log += String((P074_data->tsl.getTiming() + 1) * 100, DEC);
+          log += F(" ms");
+
+
+          log += (F(" Gain: "));
+          switch (P074_data->tsl.getGain()) {
+            default:
+            case TSL2591_GAIN_LOW: log += F("1x (Low)"); break;
+            case TSL2591_GAIN_MED: log += F("25x (Medium)"); break;
+            case TSL2591_GAIN_HIGH: log += F("428x (High)"); break;
+            case TSL2591_GAIN_MAX: log += F("9876x (Max)"); break;
+          }
+          addLog(LOG_LEVEL_INFO, log);
+        }
+      } else {
+        clearPluginTaskData(event->TaskIndex);
+        addLog(LOG_LEVEL_ERROR,
+               F("TSL2591: No sensor found ... check your wiring?"));
+      }
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_READ: {
+      P074_data_struct *P074_data =
+          static_cast<P074_data_struct *>(getPluginTaskData(event->TaskIndex));
+      if (nullptr != P074_data) {
+
+
+
+
+        float lux, full, visible, ir;
+        visible = P074_data->tsl.getLuminosity(TSL2591_VISIBLE);
+        ir = P074_data->tsl.getLuminosity(TSL2591_INFRARED);
+        full = P074_data->tsl.getLuminosity(TSL2591_FULLSPECTRUM);
+        lux = P074_data->tsl.calculateLuxf(full, ir);
+
+        UserVar[event->BaseVarIndex + 0] = lux;
+        UserVar[event->BaseVarIndex + 1] = full;
+        UserVar[event->BaseVarIndex + 2] = visible;
+        UserVar[event->BaseVarIndex + 3] = ir;
+
+        if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+          String log = F("TSL2591: Lux: ");
+          log += String(lux);
+          log += F(" Full: ");
+          log += String(full);
+          log += F(" Visible: ");
+          log += String(visible);
+          log += F(" IR: ");
+          log += String(ir);
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        success = true;
+      } else {
+        addLog(LOG_LEVEL_ERROR, F("TSL2591: Sensor not initialized!?"));
+      }
+      break;
+    }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P075_Nextion.ino"
+# 15 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P075_Nextion.ino"
+#ifdef USES_P075
+#include <ESPeasySerial.h>
+# 26 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P075_Nextion.ino"
+#define PLUGIN_075 
+#define PLUGIN_ID_075 75
+#define PLUGIN_NAME_075 "Display - Nextion [TESTING]"
+#define PLUGIN_DEFAULT_NAME "NEXTION"
+#define PLUGIN_VALUENAME1_075 "idx"
+#define PLUGIN_VALUENAME2_075 "value"
+
+
+
+
+#define P75_Nlines 10
+#define P75_Nchars 51
+
+
+#define RXBUFFSZ 64
+#define RXBUFFWARN RXBUFFSZ-16
+#define TOUCH_BASE 500
+
+
+#define P075_B9600 0
+#define P075_B38400 1
+#define P075_B57600 2
+#define P075_B115200 3
+
+#define P075_BaudRate PCONFIG(1)
+#define P075_IncludeValues PCONFIG(2)
+
+
+struct P075_data_struct : public PluginTaskData_base {
+
+  P075_data_struct(int rx, int tx, uint32_t baud) : rxPin(rx), txPin(tx), baudrate(baud) {
+    if (baudrate < 9600 || baudrate > 115200) {
+      baudrate = 9600;
+    }
+    easySerial = new ESPeasySerial(rx, tx, false, RXBUFFSZ);
+    if (easySerial != nullptr) {
+      easySerial->begin(baudrate);
+      easySerial->flush();
+    }
+  }
+
+  ~P075_data_struct() {
+    if (easySerial != nullptr) {
+      easySerial->flush();
+      delete easySerial;
+      easySerial = nullptr;
+    }
+  }
+
+  void loadDisplayLines(byte taskIndex) {
+    char deviceTemplate[P75_Nlines][P75_Nchars];
+    LoadCustomTaskSettings(taskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+    for (byte varNr = 0; varNr < P75_Nlines; varNr++) {
+      displayLines[varNr] = deviceTemplate[varNr];
+    }
+  }
+
+  String getLogString() const {
+    String result;
+    if (easySerial != nullptr) {
+      result = easySerial->getLogString();
+    }
+    return result;
+  }
+
+  ESPeasySerial *easySerial = nullptr;
+  int rxPin = -1;
+  int txPin = -1;
+  uint32_t baudrate = 9600UL;
+
+  String displayLines[P75_Nlines];
+};
+
+
+
+
+
+
+boolean Plugin_075(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+
+  switch (function) {
+
+    case PLUGIN_DEVICE_ADD: {
+      Device[++deviceCount].Number = PLUGIN_ID_075;
+      Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+      Device[deviceCount].VType = SENSOR_TYPE_DUAL;
+      Device[deviceCount].Ports = 0;
+      Device[deviceCount].PullUpOption = false;
+      Device[deviceCount].InverseLogicOption = false;
+      Device[deviceCount].FormulaOption = false;
+      Device[deviceCount].ValueCount = 2;
+      Device[deviceCount].SendDataOption = true;
+      Device[deviceCount].TimerOption = true;
+      Device[deviceCount].TimerOptional = true;
+      Device[deviceCount].GlobalSyncOption = true;
+      break;
+    }
+
+
+    case PLUGIN_GET_DEVICENAME: {
+      string = F(PLUGIN_NAME_075);
+      break;
+    }
+
+
+    case PLUGIN_GET_DEVICEVALUENAMES: {
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0],PSTR(PLUGIN_VALUENAME1_075));
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1],PSTR(PLUGIN_VALUENAME2_075));
+      break;
+    }
+
+
+    case PLUGIN_GET_DEVICEGPIONAMES: {
+
+      serialHelper_getGpioNames(event);
+      break;
+    }
+
+
+    case PLUGIN_WEBFORM_LOAD: {
+      serialHelper_webformLoad(event);
+
+
+
+
+
+
+
+      String options[4];
+      options[0] = F("9600");
+      options[1] = F("38400");
+      options[2] = F("57600");
+      options[3] = F("115200");
+
+      addFormSelector(F("Baud Rate"), F("p075_baud"), 4, options, nullptr, P075_BaudRate);
+
+
+
+
+
+
+
+      addFormSubHeader("");
+      addFormHeader(F("Nextion Command Statements (Optional)"));
+      P075_data_struct* P075_data = static_cast<P075_data_struct*>(getPluginTaskData(event->TaskIndex));
+      if (nullptr != P075_data) {
+        P075_data->loadDisplayLines(event->TaskIndex);
+        for (byte varNr = 0; varNr < P75_Nlines; varNr++) {
+          addFormTextBox(String(F("Line ")) + (varNr + 1), String(F("p075_template")) + (varNr + 1), P075_data->displayLines[varNr], P75_Nchars-1);
+        }
+      }
+      if( Settings.TaskDeviceTimer[event->TaskIndex]==0) {
+        if(P075_IncludeValues) {
+            addFormNote(F("Interval Timer OFF, Nextion Lines (above) and Values (below) <b>NOT</b> scheduled for updates"));
+        }
+        else {
+            addFormNote(F("Interval Timer OFF, Nextion Lines (above) <b>NOT</b> scheduled for updates"));
+        }
+      }
+
+      addFormSeparator(2);
+      addFormSubHeader(F("Interval Options"));
+      addFormCheckBox(F("Resend <b>Values</b> (below) at Interval"), F("IncludeValues"), P075_IncludeValues);
+
+      success = true;
+      break;
+    }
+
+
+    case PLUGIN_WEBFORM_SAVE: {
+        serialHelper_webformSave(event);
+
+        char deviceTemplate[P75_Nlines][P75_Nchars];
+        String error;
+        for (byte varNr = 0; varNr < P75_Nlines; varNr++)
+        {
+          String argName = F("p075_template");
+          argName += varNr + 1;
+          if (!safe_strncpy(deviceTemplate[varNr], WebServer.arg(argName), P75_Nchars)) {
+            error += getCustomTaskSettingsError(varNr);
+          }
+        }
+        if (error.length() > 0) {
+          addHtmlError(error);
+        }
+        if(getTaskDeviceName(event->TaskIndex) == "") {
+            strcpy(ExtraTaskSettings.TaskDeviceName,PLUGIN_DEFAULT_NAME);
+        }
+
+        P075_BaudRate = getFormItemInt(F("p075_baud"));
+        P075_IncludeValues = isFormItemChecked(F("IncludeValues"));
+        SaveCustomTaskSettings(event->TaskIndex, (byte*)&deviceTemplate, sizeof(deviceTemplate));
+        P075_data_struct* P075_data = static_cast<P075_data_struct*>(getPluginTaskData(event->TaskIndex));
+        if (nullptr != P075_data) {
+          P075_data->loadDisplayLines(event->TaskIndex);
+        }
+        success = true;
+        break;
+    }
+
+
+    case PLUGIN_INIT: {
+
+      uint8_t BaudCode = P075_BaudRate;
+
+      if(BaudCode > P075_B115200) BaudCode = P075_B9600;
+      const uint32_t BaudArray[4] = {9600UL, 38400UL, 57600UL, 115200UL};
+      initPluginTaskData(event->TaskIndex, new P075_data_struct(CONFIG_PIN1, CONFIG_PIN2, BaudArray[BaudCode]));
+      P075_data_struct* P075_data = static_cast<P075_data_struct*>(getPluginTaskData(event->TaskIndex));
+      if (nullptr != P075_data) {
+        P075_data->loadDisplayLines(event->TaskIndex);
+        addLog(LOG_LEVEL_INFO, P075_data->getLogString());
+        serialHelper_plugin_init(event);
+        success = true;
+      }
+      break;
+    }
+
+
+    case PLUGIN_READ: {
+      P075_data_struct* P075_data = static_cast<P075_data_struct*>(getPluginTaskData(event->TaskIndex));
+      if (nullptr != P075_data) {
+        int RssiIndex;
+        String newString;
+        String UcTmpString;
+
+
+        for (byte x = 0; x < P75_Nlines; x++) {
+          if (P075_data->displayLines[x].length()) {
+            String tmpString = P075_data->displayLines[x];
+            UcTmpString = P075_data->displayLines[x];
+            UcTmpString.toUpperCase();
+            RssiIndex = UcTmpString.indexOf(F("RSSIBAR"));
+            if(RssiIndex >= 0) {
+              int barVal;
+              newString.reserve(P75_Nchars+10);
+              newString = P075_data->displayLines[x].substring(0, RssiIndex);
+              int nbars = WiFi.RSSI();
+              if (nbars < -100 || nbars >= 0)
+                 barVal=0;
+              else if (nbars >= -100 && nbars < -95)
+                 barVal=5;
+              else if (nbars >= -95 && nbars < -90)
+                 barVal=10;
+              else if (nbars >= -90 && nbars < -85)
+                 barVal=20;
+              else if (nbars >= -85 && nbars < -80)
+                 barVal=30;
+              else if (nbars >= -80 && nbars < -75)
+                 barVal=45;
+              else if (nbars >= -75 && nbars < -70)
+                 barVal=60;
+              else if (nbars >= -70 && nbars < -65)
+                 barVal=70;
+              else if (nbars >= -65 && nbars < -55)
+                 barVal=80;
+              else if (nbars >= -55 && nbars < -50)
+                 barVal=90;
+              else if (nbars >= -50)
+                 barVal=100;
+
+              newString += String(barVal,DEC);
+            }
+            else {
+              newString = parseTemplate(tmpString, 0);
+            }
+
+            P075_sendCommand(event->TaskIndex, newString.c_str());
+            #ifdef DEBUG_LOG
+              String log;
+              log.reserve(P75_Nchars+50);
+              log = F("NEXTION075 : Cmd Statement Line-");
+              log += String(x+1);
+              log += F(" Sent: ");
+              log += newString;
+              addLog(LOG_LEVEL_INFO, log);
+            #endif
+          }
+        }
+
+
+        if(P075_IncludeValues) {
+            #ifdef DEBUG_LOG
+             String log;
+             log.reserve(120);
+             log = F("NEXTION075: Interval values data enabled, resending idx=");
+             log += String(UserVar[event->BaseVarIndex]);
+             log += F(", value=");
+             log += String(UserVar[event->BaseVarIndex+1]);
+             addLog(LOG_LEVEL_INFO, log);
+            #endif
+
+            success = true;
+        }
+        else {
+            #ifdef DEBUG_LOG
+             String log = F("NEXTION075: Interval values data disabled, idx & value not resent");
+             addLog(LOG_LEVEL_INFO, log);
+            #endif
+
+            success = false;
+        }
+
+      }
+      break;
+    }
+
+
+
+    case PLUGIN_WRITE: {
+
+        String tmpString = string;
+        int argIndex = tmpString.indexOf(',');
+        if (argIndex) tmpString = tmpString.substring(0, argIndex);
+# 358 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P075_Nextion.ino"
+        if (tmpString.equalsIgnoreCase(getTaskDeviceName(event->TaskIndex)) == true) {
+            argIndex = string.indexOf(',');
+            tmpString = string.substring(argIndex + 1);
+            P075_sendCommand(event->TaskIndex, tmpString.c_str());
+
+            String log;
+            log.reserve(110);
+            log = F("NEXTION075 : WRITE = ");
+            log += tmpString;
+            #ifdef DEBUG_LOG
+              addLog(LOG_LEVEL_INFO, log);
+            #endif
+            SendStatus(event->Source, log);
+            success = true;
+        }
+        break;
+    }
+
+
+    case PLUGIN_EXIT: {
+        clearPluginTaskData(event->TaskIndex);
+        break;
+    }
+
+
+    case PLUGIN_ONCE_A_SECOND: {
+        success = true;
+        break;
+    }
+
+
+    case PLUGIN_TEN_PER_SECOND: {
+      P075_data_struct* P075_data = static_cast<P075_data_struct*>(getPluginTaskData(event->TaskIndex));
+      if (nullptr == P075_data) {
+        break;
+      }
+      uint16_t i;
+      uint8_t c;
+      uint8_t charCount;
+      String Vidx;
+      String Nvalue;
+      String Svalue;
+      String Nswitch;
+      char __buffer[RXBUFFSZ+1];
+
+      if(P075_data->rxPin < 0) {
+        String log = F("NEXTION075 : Missing RxD Pin, aborted serial receive");
+        addLog(LOG_LEVEL_INFO, log);
+        break;
+      }
+
+      if(P075_data->easySerial == nullptr) break;
+      charCount = P075_data->easySerial->available();
+      if(charCount >= RXBUFFWARN) {
+          String log;
+          log.reserve(70);
+          log = F("NEXTION075 : RxD P075_data->easySerial Buffer capacity warning, ");
+          log += String(charCount);
+          log += F(" bytes");
+          addLog(LOG_LEVEL_INFO, log);
+      }
+      uint32_t baudrate_delay_unit = P075_data->baudrate / 9600;
+      if (baudrate_delay_unit == 0) {
+        baudrate_delay_unit = 1;
+      }
+
+      while (charCount) {
+        c = P075_data->easySerial->read();
+
+        if (c == 0x65) {
+          if (charCount < 6) delay((5/(baudrate_delay_unit))+1);
+
+          charCount = P075_data->easySerial->available();
+          if (charCount >= 6) {
+            __buffer[0] = c;
+            for (i = 1; i < 7; i++) {
+                __buffer[i] = P075_data->easySerial->read();
+            }
+
+            __buffer[i] = 0x00;
+
+            if (0xFF == __buffer[4] && 0xFF == __buffer[5] && 0xFF == __buffer[6]) {
+              UserVar[event->BaseVarIndex] = (__buffer[1] * 256) + __buffer[2] + TOUCH_BASE;
+              UserVar[event->BaseVarIndex + 1] = __buffer[3];
+              sendData(event);
+
+              #ifdef DEBUG_LOG
+                String log;
+                log.reserve(70);
+                log = F("NEXTION075 : code: ");
+                log += __buffer[1];
+                log += ",";
+                log += __buffer[2];
+                log += ",";
+                log += __buffer[3];
+                addLog(LOG_LEVEL_INFO, log);
+              #endif
+            }
+          }
+        }
+        else {
+          if (c == '|') {
+            __buffer[0] = c;
+
+            if (charCount < 8) delay((9/(baudrate_delay_unit))+1);
+            else delay((3/(baudrate_delay_unit))+1);
+            charCount = P075_data->easySerial->available();
+
+            i = 1;
+            while (P075_data->easySerial->available() > 0 && i<RXBUFFSZ) {
+              __buffer[i] = P075_data->easySerial->read();
+              if (__buffer[i]==0x0a || __buffer[i]==0x0d) break;
+              i++;
+            }
+
+            __buffer[i] = 0x00;
+
+            String tmpString = __buffer;
+
+            #ifdef DEBUG_LOG
+              String log;
+              log.reserve(50);
+              log = F("NEXTION075 : Code = ");
+              log += tmpString;
+              addLog(LOG_LEVEL_INFO, log);
+            #endif
+
+            int argIndex = tmpString.indexOf(F(",i"));
+            int argEnd = tmpString.indexOf(',', argIndex + 1);
+            if (argIndex) Vidx = tmpString.substring(argIndex + 2,argEnd);
+
+            boolean GotPipeCmd = false;
+            switch (__buffer[1]){
+              case 'u':
+                GotPipeCmd = true;
+                argIndex = argEnd;
+                argEnd = tmpString.indexOf(',',argIndex + 1);
+                if (argIndex) Nvalue = tmpString.substring(argIndex + 2,argEnd);
+                argIndex = argEnd;
+                argEnd = tmpString.indexOf(0x0a);
+                if (argIndex) Svalue = tmpString.substring(argIndex + 2,argEnd);
+                break;
+              case 's':
+                GotPipeCmd = true;
+                argIndex = argEnd;
+                argEnd = tmpString.indexOf(0x0a);
+                if (argIndex) Nvalue = tmpString.substring(argIndex + 2,argEnd);
+                if (Nvalue == F("On")) Svalue='1';
+                if (Nvalue == F("Off")) Svalue='0';
+                break;
+            }
+
+            if (GotPipeCmd) {
+                UserVar[event->BaseVarIndex] = Vidx.toFloat();
+                UserVar[event->BaseVarIndex+1] = Svalue.toFloat();
+                sendData(event);
+
+                #ifdef DEBUG_LOG
+                 String log;
+                 log.reserve(80);
+                 log = F("NEXTION075 : Pipe Command Sent: ");
+                 log += __buffer;
+                 log += UserVar[event->BaseVarIndex];
+                 addLog(LOG_LEVEL_INFO, log);
+                #endif
+            }
+            else {
+                #ifdef DEBUG_LOG
+                 String log = F("NEXTION075 : Unknown Pipe Command, skipped");
+                 addLog(LOG_LEVEL_INFO, log);
+                #endif
+            }
+          }
+        }
+        charCount = P075_data->easySerial->available();
+      }
+
+      success = true;
+      break;
+    }
+  }
+  return success;
+}
+
+
+void P075_sendCommand(byte taskIndex, const char *cmd)
+{
+  P075_data_struct* P075_data = static_cast<P075_data_struct*>(getPluginTaskData(taskIndex));
+  if (!P075_data) return;
+  if (P075_data->txPin < 0) {
+      String log = F("NEXTION075 : Missing TxD Pin Number, aborted sendCommand");
+      addLog(LOG_LEVEL_INFO, log);
+  }
+  else
+  {
+      if (P075_data->easySerial != nullptr){
+          P075_data->easySerial->print(cmd);
+          P075_data->easySerial->write(0xff);
+          P075_data->easySerial->write(0xff);
+          P075_data->easySerial->write(0xff);
+      }
+      else {
+          String log = F("NEXTION075 : P075_data->easySerial error, aborted sendCommand");
+          addLog(LOG_LEVEL_INFO, log);
+      }
+  }
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P076_HLW8012.ino"
+#ifdef USES_P076
+# 19 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P076_HLW8012.ino"
+#include <HLW8012.h>
+HLW8012 *Plugin_076_hlw = NULL;
+
+#define PLUGIN_076 
+#define PLUGIN_ID_076 76
+#define PLUGIN_076_DEBUG true
+#define PLUGIN_NAME_076 "Energy (AC) - HLW8012/BL0937  [TESTING]"
+#define PLUGIN_VALUENAME1_076 "Voltage"
+#define PLUGIN_VALUENAME2_076 "Current"
+#define PLUGIN_VALUENAME3_076 "Power"
+#define PLUGIN_VALUENAME4_076 "PowerFactor"
+
+#define HLW_DELAYREADING 500
+
+
+#define HLW_CURRENT_RESISTOR 0.001
+#define HLW_VOLTAGE_RESISTOR_UP (5 * 470000)
+#define HLW_VOLTAGE_RESISTOR_DOWN (1000)
+
+int StoredTaskIndex = -1;
+byte p076_read_stage = 0;
+unsigned long p076_timer = 0;
+
+double p076_hcurrent = 0.0;
+unsigned int p076_hvoltage = 0;
+unsigned int p076_hpower = 0;
+unsigned int p076_hpowfact = 0;
+
+#define P076_Custom 0
+
+
+#define P076_Sonoff 1
+#define P076_Huafan 2
+#define P076_KMC 3
+#define P076_Aplic 4
+#define P076_SK03 5
+
+
+#define P076_BlitzWolf 6
+#define P076_Teckin 7
+#define P076_TeckinUS 8
+#define P076_Gosund 9
+
+
+#define MAX_P076_DEVICE 10
+
+bool p076_getDeviceString(int device, String& name) {
+  switch(device) {
+    case P076_Custom : name = F("Custom"); break;
+    case P076_Sonoff : name = F("Sonoff Pow (r1)"); break;
+    case P076_Huafan : name = F("Huafan SS"); break;
+    case P076_KMC : name = F("KMC 70011"); break;
+    case P076_Aplic : name = F("Aplic WDP303075"); break;
+    case P076_SK03 : name = F("SK03 Outdoor"); break;
+    case P076_BlitzWolf: name = F("BlitzWolf SHP"); break;
+    case P076_Teckin : name = F("Teckin"); break;
+    case P076_TeckinUS : name = F("Teckin US"); break;
+    case P076_Gosund : name = F("Gosund SP1 v23"); break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+bool p076_getDeviceParameters(int device, byte &SEL_Pin, byte &CF_Pin, byte &CF1_Pin, byte &Cur_read, byte &CF_Trigger, byte &CF1_Trigger) {
+  switch(device) {
+    case P076_Custom : SEL_Pin = 0; CF_Pin = 0; CF1_Pin = 0; Cur_read = LOW; CF_Trigger = LOW; CF1_Trigger = LOW; break;
+    case P076_Sonoff : SEL_Pin = 5; CF_Pin = 14; CF1_Pin = 13; Cur_read = HIGH; CF_Trigger = CHANGE; CF1_Trigger = CHANGE; break;
+    case P076_Huafan : SEL_Pin = 13; CF_Pin = 14; CF1_Pin = 12; Cur_read = HIGH; CF_Trigger = CHANGE; CF1_Trigger = CHANGE; break;
+    case P076_KMC : SEL_Pin = 12; CF_Pin = 4; CF1_Pin = 5; Cur_read = HIGH; CF_Trigger = CHANGE; CF1_Trigger = CHANGE; break;
+    case P076_Aplic : SEL_Pin = 12; CF_Pin = 4; CF1_Pin = 5; Cur_read = LOW; CF_Trigger = CHANGE; CF1_Trigger = CHANGE; break;
+    case P076_SK03 : SEL_Pin = 12; CF_Pin = 4; CF1_Pin = 5; Cur_read = LOW; CF_Trigger = CHANGE; CF1_Trigger = CHANGE; break;
+    case P076_BlitzWolf: SEL_Pin = 12; CF_Pin = 5; CF1_Pin = 14; Cur_read = LOW; CF_Trigger = FALLING; CF1_Trigger = CHANGE; break;
+    case P076_Teckin : SEL_Pin = 12; CF_Pin = 4; CF1_Pin = 5; Cur_read = LOW; CF_Trigger = FALLING; CF1_Trigger = CHANGE; break;
+    case P076_TeckinUS : SEL_Pin = 12; CF_Pin = 5; CF1_Pin = 14; Cur_read = LOW; CF_Trigger = FALLING; CF1_Trigger = CHANGE; break;
+    case P076_Gosund : SEL_Pin = 12; CF_Pin = 4; CF1_Pin = 5; Cur_read = LOW; CF_Trigger = FALLING; CF1_Trigger = CHANGE; break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+
+
+boolean Plugin_076(byte function, struct EventStruct *event, String &string) {
+  boolean success = false;
+
+  switch (function) {
+  case PLUGIN_DEVICE_ADD: {
+    Device[++deviceCount].Number = PLUGIN_ID_076;
+    Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+    Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+    Device[deviceCount].Ports = 0;
+    Device[deviceCount].PullUpOption = false;
+    Device[deviceCount].InverseLogicOption = false;
+    Device[deviceCount].FormulaOption = true;
+    Device[deviceCount].ValueCount = 4;
+    Device[deviceCount].SendDataOption = true;
+    Device[deviceCount].TimerOption = true;
+    Device[deviceCount].GlobalSyncOption = false;
+    break;
+  }
+
+  case PLUGIN_GET_DEVICENAME: {
+    string = F(PLUGIN_NAME_076);
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES: {
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0],
+             PSTR(PLUGIN_VALUENAME1_076));
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1],
+             PSTR(PLUGIN_VALUENAME2_076));
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2],
+             PSTR(PLUGIN_VALUENAME3_076));
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3],
+             PSTR(PLUGIN_VALUENAME4_076));
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEGPIONAMES: {
+    event->String1 = formatGpioName_output("SEL");
+    event->String2 = formatGpioName_input("CF1");
+    event->String3 = formatGpioName_input("CF");
+    break;
+  }
+
+  case PLUGIN_WEBFORM_LOAD: {
+    byte devicePinSettings = PCONFIG(7);
+
+    addFormSubHeader(F("Predefined Pin settings"));
+    {
+
+      String predefinedNames[MAX_P076_DEVICE];
+      int predefinedId[MAX_P076_DEVICE];
+
+      int index = 0;
+      for (int i = 0; i < MAX_P076_DEVICE; i++)
+      {
+        if (p076_getDeviceString(i, predefinedNames[index])) {
+          predefinedId[index] = i;
+          ++index;
+        }
+      }
+      addFormSelector(F("Device"),
+                      F("p076_preDefDevSel"), index,
+                      predefinedNames, predefinedId, devicePinSettings );
+      addFormNote(F("Enable device and select device type first"));
+    }
+
+    {
+
+      String modeRaise[4];
+      modeRaise[0] = F("LOW");
+      modeRaise[1] = F("CHANGE");
+      modeRaise[2] = F("RISING");
+      modeRaise[3] = F("FALLING");
+
+      int modeValues[4];
+      modeValues[0] = LOW;
+      modeValues[1] = CHANGE;
+      modeValues[2] = RISING;
+      modeValues[3] = FALLING;
+
+      String modeCurr[2];
+      modeCurr[0] = F("LOW");
+      modeCurr[1] = F("HIGH");
+
+      int modeCurrValues[2];
+      modeCurrValues[0] = LOW;
+      modeCurrValues[1] = HIGH;
+
+      byte currentRead = PCONFIG(4);
+      if (currentRead != LOW && currentRead != HIGH) {
+        currentRead = LOW;
+      }
+      byte cf_trigger = PCONFIG(5);
+      byte cf1_trigger = PCONFIG(6);
+      addFormSubHeader(F("Custom Pin settings (choose Custom above)"));
+      addFormSelector(F("Current (A) Reading"), F("p076_curr_read"), 2,
+                      modeCurr, modeCurrValues, currentRead );
+      addFormSelector(F("CF Interrupt Edge"), F("p076_cf_edge"), 4,
+                      modeRaise, modeValues, cf_trigger );
+      addFormSelector(F("CF1  Interrupt Edge"), F("p076_cf1_edge"), 4,
+                      modeRaise, modeValues, cf1_trigger);
+    }
+
+
+    double current, voltage, power;
+    if (Plugin076_LoadMultipliers(event->TaskIndex, current, voltage, power)) {
+      addFormSubHeader(F("Calibration Values"));
+      addFormTextBox(F("Current Multiplier"), F("p076_currmult"),
+                     String(current, 2), 25);
+      addFormTextBox(F("Voltage Multiplier"), F("p076_voltmult"),
+                     String(voltage, 2), 25);
+      addFormTextBox(F("Power Multiplier"), F("p076_powmult"),
+                     String(power, 2), 25);
+    }
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_WEBFORM_SAVE: {
+
+
+    byte selectedDevice = getFormItemInt(F("p076_preDefDevSel"));
+
+    PCONFIG(7) = selectedDevice;
+    {
+      byte SEL_Pin, CF_Pin, CF1_Pin, Cur_read, CF_Trigger, CF1_Trigger;
+      if (selectedDevice != 0 && p076_getDeviceParameters(selectedDevice, SEL_Pin, CF_Pin, CF1_Pin, Cur_read, CF_Trigger, CF1_Trigger)) {
+        PCONFIG(4) = Cur_read;
+        PCONFIG(5) = CF_Trigger;
+        PCONFIG(6) = CF1_Trigger;
+
+        CONFIG_PIN1 = SEL_Pin;
+        CONFIG_PIN2 = CF1_Pin;
+        CONFIG_PIN3 = CF_Pin;
+      } else {
+        PCONFIG(4) = getFormItemInt(F("p076_curr_read"));
+        PCONFIG(5) = getFormItemInt(F("p076_cf_edge"));
+        PCONFIG(6) = getFormItemInt(F("p076_cf1_edge"));
+      }
+    }
+
+
+    double hlwMultipliers[3];
+    hlwMultipliers[0] = getFormItemFloat(F("p076_currmult"));
+    hlwMultipliers[1] = getFormItemFloat(F("p076_voltmult"));
+    hlwMultipliers[2] = getFormItemFloat(F("p076_powmult"));
+    if (hlwMultipliers[0] > 1.0 && hlwMultipliers[1] > 1.0 && hlwMultipliers[2] > 1.0) {
+      SaveCustomTaskSettings(event->TaskIndex, (byte *)&hlwMultipliers,
+                             sizeof(hlwMultipliers));
+      if (PLUGIN_076_DEBUG) {
+        String log = F("P076: Saved Calibration from Config Page");
+        addLog(LOG_LEVEL_INFO, log);
+      }
+
+      if (Plugin_076_hlw) {
+        Plugin_076_hlw->setCurrentMultiplier(hlwMultipliers[0]);
+        Plugin_076_hlw->setVoltageMultiplier(hlwMultipliers[1]);
+        Plugin_076_hlw->setPowerMultiplier(hlwMultipliers[2]);
+      }
+
+      if (PLUGIN_076_DEBUG) {
+        String log = F("P076: Multipliers Reassigned");
+        addLog(LOG_LEVEL_INFO, log);
+      }
+    }
+
+    if (PLUGIN_076_DEBUG) {
+      String log = F("P076: PIN Settings ");
+
+      log += F(" curr_read: ");
+      log += PCONFIG(4);
+      log += F(" cf_edge: ");
+      log += PCONFIG(5);
+      log += F(" cf1_edge: ");
+      log += PCONFIG(6);
+      addLog(LOG_LEVEL_INFO, log);
+    }
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_TEN_PER_SECOND:
+    if (Plugin_076_hlw) {
+      switch (p076_read_stage) {
+      case 0:
+
+        break;
+      case 1:
+        Plugin_076_hlw->setMode(MODE_CURRENT);
+        p076_timer = millis() + HLW_DELAYREADING;
+        ++p076_read_stage;
+        break;
+      case 2:
+        if (timeOutReached(p076_timer)) {
+          p076_hcurrent = Plugin_076_hlw->getCurrent();
+          Plugin_076_hlw->setMode(MODE_VOLTAGE);
+          p076_timer = millis() + HLW_DELAYREADING;
+          ++p076_read_stage;
+        }
+        break;
+      case 3:
+        if (timeOutReached(p076_timer)) {
+          p076_hvoltage = Plugin_076_hlw->getVoltage();
+          p076_hpower = Plugin_076_hlw->getActivePower();
+          p076_hpowfact = (int)(100 * Plugin_076_hlw->getPowerFactor());
+          ++p076_read_stage;
+
+          schedule_task_device_timer(event->TaskIndex, millis() + 10);
+        }
+        break;
+      default:
+
+        break;
+      }
+    }
+    success = true;
+    break;
+
+  case PLUGIN_READ:
+    if (Plugin_076_hlw) {
+      if (p076_read_stage == 0) {
+
+        ++p076_read_stage;
+      } else if (p076_read_stage > 3) {
+
+        p076_read_stage = 0;
+        if (PLUGIN_076_DEBUG) {
+          String log = F("P076: Read values");
+          log += F(" - V=");
+          log += p076_hvoltage;
+          log += F(" - A=");
+          log += p076_hcurrent;
+          log += F(" - W=");
+          log += p076_hpower;
+          log += F(" - Pf%=");
+          log += p076_hpowfact;
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        UserVar[event->BaseVarIndex] = p076_hvoltage;
+        UserVar[event->BaseVarIndex + 1] = p076_hcurrent;
+        UserVar[event->BaseVarIndex + 2] = p076_hpower;
+        UserVar[event->BaseVarIndex + 3] = p076_hpowfact;
+
+        success = true;
+      }
+    }
+    break;
+
+  case PLUGIN_EXIT: {
+    Plugin076_Reset(event->TaskIndex);
+    success = true;
+    break;
+  }
+
+  case PLUGIN_INIT: {
+    Plugin076_Reset(event->TaskIndex);
+
+    const byte CF_PIN = CONFIG_PIN3;
+    const byte CF1_PIN = CONFIG_PIN2;
+    const byte SEL_PIN = CONFIG_PIN1;
+
+    if (CF_PIN != -1 && CF1_PIN != -1 && SEL_PIN != -1) {
+      Plugin_076_hlw = new HLW8012;
+      if (Plugin_076_hlw) {
+        byte currentRead = PCONFIG(4);
+        byte cf_trigger = PCONFIG(5);
+        byte cf1_trigger = PCONFIG(6);
+
+        Plugin_076_hlw->begin(CF_PIN, CF1_PIN, SEL_PIN, currentRead,
+                              true);
+
+        if (PLUGIN_076_DEBUG){
+          addLog(LOG_LEVEL_INFO, F("P076: Init object done"));
+        }
+        Plugin_076_hlw->setResistors(HLW_CURRENT_RESISTOR,
+                                     HLW_VOLTAGE_RESISTOR_UP,
+                                     HLW_VOLTAGE_RESISTOR_DOWN);
+        if (PLUGIN_076_DEBUG){
+          addLog(LOG_LEVEL_INFO, F("P076: Init Basic Resistor Values done"));
+        }
+
+        double current, voltage, power;
+        if (Plugin076_LoadMultipliers(event->TaskIndex, current, voltage, power)) {
+          if (PLUGIN_076_DEBUG){
+            addLog(LOG_LEVEL_INFO, F("P076: Saved Calibration after INIT"));
+          }
+
+          Plugin_076_hlw->setCurrentMultiplier(current);
+          Plugin_076_hlw->setVoltageMultiplier(voltage);
+          Plugin_076_hlw->setPowerMultiplier(power);
+        } else {
+          Plugin076_ResetMultipliers();
+        }
+
+        if (PLUGIN_076_DEBUG){
+          addLog(LOG_LEVEL_INFO, F("P076: Applied Calibration after INIT"));
+        }
+        StoredTaskIndex = event->TaskIndex;
+
+
+
+        attachInterrupt(CF1_PIN, p076_hlw8012_cf1_interrupt, cf1_trigger);
+        attachInterrupt(CF_PIN, p076_hlw8012_cf_interrupt, cf_trigger);
+        success = true;
+      }
+    }
+    break;
+  }
+
+  case PLUGIN_WRITE:
+    if (Plugin_076_hlw) {
+      String tmpString = string;
+      int argIndex = tmpString.indexOf(',');
+      if (argIndex){
+        tmpString = tmpString.substring(0, argIndex);
+      }
+      if (tmpString.equalsIgnoreCase(F("hlwreset"))) {
+        Plugin076_ResetMultipliers();
+        success = true;
+      }
+
+      if (tmpString.equalsIgnoreCase(F("hlwcalibrate"))) {
+        String tmpStr = string;
+        unsigned int CalibVolt = 0;
+        double CalibCurr = 0;
+        unsigned int CalibAcPwr = 0;
+        int comma1 = tmpStr.indexOf(',');
+        int comma2 = tmpStr.indexOf(',', comma1 + 1);
+        int comma3 = tmpStr.indexOf(',', comma2 + 1);
+        if (comma1 != 0) {
+          if (comma2 == 0) {
+            CalibVolt = tmpStr.substring(comma1 + 1).toInt();
+          } else if (comma3 == 0) {
+            CalibVolt = tmpStr.substring(comma1 + 1, comma2).toInt();
+            CalibCurr = atof(tmpStr.substring(comma2 + 1).c_str());
+          } else {
+            CalibVolt = tmpStr.substring(comma1 + 1, comma2).toInt();
+            CalibCurr = atof(tmpStr.substring(comma2 + 1, comma3).c_str());
+            CalibAcPwr = tmpStr.substring(comma3 + 1).toInt();
+          }
+        }
+        if (PLUGIN_076_DEBUG) {
+          String log = F("P076: Calibration to values");
+          log += F(" - Expected-V=");
+          log += CalibVolt;
+          log += F(" - Expected-A=");
+          log += CalibCurr;
+          log += F(" - Expected-W=");
+          log += CalibAcPwr;
+          addLog(LOG_LEVEL_INFO, log);
+        }
+        bool changed = false;
+        if (CalibVolt != 0) {
+          Plugin_076_hlw->expectedVoltage(CalibVolt);
+          changed = true;
+        }
+        if (CalibCurr > 0.0) {
+          Plugin_076_hlw->expectedCurrent(CalibCurr);
+          changed = true;
+        }
+        if (CalibAcPwr != 0) {
+          Plugin_076_hlw->expectedActivePower(CalibAcPwr);
+          changed = true;
+        }
+
+
+        if (changed) {
+          Plugin076_SaveMultipliers();
+        }
+        success = true;
+      }
+    }
+    break;
+
+  }
+  return success;
+}
+
+void Plugin076_ResetMultipliers() {
+  if (Plugin_076_hlw) {
+    Plugin_076_hlw->resetMultipliers();
+    Plugin076_SaveMultipliers();
+    if (PLUGIN_076_DEBUG){
+      addLog(LOG_LEVEL_INFO, F("P076: Reset Multipliers to DEFAULT"));
+    }
+  }
+}
+
+void Plugin076_SaveMultipliers() {
+  if (StoredTaskIndex < 0) return;
+  double hlwMultipliers[3];
+  if (Plugin076_ReadMultipliers(hlwMultipliers[0], hlwMultipliers[1], hlwMultipliers[2])) {
+    SaveCustomTaskSettings(StoredTaskIndex, (byte *)&hlwMultipliers,
+                           sizeof(hlwMultipliers));
+  }
+}
+
+bool Plugin076_ReadMultipliers(double& current, double& voltage, double& power) {
+  current = 0.0;
+  voltage = 0.0;
+  power = 0.0;
+  if (Plugin_076_hlw) {
+    current = Plugin_076_hlw->getCurrentMultiplier();
+    voltage = Plugin_076_hlw->getVoltageMultiplier();
+    power = Plugin_076_hlw->getPowerMultiplier();
+    return true;
+  }
+  return false;
+}
+
+
+bool Plugin076_LoadMultipliers(byte TaskIndex, double& current, double& voltage, double& power) {
+
+
+  if (!Plugin076_ReadMultipliers(current, voltage, power)) {
+    return false;
+  }
+  double hlwMultipliers[3];
+  LoadCustomTaskSettings(TaskIndex, (byte *)&hlwMultipliers,
+                         sizeof(hlwMultipliers));
+  if (hlwMultipliers[0] > 1.0) {
+    current = hlwMultipliers[0];
+  }
+  if (hlwMultipliers[1] > 1.0) {
+    voltage = hlwMultipliers[1];
+  }
+  if (hlwMultipliers[2] > 1.0) {
+    power = hlwMultipliers[2];
+  }
+  return (current > 1.0) && (voltage > 1.0) && (power > 1.0);
+}
+
+void Plugin076_Reset(byte TaskIndex) {
+  if (Plugin_076_hlw) {
+    const byte CF_PIN = Settings.TaskDevicePin3[TaskIndex];
+    const byte CF1_PIN = Settings.TaskDevicePin2[TaskIndex];
+    detachInterrupt(CF_PIN);
+    detachInterrupt(CF1_PIN);
+    delete Plugin_076_hlw;
+    Plugin_076_hlw = nullptr;
+  }
+  StoredTaskIndex = -1;
+  p076_read_stage = 0;
+  p076_timer = 0;
+
+  p076_hcurrent = 0.0;
+  p076_hvoltage = 0;
+  p076_hpower = 0;
+  p076_hpowfact = 0;
+}
+
+
+
+void ICACHE_RAM_ATTR p076_hlw8012_cf1_interrupt() {
+  if (Plugin_076_hlw) {
+    Plugin_076_hlw->cf1_interrupt();
+  }
+}
+
+void ICACHE_RAM_ATTR p076_hlw8012_cf_interrupt() {
+  if (Plugin_076_hlw) {
+    Plugin_076_hlw->cf_interrupt();
+  }
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P077_CSE7766.ino"
+#ifdef USES_P077
+
+
+
+
+
+
+#include <Arduino.h>
+
+#define PLUGIN_077 
+#define PLUGIN_ID_077 77
+#ifdef PLUGIN_SET_SONOFF_POW
+  #define PLUGIN_NAME_077 "Energy (AC) - CSE7766 (POW r2) [TESTING]"
+#else
+  #define PLUGIN_NAME_077 "Energy (AC) - CSE7766 [TESTING]"
+#endif
+#define PLUGIN_VALUENAME1_077 "Voltage"
+#define PLUGIN_VALUENAME2_077 "Power"
+#define PLUGIN_VALUENAME3_077 "Current"
+#define PLUGIN_VALUENAME4_077 "Pulses"
+
+#define CSE_NOT_CALIBRATED 0xAA
+#define CSE_PULSES_NOT_INITIALIZED -1
+#define CSE_PREF 1000
+#define CSE_UREF 100
+#define HLW_PREF_PULSE 12530
+#define HLW_UREF_PULSE 1950
+#define HLW_IREF_PULSE 3500
+
+
+
+
+
+
+
+struct P077_data_struct : public PluginTaskData_base {
+
+  bool processCseReceived(struct EventStruct *event) {
+    uint8_t header = serial_in_buffer[0];
+    if ((header & 0xFC) == 0xFC) {
+
+      return false;
+    }
+
+
+    if (HLW_UREF_PULSE == PCONFIG(0)) {
+      long voltage_coefficient = 191200;
+      if (CSE_NOT_CALIBRATED != header) {
+        voltage_coefficient = serial_in_buffer[2] << 16 |
+                              serial_in_buffer[3] << 8 | serial_in_buffer[4];
+      }
+      PCONFIG(0) = voltage_coefficient / CSE_UREF;
+    }
+    if (HLW_IREF_PULSE == PCONFIG(1)) {
+      long current_coefficient = 16140;
+      if (CSE_NOT_CALIBRATED != header) {
+        current_coefficient = serial_in_buffer[8] << 16 |
+                              serial_in_buffer[9] << 8 | serial_in_buffer[10];
+      }
+      PCONFIG(1) = current_coefficient;
+    }
+    if (HLW_PREF_PULSE == PCONFIG(2)) {
+      long power_coefficient = 5364000;
+      if (CSE_NOT_CALIBRATED != header) {
+        power_coefficient = serial_in_buffer[14] << 16 |
+                            serial_in_buffer[15] << 8 | serial_in_buffer[16];
+      }
+      PCONFIG(2) = power_coefficient / CSE_PREF;
+    }
+
+    adjustment = serial_in_buffer[20];
+    voltage_cycle = serial_in_buffer[5] << 16 | serial_in_buffer[6] << 8 |
+                    serial_in_buffer[7];
+    current_cycle = serial_in_buffer[11] << 16 | serial_in_buffer[12] << 8 |
+                    serial_in_buffer[13];
+    power_cycle = serial_in_buffer[17] << 16 | serial_in_buffer[18] << 8 |
+                  serial_in_buffer[19];
+    cf_pulses = serial_in_buffer[21] << 8 | serial_in_buffer[22];
+
+
+
+    if (adjustment & 0x40) {
+      energy_voltage = (float)(PCONFIG(0) * CSE_UREF) / (float)voltage_cycle;
+    }
+    if (adjustment & 0x10) {
+      if ((header & 0xF2) == 0xF2) {
+        energy_power = 0;
+      } else {
+        if (0 == power_cycle_first)
+          power_cycle_first = power_cycle;
+        if (power_cycle_first != power_cycle) {
+          power_cycle_first = -1;
+          energy_power = (float)(PCONFIG(2) * CSE_PREF) / (float)power_cycle;
+        } else {
+          energy_power = 0;
+        }
+      }
+    } else {
+      power_cycle_first = 0;
+      energy_power = 0;
+    }
+    if (adjustment & 0x20) {
+      if (0 == energy_power) {
+        energy_current = 0;
+      } else {
+        energy_current = (float)PCONFIG(1) / (float)current_cycle;
+      }
+    }
+# 119 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P077_CSE7766.ino"
+    return true;
+  }
+
+  bool processSerialData() {
+    long t_start = millis();
+    bool found = false;
+    while (Serial.available() > 0 && !found) {
+      uint8_t serial_in_byte = Serial.read();
+      count_bytes++;
+      checksum -= serial_in_buffer[2];
+      memmove(serial_in_buffer, serial_in_buffer + 1,
+              sizeof(serial_in_buffer) - 1);
+      serial_in_buffer[25] = serial_in_byte;
+      checksum += serial_in_buffer[22];
+      if (checksum == serial_in_buffer[23] &&
+          serial_in_buffer[1] == 0x5A) {
+        count_pkt++;
+        found = true;
+      }
+    }
+    long t_diff = timePassedSince(t_start);
+    t_all += t_diff;
+
+    if (count_pkt > 10) {
+      t_max = max(t_max, t_diff);
+    }
+    if (found) {
+      count_max = max(count_max, count_bytes);
+      t_pkt = t_start - t_pkt_tmp;
+      t_pkt_tmp = t_start;
+
+    }
+
+    return found;
+  }
+
+
+
+  uint8_t serial_in_buffer[32];
+  long voltage_cycle = 0;
+  long current_cycle = 0;
+  long power_cycle = 0;
+  long power_cycle_first = 0;
+  long cf_pulses = 0;
+  long cf_pulses_last_time = CSE_PULSES_NOT_INITIALIZED;
+  long cf_frequency = 0;
+  float energy_voltage = 0;
+  float energy_current = 0;
+  float energy_power = 0;
+
+
+  long t_max = 0, t_all = 0, t_pkt = 0, t_pkt_tmp = 0;
+  uint16_t count_bytes = 0, count_max = 0, count_pkt = 0;
+  uint8_t checksum = 0, adjustment = 0;
+};
+
+
+
+boolean Plugin_077(byte function, struct EventStruct *event, String &string) {
+  boolean success = false;
+
+  switch (function) {
+  case PLUGIN_DEVICE_ADD: {
+    Device[++deviceCount].Number = PLUGIN_ID_077;
+    Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+    Device[deviceCount].Ports = 0;
+    Device[deviceCount].PullUpOption = false;
+    Device[deviceCount].InverseLogicOption = false;
+    Device[deviceCount].FormulaOption = true;
+    Device[deviceCount].ValueCount = 4;
+    Device[deviceCount].SendDataOption = true;
+    Device[deviceCount].TimerOption = true;
+    Device[deviceCount].TimerOptional = true;
+    Device[deviceCount].GlobalSyncOption = true;
+    break;
+  }
+
+  case PLUGIN_GET_DEVICENAME: {
+    string = F(PLUGIN_NAME_077);
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES: {
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_077));
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_077));
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_077));
+    strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3], PSTR(PLUGIN_VALUENAME4_077));
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEGPIONAMES: {
+
+    break;
+  }
+
+  case PLUGIN_WEBFORM_LOAD: {
+    addFormNumericBox(F("U Ref"), F("p077_URef"), PCONFIG(0));
+    addUnit(F("uSec"));
+
+    addFormNumericBox(F("I Ref"), F("p077_IRef"), PCONFIG(1));
+    addUnit(F("uSec"));
+
+    addFormNumericBox(F("P Ref"), F("p077_PRef"), PCONFIG(2));
+    addUnit(F("uSec"));
+    addFormNote(F("Use 0 to read values stored on chip / default values"));
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_WEBFORM_SAVE: {
+    PCONFIG(0) = getFormItemInt(F("p077_URef"));
+    ;
+    PCONFIG(1) = getFormItemInt(F("p077_IRef"));
+    PCONFIG(2) = getFormItemInt(F("p077_PRef"));
+    success = true;
+    break;
+  }
+
+  case PLUGIN_EXIT: {
+    clearPluginTaskData(event->TaskIndex);
+    success = true;
+    break;
+  }
+
+  case PLUGIN_INIT: {
+    initPluginTaskData(event->TaskIndex, new P077_data_struct());
+    if (PCONFIG(0) == 0) PCONFIG(0) = HLW_UREF_PULSE;
+    if (PCONFIG(1) == 0) PCONFIG(1) = HLW_IREF_PULSE;
+    if (PCONFIG(2) == 0) PCONFIG(2) = HLW_PREF_PULSE;
+
+    Settings.UseSerial = true;
+    disableSerialLog();
+
+    Settings.BaudRate = 4800;
+    Serial.flush();
+    Serial.begin(Settings.BaudRate, SERIAL_8E1);
+    success = true;
+    break;
+  }
+# 287 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P077_CSE7766.ino"
+  case PLUGIN_READ: {
+    addLog(LOG_LEVEL_DEBUG_DEV, F("CSE: plugin read"));
+
+
+
+
+
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_SERIAL_IN: {
+    P077_data_struct* P077_data = static_cast<P077_data_struct*>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P077_data) {
+      success = true;
+
+      if (P077_data->processSerialData()) {
+        addLog(LOG_LEVEL_DEBUG, F("CSE: packet found"));
+        if (CseReceived(event)) {
+          if (loglevelActiveFor(LOG_LEVEL_DEBUG_DEV)) {
+            String log = F("CSE: adjustment ");
+            log += P077_data->adjustment;
+            addLog(LOG_LEVEL_DEBUG_DEV, log);
+            log = F("CSE: voltage_cycle ");
+            log += P077_data->voltage_cycle;
+            addLog(LOG_LEVEL_DEBUG_DEV, log);
+            log = F("CSE: current_cycle ");
+            log += P077_data->current_cycle;
+            addLog(LOG_LEVEL_DEBUG_DEV, log);
+            log = F("CSE: power_cycle ");
+            log += P077_data->power_cycle;
+            addLog(LOG_LEVEL_DEBUG_DEV, log);
+            log = F("CSE: cf_pulses ");
+            log += P077_data->cf_pulses;
+            addLog(LOG_LEVEL_DEBUG_DEV, log);
+          }
+
+          if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
+            String log = F("CSE voltage: ");
+            log += P077_data->energy_voltage;
+            addLog(LOG_LEVEL_DEBUG, log);
+            log = F("CSE power: ");
+            log += P077_data->energy_power;
+            addLog(LOG_LEVEL_DEBUG, log);
+            log = F("CSE current: ");
+            log += P077_data->energy_current;
+            addLog(LOG_LEVEL_DEBUG, log);
+            log = F("CSE pulses: ");
+            log += P077_data->cf_pulses;
+            addLog(LOG_LEVEL_DEBUG, log);
+          }
+        }
+
+
+        UserVar[event->BaseVarIndex] = P077_data->energy_voltage;
+        UserVar[event->BaseVarIndex + 1] = P077_data->energy_power;
+        UserVar[event->BaseVarIndex + 2] = P077_data->energy_current;
+        UserVar[event->BaseVarIndex + 3] = P077_data->cf_pulses;
+
+
+        if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
+          String log = F("CSE: time ");
+          log += P077_data->t_max;
+          log += '/';
+          log += P077_data->t_pkt;
+          log += '/';
+          log += P077_data->t_all;
+          addLog(LOG_LEVEL_DEBUG, log);
+          log = F("CSE: bytes ");
+          log += P077_data->count_bytes;
+          log += '/';
+          log += P077_data->count_max;
+          log += '/';
+          log += Serial.available();
+          addLog(LOG_LEVEL_DEBUG, log);
+          log = F("CSE: nr ");
+          log += P077_data->count_pkt;
+          addLog(LOG_LEVEL_DEBUG, log);
+        }
+        P077_data->t_all = 0;
+        P077_data->count_bytes = 0;
+      }
+    }
+    break;
+  }
+  }
+  return success;
+}
+
+bool CseReceived(struct EventStruct *event) {
+  P077_data_struct* P077_data = static_cast<P077_data_struct*>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P077_data) {
+    return false;
+  }
+  if (!P077_data->processCseReceived(event)) {
+    addLog(LOG_LEVEL_DEBUG, F("CSE: Abnormal hardware"));
+    return false;
+  }
+  return true;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P078_Eastron.ino"
+#ifdef USES_P078
+# 13 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P078_Eastron.ino"
+#define PLUGIN_078 
+#define PLUGIN_ID_078 78
+#define PLUGIN_NAME_078 "Energy (AC) - Eastron SDM120C/220T/230/630 [TESTING]"
+
+#define P078_DEV_ID PCONFIG(0)
+#define P078_DEV_ID_LABEL PCONFIG_LABEL(0)
+#define P078_MODEL PCONFIG(1)
+#define P078_MODEL_LABEL PCONFIG_LABEL(1)
+#define P078_BAUDRATE PCONFIG(2)
+#define P078_BAUDRATE_LABEL PCONFIG_LABEL(2)
+#define P078_QUERY1 PCONFIG(3)
+#define P078_QUERY2 PCONFIG(4)
+#define P078_QUERY3 PCONFIG(5)
+#define P078_QUERY4 PCONFIG(6)
+#define P078_DEPIN CONFIG_PIN3
+
+#define P078_DEV_ID_DFLT 1
+#define P078_MODEL_DFLT 0
+#define P078_BAUDRATE_DFLT 1
+#define P078_QUERY1_DFLT 0
+#define P078_QUERY2_DFLT 1
+#define P078_QUERY3_DFLT 2
+#define P078_QUERY4_DFLT 5
+
+#define P078_NR_OUTPUT_VALUES 4
+#define P078_NR_OUTPUT_OPTIONS 10
+#define P078_QUERY1_CONFIG_POS 3
+
+
+#include <SDM.h>
+#include <ESPeasySerial.h>
+
+
+
+ESPeasySerial* Plugin_078_SoftSerial = NULL;
+SDM* Plugin_078_SDM = NULL;
+boolean Plugin_078_init = false;
+
+boolean Plugin_078(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_078;
+        Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+        Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = P078_NR_OUTPUT_VALUES;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_078);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        for (byte i = 0; i < VARS_PER_TASK; ++i) {
+          if ( i < P078_NR_OUTPUT_VALUES) {
+            byte choice = PCONFIG(i + P078_QUERY1_CONFIG_POS);
+            safe_strncpy(
+              ExtraTaskSettings.TaskDeviceValueNames[i],
+              p078_getQueryValueString(choice),
+              sizeof(ExtraTaskSettings.TaskDeviceValueNames[i]));
+          } else {
+            ZERO_FILL(ExtraTaskSettings.TaskDeviceValueNames[i]);
+          }
+        }
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+      {
+        serialHelper_getGpioNames(event);
+        event->String3 = formatGpioName_output_optional("DE");
+        break;
+      }
+
+    case PLUGIN_SET_DEFAULTS:
+      {
+        P078_DEV_ID = P078_DEV_ID_DFLT;
+        P078_MODEL = P078_MODEL_DFLT;
+        P078_BAUDRATE = P078_BAUDRATE_DFLT;
+        P078_QUERY1 = P078_QUERY1_DFLT;
+        P078_QUERY2 = P078_QUERY2_DFLT;
+        P078_QUERY3 = P078_QUERY3_DFLT;
+        P078_QUERY4 = P078_QUERY4_DFLT;
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        serialHelper_webformLoad(event);
+
+        if (P078_DEV_ID == 0 || P078_DEV_ID > 247 || P078_BAUDRATE >= 6) {
+
+          P078_DEV_ID = P078_DEV_ID_DFLT;
+          P078_MODEL = P078_MODEL_DFLT;
+          P078_BAUDRATE = P078_BAUDRATE_DFLT;
+          P078_QUERY1 = P078_QUERY1_DFLT;
+          P078_QUERY2 = P078_QUERY2_DFLT;
+          P078_QUERY3 = P078_QUERY3_DFLT;
+          P078_QUERY4 = P078_QUERY4_DFLT;
+        }
+        addFormNumericBox(F("Modbus Address"), P078_DEV_ID_LABEL, P078_DEV_ID, 1, 247);
+
+        {
+          String options_model[4] = { F("SDM120C"), F("SDM220T"), F("SDM230"), F("SDM630") };
+          addFormSelector(F("Model Type"), P078_MODEL_LABEL, 4, options_model, NULL, P078_MODEL );
+        }
+        {
+          String options_baudrate[6];
+          for (int i = 0; i < 6; ++i) {
+            options_baudrate[i] = String(p078_storageValueToBaudrate(i));
+          }
+          addFormSelector(F("Baud Rate"), P078_BAUDRATE_LABEL, 6, options_baudrate, NULL, P078_BAUDRATE );
+        }
+
+        if (P078_MODEL == 0 && P078_BAUDRATE > 3)
+          addFormNote(F("<span style=\"color:red\"> SDM120 only allows up to 9600 baud with default 2400!</span>"));
+
+        if (P078_MODEL == 3 && P078_BAUDRATE == 0)
+          addFormNote(F("<span style=\"color:red\"> SDM630 only allows 2400 to 38400 baud with default 9600!</span>"));
+
+        if (Plugin_078_SDM != nullptr) {
+          addRowLabel(F("Checksum (pass/fail)"));
+          String chksumStats;
+          chksumStats = Plugin_078_SDM->getSuccCount();
+          chksumStats += '/';
+          chksumStats += Plugin_078_SDM->getErrCount();
+          addHtml(chksumStats);
+        }
+
+        {
+
+          sensorTypeHelper_webformLoad_header();
+          String options[P078_NR_OUTPUT_OPTIONS];
+          for (int i = 0; i < P078_NR_OUTPUT_OPTIONS; ++i) {
+            options[i] = p078_getQueryString(i);
+          }
+          for (byte i = 0; i < P078_NR_OUTPUT_VALUES; ++i) {
+            const byte pconfigIndex = i + P078_QUERY1_CONFIG_POS;
+            sensorTypeHelper_loadOutputSelector(event, pconfigIndex, i, P078_NR_OUTPUT_OPTIONS, options);
+          }
+        }
+
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+          serialHelper_webformSave(event);
+
+          for (byte i = 0; i < P078_NR_OUTPUT_VALUES; ++i) {
+            const byte pconfigIndex = i + P078_QUERY1_CONFIG_POS;
+            const byte choice = PCONFIG(pconfigIndex);
+            sensorTypeHelper_saveOutputSelector(event, pconfigIndex, i, p078_getQueryValueString(choice));
+          }
+
+          P078_DEV_ID = getFormItemInt(P078_DEV_ID_LABEL);
+          P078_MODEL = getFormItemInt(P078_MODEL_LABEL);
+          P078_BAUDRATE = getFormItemInt(P078_BAUDRATE_LABEL);
+
+          Plugin_078_init = false;
+          success = true;
+          break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        Plugin_078_init = true;
+        if (Plugin_078_SoftSerial != NULL) {
+          delete Plugin_078_SoftSerial;
+          Plugin_078_SoftSerial=NULL;
+        }
+        Plugin_078_SoftSerial = new ESPeasySerial(CONFIG_PIN1, CONFIG_PIN2);
+        unsigned int baudrate = p078_storageValueToBaudrate(P078_BAUDRATE);
+        Plugin_078_SoftSerial->begin(baudrate);
+
+        if (Plugin_078_SDM != NULL) {
+          delete Plugin_078_SDM;
+          Plugin_078_SDM=NULL;
+        }
+        Plugin_078_SDM = new SDM(*Plugin_078_SoftSerial, baudrate, P078_DEPIN);
+        Plugin_078_SDM->begin();
+        success = true;
+        break;
+      }
+
+    case PLUGIN_EXIT:
+    {
+      Plugin_078_init = false;
+      if (Plugin_078_SoftSerial != NULL) {
+        delete Plugin_078_SoftSerial;
+        Plugin_078_SoftSerial=NULL;
+      }
+      if (Plugin_078_SDM != NULL) {
+        delete Plugin_078_SDM;
+        Plugin_078_SDM=NULL;
+      }
+      break;
+    }
+
+    case PLUGIN_READ:
+      {
+        if (Plugin_078_init)
+        {
+          int model = P078_MODEL;
+          byte dev_id = P078_DEV_ID;
+          UserVar[event->BaseVarIndex] = p078_readVal(P078_QUERY1, dev_id, model);
+          UserVar[event->BaseVarIndex + 1] = p078_readVal(P078_QUERY2, dev_id, model);
+          UserVar[event->BaseVarIndex + 2] = p078_readVal(P078_QUERY3, dev_id, model);
+          UserVar[event->BaseVarIndex + 3] = p078_readVal(P078_QUERY4, dev_id, model);
+          success = true;
+          break;
+        }
+        break;
+      }
+  }
+  return success;
+}
+
+float p078_readVal(byte query, byte node, unsigned int model) {
+  if (Plugin_078_SDM == NULL) return 0.0;
+
+  byte retry_count = 3;
+  bool success = false;
+  float _tempvar = NAN;
+  while (retry_count > 0 && !success) {
+    Plugin_078_SDM->clearErrCode();
+    _tempvar = Plugin_078_SDM->readVal(p078_getRegister(query, model), node);
+    --retry_count;
+    if (Plugin_078_SDM->getErrCode() == SDM_ERR_NO_ERROR) {
+      success = true;
+    }
+  }
+  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+    String log = F("EASTRON: (");
+    log += node;
+    log += ',';
+    log += model;
+    log += ") ";
+    log += p078_getQueryString(query);
+    log += ": ";
+    log += _tempvar;
+    addLog(LOG_LEVEL_INFO, log);
+  }
+  return _tempvar;
+}
+
+unsigned int p078_getRegister(byte query, byte model) {
+  if (model == 0) {
+    switch (query) {
+      case 0: return SDM120C_VOLTAGE;
+      case 1: return SDM120C_CURRENT;
+      case 2: return SDM120C_POWER;
+      case 3: return SDM120C_ACTIVE_APPARENT_POWER;
+      case 4: return SDM120C_REACTIVE_APPARENT_POWER;
+      case 5: return SDM120C_POWER_FACTOR;
+      case 6: return SDM120C_FREQUENCY;
+      case 7: return SDM120C_IMPORT_ACTIVE_ENERGY;
+      case 8: return SDM120C_EXPORT_ACTIVE_ENERGY;
+      case 9: return SDM120C_TOTAL_ACTIVE_ENERGY;
+    }
+  } else if (model == 1) {
+    switch (query) {
+      case 0: return SDM220T_VOLTAGE;
+      case 1: return SDM220T_CURRENT;
+      case 2: return SDM220T_POWER;
+      case 3: return SDM220T_ACTIVE_APPARENT_POWER;
+      case 4: return SDM220T_REACTIVE_APPARENT_POWER;
+      case 5: return SDM220T_POWER_FACTOR;
+      case 6: return SDM220T_FREQUENCY;
+      case 7: return SDM220T_IMPORT_ACTIVE_ENERGY;
+      case 8: return SDM220T_EXPORT_ACTIVE_ENERGY;
+      case 9: return SDM220T_TOTAL_ACTIVE_ENERGY;
+    }
+  } else if (model == 2) {
+    switch (query) {
+      case 0: return SDM230_VOLTAGE;
+      case 1: return SDM230_CURRENT;
+      case 2: return SDM230_POWER;
+      case 3: return SDM230_ACTIVE_APPARENT_POWER;
+      case 4: return SDM230_REACTIVE_APPARENT_POWER;
+      case 5: return SDM230_POWER_FACTOR;
+      case 6: return SDM230_FREQUENCY;
+      case 7: return SDM230_IMPORT_ACTIVE_ENERGY;
+      case 8: return SDM230_EXPORT_ACTIVE_ENERGY;
+      case 9: return SDM230_CURRENT_RESETTABLE_TOTAL_ACTIVE_ENERGY;
+    }
+  } else if (model == 3) {
+    switch (query) {
+      case 0: return SDM630_VOLTAGE_AVERAGE;
+      case 1: return SDM630_CURRENTSUM;
+      case 2: return SDM630_POWERTOTAL;
+      case 3: return SDM630_VOLT_AMPS_TOTAL;
+      case 4: return SDM630_VOLT_AMPS_REACTIVE_TOTAL;
+      case 5: return SDM630_POWER_FACTOR_TOTAL;
+      case 6: return SDM630_FREQUENCY;
+      case 7: return SDM630_IMPORT_ACTIVE_ENERGY;
+      case 8: return SDM630_EXPORT_ACTIVE_ENERGY;
+      case 9: return SDM630_IMPORT_ACTIVE_ENERGY;
+    }
+  }
+  return 0;
+}
+
+String p078_getQueryString(byte query) {
+  switch(query)
+  {
+    case 0: return F("Voltage (V)");
+    case 1: return F("Current (A)");
+    case 2: return F("Power (W)");
+    case 3: return F("Active Apparent Power (VA)");
+    case 4: return F("Reactive Apparent Power (VAr)");
+    case 5: return F("Power Factor (cos-phi)");
+    case 6: return F("Frequency (Hz)");
+    case 7: return F("Import Active Energy (Wh)");
+    case 8: return F("Export Active Energy (Wh)");
+    case 9: return F("Total Active Energy (Wh)");
+  }
+  return "";
+}
+
+String p078_getQueryValueString(byte query) {
+  switch(query)
+  {
+    case 0: return F("V");
+    case 1: return F("A");
+    case 2: return F("W");
+    case 3: return F("VA");
+    case 4: return F("VAr");
+    case 5: return F("cos_phi");
+    case 6: return F("Hz");
+    case 7: return F("Wh_imp");
+    case 8: return F("Wh_exp");
+    case 9: return F("Wh_tot");
+  }
+  return "";
+}
+
+
+int p078_storageValueToBaudrate(byte baudrate_setting) {
+  unsigned int baudrate = 9600;
+  switch (baudrate_setting) {
+    case 0: baudrate = 1200; break;
+    case 1: baudrate = 2400; break;
+    case 2: baudrate = 4800; break;
+    case 3: baudrate = 9600; break;
+    case 4: baudrate = 19200; break;
+    case 5: baudrate = 38400; break;
+  }
+  return baudrate;
+}
+
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P079_Wemos_Motorshield.ino"
+#ifdef USES_P079
+# 16 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P079_Wemos_Motorshield.ino"
+#define PLUGIN_079 
+#define PLUGIN_ID_079 79
+#define PLUGIN_NAME_079 "Motor - Wemos Motorshield"
+#define PLUGIN_VALUENAME1_079 "Wemos Motorshield"
+
+
+#ifndef __WEMOS_MOTOR_H
+#define __WEMOS_MOTOR_H 
+
+#if ARDUINO >= 100
+ #include "Arduino.h"
+#else
+ #include "WProgram.h"
+#endif
+
+#include "Wire.h"
+
+#define _MOTOR_A 0
+#define _MOTOR_B 1
+
+#define _SHORT_BRAKE 0
+#define _CCW 1
+#define _CW 2
+#define _STOP 3
+#define _STANDBY 4
+
+class WemosMotor {
+public:
+WemosMotor(uint8_t address, uint8_t motor, uint32_t freq);
+WemosMotor(uint8_t address, uint8_t motor, uint32_t freq, uint8_t STBY_IO);
+void setfreq(uint32_t freq);
+void setmotor(uint8_t dir, float pwm_val);
+void setmotor(uint8_t dir);
+
+private:
+uint8_t _address;
+uint8_t _motor;
+bool _use_STBY_IO = false;
+uint8_t _STBY_IO;
+};
+
+#endif
+
+
+uint8_t Plugin_079_MotorShield_address = 0x30;
+
+
+boolean Plugin_079(byte function, struct EventStruct *event, String& string)
+{
+ boolean success = false;
+
+
+
+ switch (function) {
+ case PLUGIN_DEVICE_ADD: {
+  Device[++deviceCount].Number = PLUGIN_ID_079;
+  Device[deviceCount].Type = DEVICE_TYPE_I2C;
+  Device[deviceCount].VType = SENSOR_TYPE_NONE;
+  Device[deviceCount].Ports = 0;
+  Device[deviceCount].PullUpOption = false;
+  Device[deviceCount].InverseLogicOption = false;
+  Device[deviceCount].FormulaOption = false;
+  Device[deviceCount].ValueCount = 0;
+  Device[deviceCount].SendDataOption = false;
+  Device[deviceCount].TimerOption = false;
+  break;
+ }
+
+ case PLUGIN_GET_DEVICENAME: {
+  string = F(PLUGIN_NAME_079);
+  break;
+ }
+
+ case PLUGIN_GET_DEVICEVALUENAMES: {
+  strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0],
+    PSTR(PLUGIN_VALUENAME1_079));
+  break;
+ }
+
+ case PLUGIN_WEBFORM_LOAD: {
+    String i2c_addres_string = formatToHex(PCONFIG(0));
+  addFormTextBox(F("I2C Address (Hex)"), F("p079_adr"), i2c_addres_string, 4);
+    addFormNote(F("Make sure to update the Wemos Motorshield firmware, see <a href='https://www.letscontrolit.com/wiki/index.php?title=WemosMotorshield'>wiki</a>"));
+
+  success = true;
+  break;
+ }
+
+ case PLUGIN_WEBFORM_SAVE: {
+  String i2c_address = WebServer.arg(F("p079_adr"));
+  PCONFIG(0) = (int)strtol(i2c_address.c_str(), 0, 16);
+
+  success = true;
+  break;
+ }
+
+ case PLUGIN_INIT: {
+  Plugin_079_MotorShield_address = PCONFIG(0);
+
+  success = true;
+  break;
+ }
+
+ case PLUGIN_READ: {
+  success = false;
+  break;
+ }
+
+ case PLUGIN_WRITE: {
+  String tmpString = string;
+
+  String cmd = parseString(tmpString, 1);
+
+
+
+
+  if (cmd.equalsIgnoreCase(F("WemosMotorShieldCMD"))) {
+   String paramMotor = parseString(tmpString, 2);
+   String paramDirection = parseString(tmpString, 3);
+   String paramSpeed = parseString(tmpString, 4);
+
+   WemosMotor WMS(Plugin_079_MotorShield_address, paramMotor.toInt(), 1000);
+   addLog(LOG_LEVEL_DEBUG, String(F("WemosMotorShield: Address = ")) + Plugin_079_MotorShield_address + String(F(" Motor = ")) + paramMotor);
+
+   if (paramDirection.equalsIgnoreCase(F("Forward"))) {
+    WMS.setmotor(_CW, paramSpeed.toInt());
+    addLog(LOG_LEVEL_INFO, String(F("WemosMotor: Motor = ")) + paramMotor + String(F(" Direction = ")) + paramDirection + String(F(" Speed = ")) + paramSpeed);
+   }
+   if (paramDirection.equalsIgnoreCase(F("Backward"))) {
+    WMS.setmotor(_CCW, paramSpeed.toInt());
+    addLog(LOG_LEVEL_INFO, String(F("WemosMotor: Motor = ")) + paramMotor + String(F(" Direction = ")) + paramDirection + String(F(" Speed = ")) + paramSpeed);
+   }
+   if (paramDirection.equalsIgnoreCase(F("Stop"))) {
+    WMS.setmotor(_STOP);
+    addLog(LOG_LEVEL_INFO, String(F("WemosMotor: Motor = ")) + paramMotor + String(F(" Direction = ")) + paramDirection);
+   }
+
+   success = true;
+  }
+
+  break;
+ }
+ }
+ return success;
+}
+
+
+
+
+WemosMotor::WemosMotor(uint8_t address, uint8_t motor, uint32_t freq)
+{
+ _use_STBY_IO = false;
+
+ if (motor == _MOTOR_A)
+  _motor = _MOTOR_A;
+ else
+  _motor = _MOTOR_B;
+
+
+
+ _address = address;
+
+ setfreq(freq);
+}
+
+
+WemosMotor::WemosMotor(uint8_t address, uint8_t motor, uint32_t freq, uint8_t STBY_IO)
+{
+ _use_STBY_IO = true;
+ _STBY_IO = STBY_IO;
+
+ if (motor == _MOTOR_A)
+  _motor = _MOTOR_A;
+ else
+  _motor = _MOTOR_B;
+
+
+
+ _address = address;
+
+ setfreq(freq);
+
+ pinMode(_STBY_IO, OUTPUT);
+ digitalWrite(_STBY_IO, LOW);
+}
+# 214 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P079_Wemos_Motorshield.ino"
+void WemosMotor::setfreq(uint32_t freq)
+{
+ Wire.beginTransmission(_address);
+ Wire.write(((byte)(freq >> 24)) & (byte)0x0f);
+ Wire.write((byte)(freq >> 16));
+ Wire.write((byte)(freq >> 8));
+ Wire.write((byte)freq);
+ Wire.endTransmission();
+ delay(0);
+}
+# 248 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P079_Wemos_Motorshield.ino"
+void WemosMotor::setmotor(uint8_t dir, float pwm_val)
+{
+ uint16_t _pwm_val;
+
+ if (_use_STBY_IO == true) {
+  if (dir == _STANDBY) {
+   digitalWrite(_STBY_IO, LOW);
+   return;
+  }else
+   digitalWrite(_STBY_IO, HIGH);
+ }
+
+ Wire.beginTransmission(_address);
+ Wire.write(_motor | (byte)0x10);
+ Wire.write(dir);
+
+
+ _pwm_val = uint16_t(pwm_val * 100);
+
+ if (_pwm_val > 10000)
+  _pwm_val = 10000;
+
+ Wire.write((byte)(_pwm_val >> 8));
+ Wire.write((byte)_pwm_val);
+ Wire.endTransmission();
+
+ delay(0);
+}
+
+void WemosMotor::setmotor(uint8_t dir)
+{
+ setmotor(dir, 100);
+}
+
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P080_DallasIButton.ino"
+#ifdef USES_P080
+
+
+
+
+
+
+#if defined(ESP32)
+  #define ESP32noInterrupts() {portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;portENTER_CRITICAL(&mux)
+  #define ESP32interrupts() portEXIT_CRITICAL(&mux);}
+#endif
+
+#define PLUGIN_080 
+#define PLUGIN_ID_080 80
+#define PLUGIN_NAME_080 "Input - iButton [TESTING]"
+#define PLUGIN_VALUENAME1_080 "iButton"
+
+int8_t Plugin_080_DallasPin;
+
+boolean Plugin_080(byte function, struct EventStruct * event, String& string)
+{
+    boolean success = false;
+
+    switch (function)
+    {
+        case PLUGIN_DEVICE_ADD:
+        {
+            Device[++deviceCount].Number = PLUGIN_ID_080;
+            Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
+            Device[deviceCount].VType = SENSOR_TYPE_LONG;
+            Device[deviceCount].Ports = 0;
+            Device[deviceCount].PullUpOption = false;
+            Device[deviceCount].InverseLogicOption = false;
+            Device[deviceCount].FormulaOption = false;
+            Device[deviceCount].ValueCount = 1;
+            Device[deviceCount].SendDataOption = true;
+            Device[deviceCount].TimerOption = true;
+            Device[deviceCount].GlobalSyncOption = true;
+            break;
+        }
+
+        case PLUGIN_GET_DEVICENAME:
+        {
+            string = F(PLUGIN_NAME_080);
+            break;
+        }
+
+        case PLUGIN_GET_DEVICEVALUENAMES:
+        {
+            strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_080));
+            break;
+        }
+
+        case PLUGIN_GET_DEVICEGPIONAMES:
+          {
+            event->String1 = formatGpioName_bidirectional(F("1-Wire"));
+            break;
+          }
+
+        case PLUGIN_WEBFORM_LOAD:
+        {
+            uint8_t savedAddress[8];
+
+            Plugin_080_DallasPin = CONFIG_PIN1;
+
+            if (Plugin_080_DallasPin != -1){
+
+              for (byte i = 0; i < 8; i++)
+                  savedAddress[i] = ExtraTaskSettings.TaskDevicePluginConfigLong[i];
+
+
+              addRowLabel(F("Device Address"));
+              addSelector_Head(F("p080_dev"), false);
+              addSelector_Item("", -1, false, false, "");
+              uint8_t tmpAddress[8];
+              byte count = 0;
+              Plugin_080_DS_reset();
+              Plugin_080_DS_reset_search();
+              while (Plugin_080_DS_search(tmpAddress))
+              {
+                  String option = "";
+                  for (byte j = 0; j < 8; j++)
+                  {
+                      option += String(tmpAddress[j], HEX);
+                      if (j < 7) option += '-';
+                  }
+                  bool selected = (memcmp(tmpAddress, savedAddress, 8) == 0) ? true : false;
+
+                  if ( tmpAddress[0] == 0x01) {
+                      addSelector_Item(option, count, selected, false, "");
+                  }
+
+
+                  count ++;
+              }
+              addSelector_Foot();
+            }
+            success = true;
+            break;
+        }
+
+        case PLUGIN_WEBFORM_SAVE:
+        {
+            uint8_t addr[8] = {0,0,0,0,0,0,0,0};
+
+
+            Plugin_080_DallasPin = CONFIG_PIN1;
+
+            if (Plugin_080_DallasPin != -1){
+              Plugin_080_DS_scan(getFormItemInt(F("p080_dev")), addr);
+              for (byte x = 0; x < 8; x++)
+                  ExtraTaskSettings.TaskDevicePluginConfigLong[x] = addr[x];
+
+              Plugin_080_DS_startConvertion(addr);
+            }
+            success = true;
+            break;
+        }
+
+        case PLUGIN_WEBFORM_SHOW_CONFIG:
+        {
+            for (byte x = 0; x < 8; x++)
+            {
+                if (x != 0)
+                    string += '-';
+
+            }
+            success = true;
+            break;
+        }
+        case PLUGIN_INIT:
+        {
+            Plugin_080_DallasPin = CONFIG_PIN1;
+            if (Plugin_080_DallasPin != -1){
+              uint8_t addr[8];
+              Plugin_080_get_addr(addr, event->TaskIndex);
+              Plugin_080_DS_startConvertion(addr);
+              delay(800);
+            }
+            success = true;
+            break;
+        }
+
+        case PLUGIN_TEN_PER_SECOND:
+        {
+            if (ExtraTaskSettings.TaskDevicePluginConfigLong[0] != 0){
+                uint8_t addr[8];
+                Plugin_080_get_addr(addr, event->TaskIndex);
+
+                Plugin_080_DallasPin = CONFIG_PIN1;
+                String log = F("DS   : iButton: ");
+
+                if (Plugin_080_DS_readiButton(addr))
+                {
+                    UserVar[event->BaseVarIndex] = 1;
+                    log += UserVar[event->BaseVarIndex];
+                    success = true;
+                }
+                else
+                {
+
+
+                    UserVar[event->BaseVarIndex] = 0;
+                    log += F("Not Present!");
+                }
+                Plugin_080_DS_startConvertion(addr);
+                addLog(LOG_LEVEL_DEBUG, log);
+            }
+            break;
+        }
+    }
+    return success;
+}
+
+void Plugin_080_get_addr(uint8_t addr[], byte TaskIndex)
+{
+
+  LoadTaskSettings(TaskIndex);
+  for (byte x = 0; x < 8; x++)
+      addr[x] = ExtraTaskSettings.TaskDevicePluginConfigLong[x];
+}
+
+
+
+
+
+byte Plugin_080_DS_scan(byte getDeviceROM, uint8_t* ROM)
+{
+    byte tmpaddr[8];
+    byte devCount = 0;
+    Plugin_080_DS_reset();
+
+    Plugin_080_DS_reset_search();
+    while (Plugin_080_DS_search(tmpaddr))
+    {
+        if (getDeviceROM == devCount)
+            for (byte i = 0; i < 8; i++)
+                ROM[i] = tmpaddr[i];
+        devCount++;
+    }
+    return devCount;
+}
+# 211 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P080_DallasIButton.ino"
+void Plugin_080_DS_startConvertion(uint8_t ROM[8])
+{
+    Plugin_080_DS_reset();
+    Plugin_080_DS_write(0x55);
+    for (byte i = 0; i < 8; i++)
+        Plugin_080_DS_write(ROM[i]);
+    Plugin_080_DS_write(0x44);
+}
+
+
+
+
+
+
+uint8_t Plugin_080_DS_reset()
+{
+    uint8_t r;
+    uint8_t retries = 125;
+    #if defined(ESP32)
+      ESP32noInterrupts();
+    #endif
+    pinMode(Plugin_080_DallasPin, INPUT);
+    do
+    {
+        if (--retries == 0)
+            return 0;
+        delayMicroseconds(2);
+    }
+    while (!digitalRead(Plugin_080_DallasPin));
+
+    pinMode(Plugin_080_DallasPin, OUTPUT); digitalWrite(Plugin_080_DallasPin, LOW);
+    delayMicroseconds(492);
+    pinMode(Plugin_080_DallasPin, INPUT);
+    delayMicroseconds(40);
+    r = !digitalRead(Plugin_080_DallasPin);
+    delayMicroseconds(420);
+    #if defined(ESP32)
+      ESP32interrupts();
+    #endif
+    return r;
+}
+
+#define FALSE 0
+#define TRUE 1
+
+unsigned char ROM_NBR[8];
+uint8_t LastDiscrep;
+uint8_t LastFamilyDiscrep;
+uint8_t LastDeviceFlg;
+
+
+
+
+
+void Plugin_080_DS_reset_search()
+{
+
+    LastDiscrep = 0;
+    LastDeviceFlg = FALSE;
+    LastFamilyDiscrep = 0;
+    for (byte i = 0; i < 8; i++)
+        ROM_NBR[i] = 0;
+}
+
+
+
+
+
+uint8_t Plugin_080_DS_search(uint8_t * newAddr)
+{
+    uint8_t id_bit_number;
+    uint8_t last_zero, rom_byte_number, search_result;
+    uint8_t id_bit, cmp_id_bit;
+    unsigned char rom_byte_mask, search_direction;
+
+
+    id_bit_number = 1;
+    last_zero = 0;
+    rom_byte_number = 0;
+    rom_byte_mask = 1;
+    search_result = 0;
+
+
+    if (!LastDeviceFlg)
+    {
+
+        if (!Plugin_080_DS_reset())
+        {
+
+            LastDiscrep = 0;
+            LastDeviceFlg = FALSE;
+            LastFamilyDiscrep = 0;
+            return FALSE;
+        }
+
+
+        Plugin_080_DS_write(0xF0);
+
+
+        do
+        {
+
+            id_bit = Plugin_080_DS_read_bit();
+            cmp_id_bit = Plugin_080_DS_read_bit();
+
+
+            if ((id_bit == 1) && (cmp_id_bit == 1))
+                break;
+            else
+            {
+
+                if (id_bit != cmp_id_bit)
+                    search_direction = id_bit;
+                else
+                {
+
+
+                    if (id_bit_number < LastDiscrep)
+                        search_direction = ((ROM_NBR[rom_byte_number] & rom_byte_mask) > 0);
+                    else
+
+                        search_direction = (id_bit_number == LastDiscrep);
+
+
+                    if (search_direction == 0)
+                    {
+                        last_zero = id_bit_number;
+
+
+                        if (last_zero < 9)
+                            LastFamilyDiscrep = last_zero;
+                    }
+                }
+
+
+
+                if (search_direction == 1)
+                    ROM_NBR[rom_byte_number] |= rom_byte_mask;
+                else
+                    ROM_NBR[rom_byte_number] &= ~rom_byte_mask;
+
+
+                Plugin_080_DS_write_bit(search_direction);
+
+
+
+                id_bit_number++;
+                rom_byte_mask <<= 1;
+
+
+                if (rom_byte_mask == 0)
+                {
+                    rom_byte_number++;
+                    rom_byte_mask = 1;
+                }
+            }
+        }
+        while (rom_byte_number < 8);
+
+
+        if (!(id_bit_number < 65))
+        {
+
+            LastDiscrep = last_zero;
+
+
+            if (LastDiscrep == 0)
+                LastDeviceFlg = TRUE;
+
+            search_result = TRUE;
+        }
+    }
+
+
+    if (!search_result || !ROM_NBR[0])
+    {
+        LastDiscrep = 0;
+        LastDeviceFlg = FALSE;
+        LastFamilyDiscrep = 0;
+        search_result = FALSE;
+    }
+
+    for (int i = 0; i < 8; i++)
+        newAddr[i] = ROM_NBR[i];
+
+    return search_result;
+}
+
+
+
+
+uint8_t Plugin_080_DS_read(void)
+{
+    uint8_t bitMask;
+    uint8_t r = 0;
+
+    for (bitMask = 0x01; bitMask; bitMask <<= 1)
+        if (Plugin_080_DS_read_bit())
+            r |= bitMask;
+
+    return r;
+}
+
+
+
+
+void Plugin_080_DS_write(uint8_t ByteToWrite)
+{
+    uint8_t bitMask;
+    for (bitMask = 0x01; bitMask; bitMask <<= 1)
+        Plugin_080_DS_write_bit( (bitMask & ByteToWrite) ? 1 : 0);
+}
+
+
+
+
+uint8_t Plugin_080_DS_read_bit(void)
+{
+    uint8_t r;
+
+    #if defined(ESP32)
+       ESP32noInterrupts();
+    #endif
+    pinMode(Plugin_080_DallasPin, OUTPUT);
+    digitalWrite(Plugin_080_DallasPin, LOW);
+    delayMicroseconds(3);
+    pinMode(Plugin_080_DallasPin, INPUT);
+    delayMicroseconds(10);
+    r = digitalRead(Plugin_080_DallasPin);
+    #if defined(ESP32)
+       ESP32interrupts();
+    #endif
+    delayMicroseconds(53);
+    return r;
+}
+
+
+boolean Plugin_080_DS_readiButton(byte addr[8])
+{
+
+
+
+    Plugin_080_DS_reset();
+    Plugin_080_DS_write(0x55);
+    for (byte i = 0; i < 8; i++)
+        Plugin_080_DS_write(addr[i]);
+
+    Plugin_080_DS_write(0xBE);
+
+
+
+
+
+    byte tmpaddr[8];
+    bool found = false;
+    Plugin_080_DS_reset();
+    String log = F("DS   : iButton searching for address: ");
+    for (byte j = 0; j < 8; j++)
+    {
+      log += String(addr[j], HEX);
+      if (j < 7) log += '-';
+    }
+    log += F(" found: ");
+    Plugin_080_DS_reset_search();
+    while (Plugin_080_DS_search(tmpaddr))
+    {
+       for (byte j = 0; j < 8; j++)
+       {
+         log += String(tmpaddr[j], HEX);
+         if (j < 7) log += '-';
+       }
+       log += ',';
+       if (memcmp(addr,tmpaddr,8)==0)
+       {
+         log += F("Success. Button was found");
+         found=true;
+       }
+    }
+    addLog(LOG_LEVEL_INFO, log);
+    return found;
+}
+
+
+
+void Plugin_080_DS_write_bit(uint8_t v)
+{
+    if (v & 1)
+    {
+        #if defined(ESP32)
+          ESP32noInterrupts();
+        #endif
+        digitalWrite(Plugin_080_DallasPin, LOW);
+        pinMode(Plugin_080_DallasPin, OUTPUT);
+        delayMicroseconds(10);
+        digitalWrite(Plugin_080_DallasPin, HIGH);
+        #if defined(ESP32)
+          ESP32interrupts();
+        #endif
+        delayMicroseconds(55);
+    }
+    else
+    {
+        #if defined(ESP32)
+          ESP32noInterrupts();
+        #endif
+        digitalWrite(Plugin_080_DallasPin, LOW);
+        pinMode(Plugin_080_DallasPin, OUTPUT);
+        delayMicroseconds(65);
+        digitalWrite(Plugin_080_DallasPin, HIGH);
+        #if defined(ESP32)
+           ESP32interrupts();
+        #endif
+        delayMicroseconds(5);
+    }
+}
+
+
+
+
+boolean Plugin_080_DS_crc8(uint8_t * addr)
+{
+  uint8_t crc = 0;
+  uint8_t len = 8;
+
+    while (len--)
+    {
+        uint8_t inbyte = *addr++;
+        for (uint8_t i = 8; i; i--)
+        {
+            uint8_t mix = (crc ^ inbyte) & 0x01;
+            crc >>= 1;
+            if (mix) crc ^= 0x8C;
+            inbyte >>= 1;
+        }
+    }
+    return crc == *addr;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P081_Cron.ino"
+
+
+
+
+
+#ifdef USES_P081
+
+#include <ctype.h>
+#include <time.h>
+
+extern "C"
+{
+#include "ccronexpr.h"
+}
+
+
+#define PLUGIN_081 
+#define PLUGIN_ID_081 81
+#define PLUGIN_NAME_081 "Generic - CRON [TESTING]"
+#define PLUGIN_VALUENAME1_081 "LastExecution"
+#define PLUGIN_VALUENAME2_081 "NextExecution"
+#ifndef PLUGIN_081_DEBUG
+  #define PLUGIN_081_DEBUG false
+#endif
+#define PLUGIN_081_EXPRESSION_SIZE 41
+#define LASTEXECUTION UserVar[event->BaseVarIndex]
+#define NEXTEXECUTION UserVar[event->BaseVarIndex+1]
+
+union timeToFloat
+{
+  time_t time;
+  float value;
+};
+
+
+
+
+boolean Plugin_081(byte function, struct EventStruct *event, String& string)
+{
+  timeToFloat converter;
+  boolean success = false;
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+    {
+
+
+        Device[++deviceCount].Number = PLUGIN_ID_081;
+        Device[deviceCount].Type = DEVICE_TYPE_DUMMY;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 2;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        Device[deviceCount].DecimalsOnly = true;
+        break;
+    }
+
+    case PLUGIN_GET_DEVICENAME:
+    {
+
+      string = F(PLUGIN_NAME_081);
+      break;
+    }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+    {
+
+
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_081));
+      strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_081));
+      break;
+    }
+
+    case PLUGIN_WEBFORM_LOAD:
+    {
+      char expression[PLUGIN_081_EXPRESSION_SIZE];
+      LoadCustomTaskSettings(event->TaskIndex, (byte*)&expression, PLUGIN_081_EXPRESSION_SIZE);
+
+      addFormTextBox(F("CRON Expression")
+        , F("p081_cron_exp")
+        , expression
+        , 39);
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SAVE:
+    {
+      String log;
+      char expression[PLUGIN_081_EXPRESSION_SIZE];
+      strncpy(expression, WebServer.arg(F("p081_cron_exp")).c_str() , sizeof(expression));
+      if( 1 != 0)
+      {
+        cron_expr expr;
+        const char* err = NULL;
+        memset(&expr, 0, sizeof(expr));
+        cron_parse_expr(expression, &expr, &err);
+        if (!err)
+        {
+          unsigned long time __attribute__((unused)) = now();
+          time_t last = mktime((struct tm *)&tm);
+          time_t next = cron_next((cron_expr *)&expr, last);
+          converter.time = last;
+          LASTEXECUTION = converter.value;
+          converter.time = next;
+          NEXTEXECUTION = converter.value;
+
+#if PLUGIN_081_DEBUG
+          serialPrintln(last);
+          converter.value = LASTEXECUTION;
+          serialPrintln(converter.time);
+          serialPrintln(getDateTimeString(*gmtime(&last)));
+          serialPrintln(next);
+          converter.value = NEXTEXECUTION;
+          serialPrintln(converter.time);
+          serialPrintln(getDateTimeString(*gmtime(&next)));
+          PrintCronExp(expr);
+#endif
+        }
+        else
+        {
+          log = String(F("CRON Expression: Error ")) + String(err);
+          addHtmlError(log);
+          addLog(LOG_LEVEL_ERROR, log);
+        }
+        log = SaveCustomTaskSettings(event->TaskIndex, (byte*)&expression, PLUGIN_081_EXPRESSION_SIZE);
+        if(log != "")
+        {
+            log = String(PSTR(PLUGIN_NAME_081)) + String(F(": Saving ")) + log;
+            addLog(LOG_LEVEL_ERROR, log);
+        }
+      }
+      success = true;
+      break;
+
+    }
+    case PLUGIN_WEBFORM_SHOW_VALUES:
+    {
+      converter.value = LASTEXECUTION;
+      time_t last = converter.time;
+      converter.value = NEXTEXECUTION;
+      time_t next = converter.time;
+      string += F("<div class=\"div_l\">");
+      string += ExtraTaskSettings.TaskDeviceValueNames[0];
+      string += F(":</div><div class=\"div_r\">");
+      string += getDateTimeString(*gmtime(&last));
+      string += F("</div><div class=\"div_br\"></div><div class=\"div_l\">");
+      string += ExtraTaskSettings.TaskDeviceValueNames[1];
+      string += F(":</div><div class=\"div_r\">");
+      string += getDateTimeString(*gmtime(&next));
+      string += F("</div>");
+      success = true;
+      break;
+    }
+
+    case PLUGIN_INIT:
+    {
+
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_READ:
+    {
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WRITE:
+    {
+       break;
+    }
+
+    case PLUGIN_EXIT:
+    {
+
+
+      break;
+
+    }
+
+    case PLUGIN_TIME_CHANGE:
+    case PLUGIN_ONCE_A_SECOND:
+    {
+
+      String log;
+      char expression[PLUGIN_081_EXPRESSION_SIZE];
+      LoadCustomTaskSettings(event->TaskIndex, (byte*)&expression, PLUGIN_081_EXPRESSION_SIZE);
+      converter.value = LASTEXECUTION;
+      time_t last = converter.time;
+      converter.value = NEXTEXECUTION;
+      time_t next = converter.time;
+      unsigned long time __attribute__((unused)) = now();
+      struct tm current = tm;
+      time_t current_t = mktime((struct tm *)&current);
+      #if PLUGIN_081_DEBUG
+        serialPrintln(F("CRON Debug info:"));
+        serialPrint(F("Next execution:"));
+        serialPrintln(getDateTimeString(*gmtime(&next)));
+        serialPrint(F("Current Time:"));
+        serialPrintln(getDateTimeString(current));
+        serialPrint(F("Triggered:"));
+        serialPrintln(next <= current_t);
+      #endif
+      if(function == PLUGIN_TIME_CHANGE || next <= current_t)
+      {
+        cron_expr expr;
+        memset(&expr, 0, sizeof(expr));
+        const char* error;
+        addLog(LOG_LEVEL_DEBUG, F("Cron Elapsed"));
+        cron_parse_expr(expression, &expr, &error);
+
+#if PLUGIN_081_DEBUG
+        PrintCronExp(expr);
+        serialPrint(F("Expression:"));
+        serialPrintln(expression);
+#endif
+        if(error)
+        {
+
+#if PLUGIN_081_DEBUG
+          serialPrint(F("Errors:"));
+          serialPrintln(String(error));
+#endif
+          addLog(LOG_LEVEL_ERROR, String(F("CRON Expression:")) + String(error));
+        }
+        else
+        {
+          last = current_t;
+          next = cron_next((cron_expr *)&expr, last);
+          if(next != CRON_INVALID_INSTANT)
+          {
+#if PLUGIN_081_DEBUG
+            serialPrint(F("LastExecution:"));
+            serialPrintln(getDateTimeString(*gmtime(&last)));
+            serialPrint(F("NextExecution:"));
+            serialPrintln(getDateTimeString(*gmtime(&next)));
+#endif
+
+            converter.time = last;
+            LASTEXECUTION = converter.value;
+            converter.time = next;
+            NEXTEXECUTION = converter.value;
+#if PLUGIN_081_DEBUG
+            serialPrintln(F("Check Conversion"));
+            serialPrintln(last);
+            converter.value = LASTEXECUTION;
+            serialPrintln(converter.time);
+            serialPrintln(next);
+            converter.value = NEXTEXECUTION;
+            serialPrintln(converter.time);
+#endif
+            addLog(LOG_LEVEL_DEBUG, String(F("Next execution:")) + getDateTimeString(*gmtime(&next)));
+            LoadTaskSettings(event->TaskIndex);
+            if(function != PLUGIN_TIME_CHANGE)
+              rulesProcessing(String(F("Cron#")) + String(ExtraTaskSettings.TaskDeviceName));
+          }
+          else
+          {
+            log = String(F("CRON: INVALID INSTANT"));
+            addLog(LOG_LEVEL_ERROR, log);
+          }
+        }
+
+      }
+      success = true;
+
+    }
+
+    case PLUGIN_TEN_PER_SECOND:
+    {
+
+
+
+      success = true;
+
+    }
+  }
+  return success;
+
+}
+
+#if PLUGIN_081_DEBUG
+void PrintCronExp(struct cron_expr_t e) {
+  serialPrintln(F("===DUMP Cron Expression==="));
+  serialPrint(F("Seconds:"));
+  for (int i = 0; i < 8; i++)
+  {
+    serialPrint(e.seconds[i]);
+    serialPrint(",");
+  }
+  serialPrintln();
+  serialPrint(F("Minutes:"));
+  for (int i = 0; i < 8; i++)
+  {
+    serialPrint(e.minutes[i]);
+    serialPrint(",");
+  }
+  serialPrintln();
+  serialPrint(F("hours:"));
+  for (int i = 0; i < 3; i++)
+  {
+    serialPrint(e.hours[i]);
+    serialPrint(",");
+  }
+  serialPrintln();
+  serialPrint(F("months:"));
+  for (int i = 0; i < 2; i++)
+  {
+    serialPrint(e.months[i]);
+    serialPrint(",");
+  }
+  serialPrintln();
+  serialPrint(F("days_of_week:"));
+  for (int i = 0; i < 1; i++)
+  {
+    serialPrint(e.days_of_week[i]);
+    serialPrint(",");
+  }
+  serialPrintln();
+  serialPrint(F("days_of_month:"));
+  for (int i = 0; i < 4; i++)
+  {
+    serialPrint(e.days_of_month[i]);
+    serialPrint(",");
+  }
+  serialPrintln();
+  serialPrintln(F("END=DUMP Cron Expression==="));
+
+}
+#endif
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P082_GPS.ino"
+#ifdef USES_P082
+# 13 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P082_GPS.ino"
+#include <ESPeasySerial.h>
+#include <TinyGPS++.h>
+
+#define PLUGIN_082 
+#define PLUGIN_ID_082 82
+#define PLUGIN_NAME_082 "Position - GPS [TESTING]"
+#define PLUGIN_VALUENAME1_082 "Longitude"
+#define PLUGIN_VALUENAME2_082 "Latitude"
+#define PLUGIN_VALUENAME3_082 "Altitude"
+#define PLUGIN_VALUENAME4_082 "Speed"
+
+
+#define P082_TIMEOUT PCONFIG(0)
+#define P082_TIMEOUT_LABEL PCONFIG_LABEL(0)
+#define P082_BAUDRATE PCONFIG(1)
+#define P082_BAUDRATE_LABEL PCONFIG_LABEL(1)
+#define P082_DISTANCE PCONFIG(2)
+#define P082_DISTANCE_LABEL PCONFIG_LABEL(2)
+#define P082_QUERY1 PCONFIG(3)
+#define P082_QUERY2 PCONFIG(4)
+#define P082_QUERY3 PCONFIG(5)
+#define P082_QUERY4 PCONFIG(6)
+
+#define P082_NR_OUTPUT_VALUES VARS_PER_TASK
+#define P082_QUERY1_CONFIG_POS 3
+
+
+#define P082_QUERY_LONG 0
+#define P082_QUERY_LAT 1
+#define P082_QUERY_ALT 2
+#define P082_QUERY_SPD 3
+#define P082_QUERY_SATVIS 4
+#define P082_QUERY_SATUSE 5
+#define P082_QUERY_HDOP 6
+#define P082_QUERY_FIXQ 7
+#define P082_QUERY_DB_MAX 8
+#define P082_QUERY_CHKSUM_FAIL 9
+#define P082_NR_OUTPUT_OPTIONS 10
+
+#define P082_TIMESTAMP_AGE 1500
+#define P082_DEFAULT_FIX_TIMEOUT 2500
+#define P082_DISTANCE_DFLT 0
+#define P082_QUERY1_DFLT P082_QUERY_LONG
+#define P082_QUERY2_DFLT P082_QUERY_LAT
+#define P082_QUERY3_DFLT P082_QUERY_ALT
+#define P082_QUERY4_DFLT P082_QUERY_SPD
+
+
+
+
+struct P082_data_struct : public PluginTaskData_base {
+  P082_data_struct() : gps(nullptr), P082_easySerial(nullptr) {}
+
+  ~P082_data_struct() { reset(); }
+
+  void reset() {
+    if (gps != nullptr) {
+      delete gps;
+      gps = nullptr;
+    }
+    if (P082_easySerial != nullptr) {
+      delete P082_easySerial;
+      P082_easySerial = nullptr;
+    }
+  }
+
+  bool init(const int16_t serial_rx, const int16_t serial_tx) {
+    if (serial_rx < 0 || serial_tx < 0)
+      return false;
+    reset();
+    gps = new TinyGPSPlus();
+    P082_easySerial = new ESPeasySerial(serial_rx, serial_tx);
+    P082_easySerial->begin(9600);
+    return isInitialized();
+  }
+
+  bool isInitialized() const {
+    return gps != nullptr && P082_easySerial != nullptr;
+  }
+
+  bool loop() {
+    if (!isInitialized())
+      return false;
+    bool fullSentenceReceived = false;
+    if (P082_easySerial != nullptr) {
+      while (P082_easySerial->available() > 0) {
+        char c = P082_easySerial->read();
+#ifdef P082_SEND_GPS_TO_LOG
+        currentSentence += c;
+#endif
+        if (gps->encode(c)) {
+          fullSentenceReceived = true;
+#ifdef P082_SEND_GPS_TO_LOG
+          lastSentence = currentSentence;
+          currentSentence = "";
+#endif
+        }
+      }
+    }
+    return fullSentenceReceived;
+  }
+
+  bool hasFix(unsigned int maxAge_msec) {
+    if (!isInitialized())
+      return false;
+    return (gps->location.isValid() && gps->location.age() < maxAge_msec);
+  }
+
+  bool storeCurPos(unsigned int maxAge_msec) {
+    if (!hasFix(maxAge_msec))
+      return false;
+    last_lat = gps->location.lat();
+    last_lng = gps->location.lng();
+    return true;
+  }
+
+
+
+  double distanceSinceLast(unsigned int maxAge_msec) {
+    if (!hasFix(maxAge_msec))
+      return -1.0;
+    return gps->distanceBetween(last_lat, last_lng, gps->location.lat(), gps->location.lng());
+  }
+
+
+
+
+  bool getDateTime(struct tm &dateTime, uint32_t &age, bool &pps_sync) {
+    if (!isInitialized())
+      return false;
+    if (pps_time != 0) {
+      age = timePassedSince(pps_time);
+      pps_time = 0;
+      pps_sync = true;
+      if (age > 1000 || gps->time.age() > age)
+        return false;
+    } else {
+      age = gps->time.age();
+      pps_sync = false;
+    }
+    if (age > P082_TIMESTAMP_AGE)
+      return false;
+    if (gps->date.age() > P082_TIMESTAMP_AGE)
+      return false;
+    dateTime.tm_year = gps->date.year() - 1970;
+    dateTime.tm_mon = gps->date.month();
+    dateTime.tm_mday = gps->date.day();
+
+    dateTime.tm_hour = gps->time.hour();
+    dateTime.tm_min = gps->time.minute();
+    dateTime.tm_sec = gps->time.second();
+
+    if (!pps_sync) {
+      age += (gps->time.centisecond() * 10);
+    }
+    return true;
+  }
+
+  TinyGPSPlus *gps = nullptr;
+  ESPeasySerial *P082_easySerial = nullptr;
+
+  double last_lat = 0.0;
+  double last_lng = 0.0;
+
+  unsigned long pps_time = 0;
+  unsigned long last_measurement = 0;
+#ifdef P082_SEND_GPS_TO_LOG
+  String lastSentence;
+  String currentSentence;
+#endif
+};
+
+
+volatile unsigned long P082_pps_time = 0;
+void Plugin_082_interrupt() ICACHE_RAM_ATTR;
+
+boolean Plugin_082(byte function, struct EventStruct *event, String &string) {
+  boolean success = false;
+
+  switch (function) {
+  case PLUGIN_DEVICE_ADD: {
+    Device[++deviceCount].Number = PLUGIN_ID_082;
+    Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+    Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+    Device[deviceCount].Ports = 0;
+    Device[deviceCount].PullUpOption = false;
+    Device[deviceCount].InverseLogicOption = false;
+    Device[deviceCount].FormulaOption = true;
+    Device[deviceCount].ValueCount = 4;
+    Device[deviceCount].SendDataOption = true;
+    Device[deviceCount].TimerOption = true;
+    Device[deviceCount].GlobalSyncOption = true;
+    break;
+  }
+
+  case PLUGIN_GET_DEVICENAME: {
+    string = F(PLUGIN_NAME_082);
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES: {
+    for (byte i = 0; i < VARS_PER_TASK; ++i) {
+      if ( i < P082_NR_OUTPUT_VALUES) {
+        const byte pconfigIndex = i + P082_QUERY1_CONFIG_POS;
+        byte choice = PCONFIG(pconfigIndex);
+        safe_strncpy(
+          ExtraTaskSettings.TaskDeviceValueNames[i],
+          Plugin_082_valuename(choice, false),
+          sizeof(ExtraTaskSettings.TaskDeviceValueNames[i]));
+        switch (choice) {
+          case P082_QUERY_LONG:
+          case P082_QUERY_LAT:
+            ExtraTaskSettings.TaskDeviceValueDecimals[i] = 6;
+            break;
+          default:
+            ExtraTaskSettings.TaskDeviceValueDecimals[i] = 2;
+            break;
+        }
+      } else {
+        ZERO_FILL(ExtraTaskSettings.TaskDeviceValueNames[i]);
+      }
+    }
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEGPIONAMES: {
+    serialHelper_getGpioNames(event, false, true);
+    event->String3 = formatGpioName_input_optional(F("PPS"));
+    break;
+  }
+
+  case PLUGIN_SET_DEFAULTS:
+    {
+      P082_TIMEOUT = P082_DEFAULT_FIX_TIMEOUT;
+      P082_DISTANCE = P082_DISTANCE_DFLT;
+      P082_QUERY1 = P082_QUERY1_DFLT;
+      P082_QUERY2 = P082_QUERY2_DFLT;
+      P082_QUERY3 = P082_QUERY3_DFLT;
+      P082_QUERY4 = P082_QUERY4_DFLT;
+
+      success = true;
+      break;
+    }
+
+
+  case PLUGIN_WEBFORM_LOAD: {
+    serialHelper_webformLoad(event);
+# 269 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P082_GPS.ino"
+    addFormNumericBox(F("Fix Timeout"), P082_TIMEOUT_LABEL, P082_TIMEOUT, 100, 10000);
+    addUnit(F("ms"));
+
+    P082_html_show_stats(event);
+# 289 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P082_GPS.ino"
+    {
+
+      sensorTypeHelper_webformLoad_header();
+      String options[P082_NR_OUTPUT_OPTIONS];
+      for (int i = 0; i < P082_NR_OUTPUT_OPTIONS; ++i) {
+        options[i] = Plugin_082_valuename(i, true);
+      }
+      for (byte i = 0; i < P082_NR_OUTPUT_VALUES; ++i) {
+        const byte pconfigIndex = i + P082_QUERY1_CONFIG_POS;
+        sensorTypeHelper_loadOutputSelector(event, pconfigIndex, i, P082_NR_OUTPUT_OPTIONS, options);
+      }
+    }
+
+    addFormNumericBox(F("Distance Update Interval"), P082_DISTANCE_LABEL, P082_DISTANCE, 0, 10000);
+    addUnit(F("m"));
+    addFormNote(F("0 = disable update based on distance travelled"));
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_WEBFORM_SAVE: {
+    serialHelper_webformSave(event);
+    P082_TIMEOUT = getFormItemInt(P082_TIMEOUT_LABEL);
+    P082_DISTANCE = getFormItemInt(P082_DISTANCE_LABEL);
+
+
+    for (byte i = 0; i < P082_NR_OUTPUT_VALUES; ++i) {
+      const byte pconfigIndex = i + P082_QUERY1_CONFIG_POS;
+      const byte choice = PCONFIG(pconfigIndex);
+      sensorTypeHelper_saveOutputSelector(event, pconfigIndex, i, Plugin_082_valuename(choice, false));
+    }
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_INIT: {
+    if (P082_TIMEOUT < 100) {
+      P082_TIMEOUT = P082_DEFAULT_FIX_TIMEOUT;
+    }
+    const int16_t serial_rx = CONFIG_PIN1;
+    const int16_t serial_tx = CONFIG_PIN2;
+    const int16_t pps_pin = CONFIG_PIN3;
+    initPluginTaskData(event->TaskIndex, new P082_data_struct());
+    P082_data_struct *P082_data =
+        static_cast<P082_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr == P082_data) {
+      return success;
+    }
+    if (P082_data->init(serial_rx, serial_tx)) {
+      success = true;
+      if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
+        String log = F("GPS  : Init OK  ESP GPIO-pin RX:");
+        log += serial_rx;
+        log += F(" TX:");
+        log += serial_tx;
+        addLog(LOG_LEVEL_DEBUG, log);
+      }
+      if (pps_pin != -1) {
+
+        attachInterrupt(pps_pin, Plugin_082_interrupt, RISING);
+      }
+    } else {
+      clearPluginTaskData(event->TaskIndex);
+    }
+    break;
+  }
+
+  case PLUGIN_EXIT: {
+    clearPluginTaskData(event->TaskIndex);
+    const int16_t pps_pin = CONFIG_PIN3;
+    if (pps_pin != -1) {
+      detachInterrupt(pps_pin);
+    }
+    success = true;
+    break;
+  }
+
+  case PLUGIN_TEN_PER_SECOND: {
+    P082_data_struct *P082_data =
+        static_cast<P082_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P082_data && P082_data->loop()) {
+#ifdef P082_SEND_GPS_TO_LOG
+      addLog(LOG_LEVEL_DEBUG, P082_data->lastSentence);
+#endif
+      schedule_task_device_timer(event->TaskIndex, millis() + 10);
+      delay(0);
+
+    }
+    success = true;
+    break;
+  }
+
+  case PLUGIN_READ: {
+    P082_data_struct *P082_data =
+        static_cast<P082_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P082_data && P082_data->isInitialized()) {
+      static bool activeFix = P082_data->hasFix(P082_TIMEOUT);
+      const bool curFixStatus = P082_data->hasFix(P082_TIMEOUT);
+      if (activeFix != curFixStatus) {
+
+        String event = curFixStatus ? F("GPS#GotFix") : F("GPS#LostFix");
+        rulesProcessing(event);
+        activeFix = curFixStatus;
+      }
+      double distance = 0.0;
+
+      if (P082_data->hasFix(P082_TIMEOUT)) {
+        if (P082_data->gps->location.isUpdated()) {
+          P082_setOutputValue(event, P082_QUERY_LONG, P082_data->gps->location.lng());
+          P082_setOutputValue(event, P082_QUERY_LAT, P082_data->gps->location.lat());
+          if (P082_DISTANCE > 0) {
+            distance = P082_data->distanceSinceLast(P082_TIMEOUT);
+          }
+          success = true;
+          addLog(LOG_LEVEL_DEBUG, F("GPS: Position update."));
+        }
+        if (P082_data->gps->altitude.isUpdated()) {
+
+          P082_setOutputValue(event, P082_QUERY_ALT, P082_data->gps->altitude.meters());
+          success = true;
+          addLog(LOG_LEVEL_DEBUG, F("GPS: Altitude update."));
+        }
+        if (P082_data->gps->speed.isUpdated()) {
+
+          P082_setOutputValue(event, P082_QUERY_SPD, P082_data->gps->speed.mps());
+          addLog(LOG_LEVEL_DEBUG, F("GPS: Speed update."));
+          success = true;
+        }
+      }
+      P082_setOutputValue(event, P082_QUERY_SATVIS, P082_data->gps->satellitesStats.nrSatsVisible());
+      P082_setOutputValue(event, P082_QUERY_SATUSE, P082_data->gps->satellitesStats.nrSatsTracked());
+      P082_setOutputValue(event, P082_QUERY_HDOP, P082_data->gps->hdop.value() / 100.0);
+      P082_setOutputValue(event, P082_QUERY_FIXQ, P082_data->gps->location.Quality());
+      P082_setOutputValue(event, P082_QUERY_DB_MAX, P082_data->gps->satellitesStats.getBestSNR());
+      P082_setOutputValue(event, P082_QUERY_CHKSUM_FAIL, P082_data->gps->failedChecksum());
+
+      P082_setSystemTime(event);
+      P082_logStats(event);
+      if (success) {
+        bool distance_passed = false;
+        bool interval_passed = false;
+        if (P082_DISTANCE > 0) {
+
+          if (distance > static_cast<double>(P082_DISTANCE)) {
+            if (P082_data->storeCurPos(P082_TIMEOUT)) {
+              distance_passed = true;
+              if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                String log = F("GPS: Distance trigger : ");
+                log += distance;
+                log += F(" m");
+                addLog(LOG_LEVEL_INFO, log);
+              }
+            }
+          }
+        }
+
+        if (P082_data->last_measurement == 0) {
+          interval_passed = true;
+        } else if (timeOutReached(P082_data->last_measurement + (Settings.TaskDeviceTimer[event->TaskIndex] * 1000))) {
+          interval_passed = true;
+        }
+        success = (distance_passed || interval_passed);
+        if (success) {
+          P082_data->last_measurement = millis();
+        }
+      }
+    }
+    break;
+  }
+  }
+  return success;
+}
+
+void P082_setOutputValue(struct EventStruct *event, byte outputType, float value) {
+  P082_data_struct *P082_data =
+      static_cast<P082_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P082_data || !P082_data->isInitialized())
+    return;
+
+  for (byte i = 0; i < P082_NR_OUTPUT_VALUES; ++i) {
+    const byte pconfigIndex = i + P082_QUERY1_CONFIG_POS;
+    if (PCONFIG(pconfigIndex) == outputType) {
+      UserVar[event->BaseVarIndex + i] = value;
+    }
+  }
+}
+
+void P082_logStats(struct EventStruct *event) {
+  if (!loglevelActiveFor(LOG_LEVEL_DEBUG)) return;
+  P082_data_struct *P082_data =
+      static_cast<P082_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P082_data || !P082_data->isInitialized()) {
+    return;
+  }
+  String log;
+  log.reserve(128);
+  log = F("GPS:");
+  log += F(" Fix: ");
+  log += String(P082_data->hasFix(P082_TIMEOUT));
+  log += F(" #sat: ");
+  log += P082_data->gps->satellites.value();
+  log += F(" #SNR: ");
+  log += P082_data->gps->satellitesStats.getBestSNR();
+  log += F(" HDOP: ");
+  log += P082_data->gps->hdop.value() / 100.0;
+  log += F(" Chksum(pass/fail): ");
+  log += P082_data->gps->passedChecksum();
+  log += '/';
+  log += P082_data->gps->failedChecksum();
+  addLog(LOG_LEVEL_DEBUG, log);
+}
+
+
+void P082_html_show_satStats(struct EventStruct *event, bool tracked, bool onlyGPS) {
+  P082_data_struct *P082_data =
+      static_cast<P082_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P082_data || !P082_data->isInitialized()) {
+    return;
+  }
+
+  bool first = true;
+  for (byte i = 0; i < _GPS_MAX_ARRAY_LENGTH; ++i) {
+    uint8_t id = P082_data->gps->satellitesStats.id[i];
+    uint8_t snr = P082_data->gps->satellitesStats.snr[i];
+    if (id > 0) {
+      if ((id <= 32) == onlyGPS && (snr > 0) == tracked) {
+        if (first) {
+          first = false;
+          String label;
+          label.reserve(32);
+          if (onlyGPS) {
+            label = "GPS";
+          } else {
+            label = F("Other");
+          }
+          label += F(" sat. ");
+          if (tracked) {
+            label += F("tracked - id(SNR)");
+          } else {
+            label += F("in view - id");
+          }
+          addRowLabel(label);
+        } else {
+          addHtml(", ");
+        }
+        addHtml(String(id));
+        if (tracked) {
+          addHtml(" (");
+          addHtml(String(snr));
+          addHtml(")");
+        }
+      }
+    }
+  }
+  if (!first) {
+
+    if (tracked) {
+      html_I(F(" - SNR in dBHz"));
+    }
+  }
+}
+
+void P082_html_show_stats(struct EventStruct *event) {
+  P082_data_struct *P082_data =
+      static_cast<P082_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P082_data || !P082_data->isInitialized()) {
+    return;
+  }
+  addRowLabel(F("Fix"));
+  addHtml(String(P082_data->hasFix(P082_TIMEOUT)));
+
+  addRowLabel(F("Fix Quality"));
+  switch(P082_data->gps->location.Quality()) {
+    case 0: addHtml(F("Invalid")); break;
+    case 1: addHtml(F("GPS")); break;
+    case 2: addHtml(F("DGPS")); break;
+    case 3: addHtml(F("PPS")); break;
+    case 4: addHtml(F("RTK")); break;
+    case 5: addHtml(F("FloatRTK")); break;
+    case 6: addHtml(F("Estimated")); break;
+    case 7: addHtml(F("Manual")); break;
+    case 8: addHtml(F("Simulated")); break;
+    default:
+      addHtml(F("Unknown"));
+      break;
+  }
+
+  addRowLabel(F("Satellites tracked"));
+  addHtml(String(P082_data->gps->satellitesStats.nrSatsTracked()));
+
+  addRowLabel(F("Satellites visible"));
+  addHtml(String(P082_data->gps->satellitesStats.nrSatsVisible()));
+
+  addRowLabel(F("Best SNR"));
+  addHtml(String(P082_data->gps->satellitesStats.getBestSNR()));
+  addHtml(F(" dBHz"));
+
+
+  P082_html_show_satStats(event, true, true);
+  P082_html_show_satStats(event, false, true);
+  P082_html_show_satStats(event, true, false);
+  P082_html_show_satStats(event, false, false);
+
+  addRowLabel(F("HDOP"));
+  addHtml(String(P082_data->gps->hdop.value() / 100.0));
+
+  addRowLabel(F("UTC Time"));
+  struct tm dateTime;
+  uint32_t age;
+  bool pps_sync;
+  if (P082_data->getDateTime(dateTime, age, pps_sync)) {
+    dateTime = addSeconds(dateTime, (age / 1000), false);
+  }
+  addHtml(getDateTimeString(dateTime));
+
+  addRowLabel(F("Checksum (pass/fail)"));
+  String chksumStats;
+  chksumStats = P082_data->gps->passedChecksum();
+  chksumStats += '/';
+  chksumStats += P082_data->gps->failedChecksum();
+  addHtml(chksumStats);
+}
+
+void P082_setSystemTime(struct EventStruct *event) {
+  P082_data_struct *P082_data =
+      static_cast<P082_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr == P082_data || !P082_data->isInitialized())
+    return;
+
+
+  if (nextSyncTime > (sysTime + 10)) {
+    return;
+  }
+
+  struct tm dateTime;
+  uint32_t age;
+  bool pps_sync;
+  P082_data->pps_time = P082_pps_time;
+  if (P082_data->getDateTime(dateTime, age, pps_sync)) {
+
+
+    externalTimeSource = makeTime(dateTime);
+    externalTimeSource += static_cast<double>(age) / 1000.0;
+    initTime();
+  }
+  P082_pps_time = 0;
+}
+
+void Plugin_082_interrupt() { P082_pps_time = millis(); }
+
+String Plugin_082_valuename(byte value_nr, bool displayString) {
+  switch (value_nr) {
+    case P082_QUERY_LONG : return displayString ? F("Longitude") : F("long");
+    case P082_QUERY_LAT : return displayString ? F("Latitude") : F("lat");
+    case P082_QUERY_ALT : return displayString ? F("Altitude") : F("alt");
+    case P082_QUERY_SPD : return displayString ? F("Speed (m/s)") : F("spd");
+    case P082_QUERY_SATVIS: return displayString ? F("Satellites Visible") : F("sat_vis");
+    case P082_QUERY_SATUSE: return displayString ? F("Satellites Tracked") : F("sat_tr");
+    case P082_QUERY_HDOP : return displayString ? F("HDOP") : F("hdop");
+    case P082_QUERY_FIXQ : return displayString ? F("Fix Quality") : F("fix_qual");
+    case P082_QUERY_DB_MAX: return displayString ? F("Max SNR in dBHz") : F("snr_max");
+  }
+  return "";
+}
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P083_SGP30.ino"
+#ifdef USES_P083
+
+
+
+
+
+
+#include "Adafruit_SGP30.h"
+
+
+#define PLUGIN_083 
+#define PLUGIN_ID_083 83
+#define PLUGIN_NAME_083 "Gas - SGP30 [TESTING]"
+#define PLUGIN_VALUENAME1_083 "TVOC"
+#define PLUGIN_VALUENAME2_083 "eCO2"
+
+boolean Plugin_083(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+  switch (function)
+    {
+      case PLUGIN_DEVICE_ADD:
+        {
+          Device[++deviceCount].Number = PLUGIN_ID_083;
+          Device[deviceCount].Type = DEVICE_TYPE_I2C;
+          Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+          Device[deviceCount].Ports = 0;
+          Device[deviceCount].PullUpOption = false;
+          Device[deviceCount].InverseLogicOption = false;
+          Device[deviceCount].FormulaOption = true;
+          Device[deviceCount].ValueCount = 2;
+          Device[deviceCount].SendDataOption = true;
+          Device[deviceCount].TimerOption = true;
+          Device[deviceCount].GlobalSyncOption = true;
+          break;
+        }
+
+      case PLUGIN_GET_DEVICENAME:
+        {
+          string = F(PLUGIN_NAME_083);
+          break;
+        }
+
+      case PLUGIN_GET_DEVICEVALUENAMES:
+        {
+          strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_083));
+          strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_083));
+          break;
+        }
+
+      case PLUGIN_WEBFORM_LOAD:
+        {
+          success = true;
+          break;
+        }
+
+      case PLUGIN_WEBFORM_SAVE:
+        {
+          success = true;
+          break;
+        }
+
+      case PLUGIN_READ:
+        {
+          Adafruit_SGP30 sgp;
+          if (sgp.begin())
+          {
+              if (sgp.IAQmeasure())
+              {
+                  UserVar[event->BaseVarIndex] = sgp.TVOC;
+                  UserVar[event->BaseVarIndex + 1] = sgp.eCO2;
+                  String log = F("SGP30: TVOC: ");
+                  log += UserVar[event->BaseVarIndex];
+                  addLog(LOG_LEVEL_INFO, log);
+                  log = F("SGP30: eCO2: ");
+                  log += UserVar[event->BaseVarIndex + 1];
+                  addLog(LOG_LEVEL_INFO, log);
+                  success = true;
+                  break;
+               }else{
+                  addLog(LOG_LEVEL_ERROR, F("SGP30: Measurement failed"))
+                  break;
+               }
+           }else{
+              addLog(LOG_LEVEL_ERROR, F("SGP30: Sensor not found"))
+              break;
+           }
+        }
+    }
+    return success;
+}
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P084_VEML6070.ino"
+#ifdef USES_P084
+# 11 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P084_VEML6070.ino"
+#define PLUGIN_084 
+#define PLUGIN_ID_084 84
+#define PLUGIN_NAME_084 "UV - VEML6070 [TESTING]"
+#define PLUGIN_VALUENAME1_084 "UV-Raw"
+#define PLUGIN_VALUENAME2_084 "UV-Risk"
+#define PLUGIN_VALUENAME3_084 "UV-Power"
+
+#define VEML6070_ADDR_H 0x39
+#define VEML6070_ADDR_L 0x38
+#define VEML6070_RSET_DEFAULT 270000
+#define VEML6070_UV_MAX_INDEX 15
+#define VEML6070_UV_MAX_DEFAULT 11
+#define VEML6070_POWER_COEFFCIENT 0.025
+#define VEML6070_TABLE_COEFFCIENT 32.86270591
+
+
+#define VEML6070_base_value ( (VEML6070_RSET_DEFAULT / VEML6070_TABLE_COEFFCIENT) / VEML6070_UV_MAX_DEFAULT ) * (1)
+#define VEML6070_max_value ( (VEML6070_RSET_DEFAULT / VEML6070_TABLE_COEFFCIENT) / VEML6070_UV_MAX_DEFAULT ) * (VEML6070_UV_MAX_INDEX)
+
+boolean Plugin_084(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_084;
+        Device[deviceCount].Type = DEVICE_TYPE_I2C;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].VType = SENSOR_TYPE_SINGLE;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = true;
+        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].SendDataOption = true;
+        Device[deviceCount].TimerOption = true;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_084);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_084));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_084));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_084));
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+
+        String optionsMode[4] = { F("1/2T"), F("1T"), F("2T"), F("4T (Default)") };
+        addFormSelector(F("Refresh Time Determination"), F("itime"), 4, optionsMode, NULL, PCONFIG(0));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+
+        PCONFIG(0) = getFormItemInt(F("itime"));
+
+        success = true;
+        break;
+      }
+
+    case PLUGIN_INIT:
+      {
+        bool status = VEML6070_Init(PCONFIG(0));
+        if(!status){
+          addLog(LOG_LEVEL_INFO, F("VEML6070: Not available!"));
+        }
+
+        success = status;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        uint16_t uv_raw;
+        double uv_risk, uv_power;
+        bool read_status;
+
+        uv_raw = VEML6070_ReadUv(&read_status);
+        uv_risk = VEML6070_UvRiskLevel(uv_raw);
+        uv_power = VEML6070_UvPower(uv_risk);
+
+        if (isnan(uv_raw) || uv_raw == 65535 || !read_status) {
+          addLog(LOG_LEVEL_INFO, F("VEML6070: no data read!"));
+          UserVar[event->BaseVarIndex + 0] = NAN;
+          UserVar[event->BaseVarIndex + 1] = NAN;
+          UserVar[event->BaseVarIndex + 2] = NAN;
+        success = false;
+        } else {
+          UserVar[event->BaseVarIndex + 0] = uv_raw;
+          UserVar[event->BaseVarIndex + 1] = uv_risk;
+          UserVar[event->BaseVarIndex + 2] = uv_power;
+          if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+            String log = F("VEML6070: UV: ");
+            log += UserVar[event->BaseVarIndex];
+            addLog(LOG_LEVEL_INFO, log);
+          }
+
+        success = true;
+        }
+
+        break;
+      }
+
+  }
+  return success;
+}
+
+
+
+
+
+
+uint16_t VEML6070_ReadUv(bool * status)
+{
+  uint16_t uv_raw = 0;
+  bool wire_status = false;
+
+  uv_raw = I2C_read8(VEML6070_ADDR_H, &wire_status);
+  *status = wire_status;
+  uv_raw <<= 8;
+  uv_raw |= I2C_read8(VEML6070_ADDR_L, &wire_status);
+  *status &= wire_status;
+
+  return uv_raw;
+}
+
+bool VEML6070_Init(byte it)
+{
+  boolean succes = I2C_write8(VEML6070_ADDR_L, ((it << 2) | 0x02));
+
+  return succes;
+}
+# 168 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P084_VEML6070.ino"
+double VEML6070_UvRiskLevel(uint16_t uv_level)
+{
+  double risk = 0;
+
+  if (uv_level < VEML6070_max_value) {
+    return (double)uv_level / VEML6070_base_value;
+  } else {
+
+    if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+      String log = F("VEML6070 out of range: ");
+      log += risk;
+      addLog(LOG_LEVEL_INFO, log);
+    }
+
+    return 99;
+  }
+}
+
+double VEML6070_UvPower(double uvrisk)
+{
+
+  return VEML6070_POWER_COEFFCIENT * uvrisk;
+}
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P085_AcuDC243.ino"
+#ifdef USES_P085
+# 14 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P085_AcuDC243.ino"
+#define PLUGIN_085 
+#define PLUGIN_ID_085 85
+#define PLUGIN_NAME_085 "Energy - AccuEnergy AcuDC24x [TESTING]"
+#define PLUGIN_VALUENAME1_085 ""
+
+#define P085_DEV_ID PCONFIG(0)
+#define P085_DEV_ID_LABEL PCONFIG_LABEL(0)
+#define P085_MODEL PCONFIG(1)
+#define P085_MODEL_LABEL PCONFIG_LABEL(1)
+#define P085_BAUDRATE PCONFIG(2)
+#define P085_BAUDRATE_LABEL PCONFIG_LABEL(2)
+#define P085_QUERY1 PCONFIG(3)
+#define P085_QUERY2 PCONFIG(4)
+#define P085_QUERY3 PCONFIG(5)
+#define P085_QUERY4 PCONFIG(6)
+#define P085_DEPIN CONFIG_PIN3
+
+#define P085_NR_OUTPUT_VALUES VARS_PER_TASK
+#define P085_QUERY1_CONFIG_POS 3
+
+#define P085_QUERY_V 0
+#define P085_QUERY_A 1
+#define P085_QUERY_W 2
+#define P085_QUERY_Wh_imp 3
+#define P085_QUERY_Wh_exp 4
+#define P085_QUERY_Wh_tot 5
+#define P085_QUERY_Wh_net 6
+#define P085_QUERY_h_tot 7
+#define P085_QUERY_h_load 8
+#define P085_NR_OUTPUT_OPTIONS 9
+
+#define P085_DEV_ID_DFLT 1
+#define P085_MODEL_DFLT 0
+#define P085_BAUDRATE_DFLT 4
+#define P085_QUERY1_DFLT P085_QUERY_V
+#define P085_QUERY2_DFLT P085_QUERY_A
+#define P085_QUERY3_DFLT P085_QUERY_W
+#define P085_QUERY4_DFLT P085_QUERY_Wh_tot
+
+#define P085_MEASUREMENT_INTERVAL 60000L
+
+#include <ESPeasySerial.h>
+
+struct P085_data_struct : public PluginTaskData_base {
+  P085_data_struct() {}
+
+  ~P085_data_struct() { reset(); }
+
+  void reset() { modbus.reset(); }
+
+  bool init(const int16_t serial_rx, const int16_t serial_tx, int8_t dere_pin,
+            unsigned int baudrate, uint8_t modbusAddress) {
+    return modbus.init(serial_rx, serial_tx, baudrate, modbusAddress, dere_pin);
+  }
+
+  bool isInitialized() const { return modbus.isInitialized(); }
+
+  ModbusRTU_struct modbus;
+};
+
+unsigned int _plugin_085_last_measurement = 0;
+
+boolean Plugin_085(byte function, struct EventStruct *event, String &string) {
+  boolean success = false;
+  switch (function) {
+
+  case PLUGIN_DEVICE_ADD: {
+    Device[++deviceCount].Number = PLUGIN_ID_085;
+    Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+    Device[deviceCount].VType = SENSOR_TYPE_QUAD;
+    Device[deviceCount].Ports = 0;
+    Device[deviceCount].PullUpOption = false;
+    Device[deviceCount].InverseLogicOption = false;
+    Device[deviceCount].FormulaOption = true;
+    Device[deviceCount].ValueCount = P085_NR_OUTPUT_VALUES;
+    Device[deviceCount].SendDataOption = true;
+    Device[deviceCount].TimerOption = true;
+    Device[deviceCount].GlobalSyncOption = true;
+    break;
+  }
+
+  case PLUGIN_GET_DEVICENAME: {
+    string = F(PLUGIN_NAME_085);
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEVALUENAMES: {
+    for (byte i = 0; i < VARS_PER_TASK; ++i) {
+      if ( i < P085_NR_OUTPUT_VALUES) {
+        const byte pconfigIndex = i + P085_QUERY1_CONFIG_POS;
+        byte choice = PCONFIG(pconfigIndex);
+        safe_strncpy(
+          ExtraTaskSettings.TaskDeviceValueNames[i],
+          Plugin_085_valuename(choice, false),
+          sizeof(ExtraTaskSettings.TaskDeviceValueNames[i]));
+      } else {
+        ZERO_FILL(ExtraTaskSettings.TaskDeviceValueNames[i]);
+      }
+    }
+    break;
+  }
+
+  case PLUGIN_GET_DEVICEGPIONAMES: {
+    serialHelper_getGpioNames(event);
+    event->String3 = formatGpioName_output_optional("DE");
+    break;
+  }
+
+  case PLUGIN_SET_DEFAULTS: {
+    P085_DEV_ID = P085_DEV_ID_DFLT;
+    P085_MODEL = P085_MODEL_DFLT;
+    P085_BAUDRATE = P085_BAUDRATE_DFLT;
+    P085_QUERY1 = P085_QUERY1_DFLT;
+    P085_QUERY2 = P085_QUERY2_DFLT;
+    P085_QUERY3 = P085_QUERY3_DFLT;
+    P085_QUERY4 = P085_QUERY4_DFLT;
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_WRITE: {
+    break;
+  }
+
+  case PLUGIN_WEBFORM_LOAD: {
+    serialHelper_webformLoad(event);
+
+    {
+
+      String options_baudrate[6];
+      for (int i = 0; i < 6; ++i) {
+        options_baudrate[i] = String(p085_storageValueToBaudrate(i));
+      }
+      addFormNumericBox(F("Modbus Address"), P085_DEV_ID_LABEL, P085_DEV_ID, 1,
+                      247);
+      addFormSelector(F("Baud Rate"), P085_BAUDRATE_LABEL, 6, options_baudrate,
+                      NULL, P085_BAUDRATE);
+    }
+
+    P085_data_struct *P085_data =
+        static_cast<P085_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P085_data && P085_data->isInitialized()) {
+      String detectedString = P085_data->modbus.detected_device_description;
+      if (detectedString.length() > 0) {
+        addFormNote(detectedString);
+      }
+      addRowLabel(F("Checksum (pass/fail)"));
+      uint32_t reads_pass, reads_crc_failed;
+      P085_data->modbus.getStatistics(reads_pass, reads_crc_failed);
+      String chksumStats;
+      chksumStats = reads_pass;
+      chksumStats += '/';
+      chksumStats += reads_crc_failed;
+      addHtml(chksumStats);
+
+      addFormSubHeader(F("Calibration"));
+
+      addFormNumericBox(F("Full Range Voltage Value"), F("p085_fr_volt"), P085_data->modbus.readHoldingRegister(0x107), 5, 9999);
+      addUnit(F("V"));
+
+      addFormNumericBox(F("Full Range Current Value"), F("p085_fr_curr"), P085_data->modbus.readHoldingRegister(0x104), 20, 50000);
+      addUnit(F("A"));
+
+      addFormNumericBox(F("Full Range Shunt Value"), F("p085_fr_shunt"), P085_data->modbus.readHoldingRegister(0x105), 50, 100);
+      addUnit(F("mV"));
+
+      addFormSubHeader(F("Logging"));
+
+      addFormCheckBox(F("Enable data logging"), F("p085_en_log"), P085_data->modbus.readHoldingRegister(0x500));
+
+      addRowLabel(F("Mode of data logging"));
+      addHtml(String(P085_data->modbus.readHoldingRegister(0x501)));
+
+      addFormNumericBox(F("Log Interval"), F("p085_log_int"), P085_data->modbus.readHoldingRegister(0x502), 1, 1440);
+      addUnit(F("minutes"));
+
+      addFormSubHeader(F("Logged Values"));
+      p085_showValueLoadPage(P085_QUERY_Wh_imp, event);
+      p085_showValueLoadPage(P085_QUERY_Wh_exp, event);
+      p085_showValueLoadPage(P085_QUERY_Wh_tot, event);
+      p085_showValueLoadPage(P085_QUERY_Wh_net, event);
+      p085_showValueLoadPage(P085_QUERY_h_tot, event);
+      p085_showValueLoadPage(P085_QUERY_h_load, event);
+
+
+
+      addFormCheckBox(F("Clear logged values"), F("p085_clear_log"), false);
+      addFormNote(F("Will clear all logged values when checked and saved"));
+    }
+
+    {
+
+      sensorTypeHelper_webformLoad_header();
+      String options[P085_NR_OUTPUT_OPTIONS];
+      for (int i = 0; i < P085_NR_OUTPUT_OPTIONS; ++i) {
+        options[i] = Plugin_085_valuename(i, true);
+      }
+      for (byte i = 0; i < P085_NR_OUTPUT_VALUES; ++i) {
+        const byte pconfigIndex = i + P085_QUERY1_CONFIG_POS;
+        sensorTypeHelper_loadOutputSelector(event, pconfigIndex, i, P085_NR_OUTPUT_OPTIONS, options);
+      }
+    }
+    success = true;
+    break;
+  }
+
+  case PLUGIN_WEBFORM_SAVE: {
+    serialHelper_webformSave(event);
+
+    for (int i = 0; i < P085_QUERY1_CONFIG_POS; ++i) {
+      pconfig_webformSave(event, i);
+    }
+
+    for (byte i = 0; i < P085_NR_OUTPUT_VALUES; ++i) {
+      const byte pconfigIndex = i + P085_QUERY1_CONFIG_POS;
+      const byte choice = PCONFIG(pconfigIndex);
+      sensorTypeHelper_saveOutputSelector(event, pconfigIndex, i, Plugin_085_valuename(choice, false));
+    }
+    P085_data_struct *P085_data =
+        static_cast<P085_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P085_data && P085_data->isInitialized()) {
+      uint16_t log_enabled = isFormItemChecked(F("p085_en_log")) ? 1 : 0;
+      P085_data->modbus.writeMultipleRegisters(0x500, log_enabled);
+      delay(1);
+
+      uint16_t log_int = getFormItemInt(F("p085_log_int"));
+      P085_data->modbus.writeMultipleRegisters(0x502, log_int);
+      delay(1);
+
+      uint16_t current = getFormItemInt(F("p085_fr_curr"));
+      P085_data->modbus.writeMultipleRegisters(0x104, current);
+      delay(1);
+
+      uint16_t shunt = getFormItemInt(F("p085_fr_shunt"));
+      P085_data->modbus.writeMultipleRegisters(0x105, shunt);
+      delay(1);
+
+      uint16_t voltage = getFormItemInt(F("p085_fr_volt"));
+      P085_data->modbus.writeMultipleRegisters(0x107, voltage);
+
+      if (isFormItemChecked(F("p085_clear_log")))
+      {
+
+        P085_data->modbus.writeMultipleRegisters(0x122, 0x0A);
+        P085_data->modbus.writeMultipleRegisters(0x123, 0x0A);
+        P085_data->modbus.writeMultipleRegisters(0x124, 0x0A);
+        P085_data->modbus.writeMultipleRegisters(0x127, 0x0A);
+        P085_data->modbus.writeMultipleRegisters(0x128, 0x0A);
+        P085_data->modbus.writeMultipleRegisters(0x129, 0x0A);
+      }
+    }
+
+
+    success = true;
+    break;
+  }
+
+  case PLUGIN_INIT: {
+    const int16_t serial_rx = CONFIG_PIN1;
+    const int16_t serial_tx = CONFIG_PIN2;
+    initPluginTaskData(event->TaskIndex, new P085_data_struct());
+    P085_data_struct *P085_data =
+        static_cast<P085_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr == P085_data) {
+      return success;
+    }
+    if (P085_data->init(serial_rx, serial_tx, P085_DEPIN,
+                        p085_storageValueToBaudrate(P085_BAUDRATE),
+                        P085_DEV_ID)) {
+
+      success = true;
+    } else {
+      clearPluginTaskData(event->TaskIndex);
+    }
+    break;
+  }
+
+  case PLUGIN_EXIT: {
+    clearPluginTaskData(event->TaskIndex);
+    success = true;
+    break;
+  }
+
+  case PLUGIN_READ: {
+    P085_data_struct *P085_data =
+        static_cast<P085_data_struct *>(getPluginTaskData(event->TaskIndex));
+    if (nullptr != P085_data && P085_data->isInitialized()) {
+      for (int i = 0; i < P085_NR_OUTPUT_VALUES; ++i) {
+        UserVar[event->BaseVarIndex + i] = p085_readValue(PCONFIG(i + P085_QUERY1_CONFIG_POS), event);
+        delay(1);
+      }
+
+      success = true;
+    }
+    break;
+  }
+  }
+  return success;
+}
+
+String Plugin_085_valuename(byte value_nr, bool displayString) {
+  switch (value_nr) {
+  case P085_QUERY_V: return displayString ? F("Voltage (V)") : F("V");
+  case P085_QUERY_A: return displayString ? F("Current (A)") : F("A");
+  case P085_QUERY_W: return displayString ? F("Power (W)") : F("W");
+  case P085_QUERY_Wh_imp: return displayString ? F("Import Energy (Wh)") : F("Wh_imp");
+  case P085_QUERY_Wh_exp: return displayString ? F("Export Energy (Wh)") : F("Wh_exp");
+  case P085_QUERY_Wh_tot: return displayString ? F("Total Energy (Wh)") : F("Wh_tot");
+  case P085_QUERY_Wh_net: return displayString ? F("Net Energy (Wh)") : F("Wh_net");
+  case P085_QUERY_h_tot: return displayString ? F("Meter Running Time (h)") : F("h_tot");
+  case P085_QUERY_h_load: return displayString ? F("Load Running Time (h)") : F("h_load");
+  }
+  return "";
+}
+
+int p085_storageValueToBaudrate(byte baudrate_setting) {
+  switch (baudrate_setting) {
+  case 0:
+    return 1200;
+  case 1:
+    return 2400;
+  case 2:
+    return 4800;
+  case 3:
+    return 9600;
+  case 4:
+    return 19200;
+  case 5:
+    return 38500;
+  }
+  return 19200;
+}
+
+float p085_readValue(byte query, struct EventStruct *event) {
+  P085_data_struct *P085_data =
+      static_cast<P085_data_struct *>(getPluginTaskData(event->TaskIndex));
+  if (nullptr != P085_data && P085_data->isInitialized()) {
+    switch (query) {
+    case P085_QUERY_V:
+      return P085_data->modbus.read_float_HoldingRegister(0x200);
+    case P085_QUERY_A:
+      return P085_data->modbus.read_float_HoldingRegister(0x202);
+    case P085_QUERY_W:
+      return P085_data->modbus.read_float_HoldingRegister(0x204) * 1000.0;
+    case P085_QUERY_Wh_imp:
+      return P085_data->modbus.read_32b_HoldingRegister(0x300) * 10.0;
+    case P085_QUERY_Wh_exp:
+      return P085_data->modbus.read_32b_HoldingRegister(0x302) * 10.0;
+    case P085_QUERY_Wh_tot:
+      return P085_data->modbus.read_32b_HoldingRegister(0x304) * 10.0;
+    case P085_QUERY_Wh_net:
+    {
+      int64_t intvalue = P085_data->modbus.read_32b_HoldingRegister(0x306);
+      if (intvalue >= (1<<31)) {
+        intvalue = 4294967296 - intvalue;
+      }
+      float value = static_cast<float>(intvalue);
+      value *= 10.0;
+      return value;
+    }
+    case P085_QUERY_h_tot:
+      return P085_data->modbus.read_32b_HoldingRegister(0x280) / 100.0;
+    case P085_QUERY_h_load:
+      return P085_data->modbus.read_32b_HoldingRegister(0x282) / 100.0;
+    }
+  }
+  return 0.0;
+}
+
+void p085_showValueLoadPage(byte query, struct EventStruct *event) {
+  addRowLabel(Plugin_085_valuename(query, true));
+  addHtml(String(p085_readValue(query, event)));
+}
+
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P086_Homie.ino"
+#ifdef USES_P086
+
+
+
+
+#define PLUGIN_086 
+#define PLUGIN_ID_086 86
+#define PLUGIN_NAME_086 "Generic - Homie receiver [TESTING]"
+
+
+#define PLUGIN_VALUENAME1_086 ""
+#define PLUGIN_VALUENAME2_086 ""
+#define PLUGIN_VALUENAME3_086 ""
+#define PLUGIN_VALUENAME4_086 ""
+
+#define PLUGIN_086_VALUE_INTEGER 0
+#define PLUGIN_086_VALUE_FLOAT 1
+#define PLUGIN_086_VALUE_BOOLEAN 2
+#define PLUGIN_086_VALUE_STRING 3
+#define PLUGIN_086_VALUE_ENUM 4
+#define PLUGIN_086_VALUE_RGB 5
+#define PLUGIN_086_VALUE_HSV 6
+
+#define PLUGIN_086_VALUE_TYPES 7
+#define PLUGIN_086_VALUE_MAX 4
+
+#define PLUGIN_086_DEBUG true
+
+boolean Plugin_086(byte function, struct EventStruct *event, String& string)
+{
+  boolean success = false;
+
+  switch (function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+      {
+        Device[++deviceCount].Number = PLUGIN_ID_086;
+        Device[deviceCount].Type = DEVICE_TYPE_DUMMY;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].DecimalsOnly = true;
+        Device[deviceCount].ValueCount = PLUGIN_086_VALUE_MAX;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].GlobalSyncOption = false;
+        Device[deviceCount].Custom = true;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_086);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_086));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_086));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_086));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3], PSTR(PLUGIN_VALUENAME4_086));
+
+        break;
+      }
+
+    case PLUGIN_WEBFORM_LOAD:
+      {
+        addFormNote(F("Translation Plugin for controllers able to receive value updates according to the Homie convention."));
+
+        byte choice = 0;
+        String labelText = "";
+        String keyName = "";
+        String options[PLUGIN_086_VALUE_TYPES];
+        options[0] = F("integer");
+        options[1] = F("float");
+        options[2] = F("boolean");
+        options[3] = F("string");
+        options[4] = F("enum");
+        options[5] = F("rgb");
+        options[6] = F("hsv");
+        int optionValues[PLUGIN_086_VALUE_TYPES];
+        optionValues[0] = PLUGIN_086_VALUE_INTEGER;
+        optionValues[1] = PLUGIN_086_VALUE_FLOAT;
+        optionValues[2] = PLUGIN_086_VALUE_BOOLEAN;
+        optionValues[3] = PLUGIN_086_VALUE_STRING;
+        optionValues[4] = PLUGIN_086_VALUE_ENUM;
+        optionValues[5] = PLUGIN_086_VALUE_RGB;
+        optionValues[6] = PLUGIN_086_VALUE_HSV;
+        for (int i=0;i<PLUGIN_086_VALUE_MAX;i++) {
+          labelText = F("Function #");
+          labelText += (i+1);
+          addFormSubHeader(labelText);
+          choice = PCONFIG(i);
+          if (i==0) addFormNote(F("Triggers an event when a ../%event%/set topic arrives"));
+          labelText = F("Event Name");
+          keyName = F("p086_functionName");
+          keyName += i;
+          addFormTextBox(labelText, keyName, ExtraTaskSettings.TaskDeviceValueNames[i], NAME_FORMULA_LENGTH_MAX);
+          labelText = F("Parameter Type");
+          keyName = F("p086_valueType");
+          keyName += i;
+          addFormSelector(labelText, keyName, PLUGIN_086_VALUE_TYPES, options, optionValues, choice );
+          keyName += F("_min");
+          addFormNumericBox(F("Min"),keyName,ExtraTaskSettings.TaskDevicePluginConfig[i]);
+          keyName = F("p086_valueType");
+          keyName += i;
+          keyName += F("_max");
+          addFormNumericBox(F("Max"),keyName,ExtraTaskSettings.TaskDevicePluginConfig[i+PLUGIN_086_VALUE_MAX]);
+          if (i==0) addFormNote(F("min max values only valid for numeric parameter"));
+          keyName = F("p086_decimals");
+          keyName += i;
+          addFormNumericBox(F("Decimals"),keyName,ExtraTaskSettings.TaskDeviceValueDecimals[i],0,8);
+          if (i==0) addFormNote(F("Decimal counts for float parameter"));
+          keyName = F("p086_string");
+          keyName += i;
+          addFormTextBox(F("String or enum"), keyName, ExtraTaskSettings.TaskDeviceFormula[i], NAME_FORMULA_LENGTH_MAX);
+          if (i==0) addFormNote(F("Default string or enumumeration list (comma seperated)."));
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WEBFORM_SAVE:
+      {
+        String keyName = "";
+        for (int i=0;i<PLUGIN_086_VALUE_MAX;i++) {
+          keyName = F("p086_valueType");
+          keyName += i;
+          PCONFIG(i) = getFormItemInt(keyName);
+          keyName = F("p086_functionName");
+          keyName += i;
+          strncpy_webserver_arg(ExtraTaskSettings.TaskDeviceValueNames[i], keyName);
+          keyName = F("p086_valueType");
+          keyName += i;
+          keyName += F("_min");
+          ExtraTaskSettings.TaskDevicePluginConfig[i]=getFormItemInt(keyName);
+          keyName = F("p086_valueType");
+          keyName += i;
+          keyName += F("_max");
+          ExtraTaskSettings.TaskDevicePluginConfig[i+PLUGIN_086_VALUE_MAX]=getFormItemInt(keyName);
+          keyName = F("p086_decimals");
+          keyName += i;
+          ExtraTaskSettings.TaskDeviceValueDecimals[i]=getFormItemInt(keyName);
+          keyName = F("p086_string");
+          keyName += i;
+          strncpy_webserver_arg(ExtraTaskSettings.TaskDeviceFormula[i], keyName);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_READ:
+      {
+        for (byte x=0; x<PLUGIN_086_VALUE_MAX;x++)
+        {
+          String log = F("P086 : Value ");
+          log += x+1;
+          log += F(": ");
+          log += UserVar[event->BaseVarIndex+x];
+          addLog(LOG_LEVEL_INFO,log);
+        }
+        success = true;
+        break;
+      }
+
+    case PLUGIN_WRITE:
+      {
+        String command = parseString(string, 1);
+        if (command == F("homievalueset"))
+        {
+          if (event->Par1 == event->TaskIndex+1) {
+            LoadTaskSettings(event->Par1 -1);
+            String parameter = parseStringToEndKeepCase(string,4);
+            String log = "";
+# 214 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P086_Homie.ino"
+            float floatValue = 0;
+            String enumList = "";
+            int i = 0;
+            if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+              log = F("P086 : deviceNr:");
+              log += event->Par1;
+              log += F(" valueNr:");
+              log += event->Par2;
+              log += F(" valueType:");
+              log += Settings.TaskDevicePluginConfig[event->Par1-1][event->Par2-1];
+            }
+
+            switch (Settings.TaskDevicePluginConfig[event->Par1-1][event->Par2-1]) {
+              case PLUGIN_086_VALUE_INTEGER:
+              case PLUGIN_086_VALUE_FLOAT:
+                if (parameter!="") {
+                  if (string2float(parameter,floatValue)) {
+                    if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                      log += F(" integer/float set to ");
+                      log += floatValue;
+                      addLog(LOG_LEVEL_INFO,log);
+                    }
+                    UserVar[event->BaseVarIndex+event->Par2-1]=floatValue;
+                  } else {
+                    if (loglevelActiveFor(LOG_LEVEL_ERROR)) {
+                      log += F(" parameter:");
+                      log += parameter;
+                      log += F(" not a float value!");
+                      addLog(LOG_LEVEL_ERROR,log);
+                    }
+                  }
+                } else {
+                  if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                    log += F(" value:");
+                    log += UserVar[event->BaseVarIndex+event->Par2-1];
+                    addLog(LOG_LEVEL_INFO,log);
+                  }
+                }
+                break;
+
+              case PLUGIN_086_VALUE_BOOLEAN:
+                if (parameter=="false") {
+                  floatValue = 0;
+                } else {
+                  floatValue = 1;
+                }
+                UserVar[event->BaseVarIndex+event->Par2-1]=floatValue;
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  log += F(" boolean set to ");
+                  log += floatValue;
+                  addLog(LOG_LEVEL_INFO,log);
+                }
+                break;
+
+              case PLUGIN_086_VALUE_STRING:
+
+
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  log += F(" string set to ");
+                  log += parameter;
+                  addLog(LOG_LEVEL_INFO,log);
+                }
+                break;
+
+              case PLUGIN_086_VALUE_ENUM:
+                enumList = ExtraTaskSettings.TaskDeviceFormula[event->Par2-1];
+                i = 1;
+                while (parseString(enumList,i)!="") {
+                  if (parseString(enumList,i)==parameter) {
+                    floatValue = i;
+                    break;
+                  }
+                  i++;
+                }
+                UserVar[event->BaseVarIndex+event->Par2-1]=floatValue;
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  log += F(" enum set to ");
+                  log += floatValue;
+                  log += F(" (");
+                  log += parameter;
+                  log += F(")");
+                  addLog(LOG_LEVEL_INFO,log);
+                }
+                break;
+
+              case PLUGIN_086_VALUE_RGB:
+
+
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  log += F(" RGB received ");
+                  log += parameter;
+                  addLog(LOG_LEVEL_INFO,log);
+                }
+                break;
+
+              case PLUGIN_086_VALUE_HSV:
+
+
+                if (loglevelActiveFor(LOG_LEVEL_INFO)) {
+                  log += F(" HSV received ");
+                  log += parameter;
+                  addLog(LOG_LEVEL_INFO,log);
+                }
+                break;
+            }
+            success = true;
+          }
+        }
+        break;
+      }
+  }
+  return success;
+}
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P222_HCMSDisp.ino"
+
+#ifdef USES_P222
+
+
+
+
+
+#ifdef PLUGIN_BUILD_DEV
+
+
+#define PLUGIN_222 
+#define PLUGIN_ID_222 222
+#define PLUGIN_NAME_222 "Display - HCMS-2915 [DEVELOPMENT]"
+
+
+#define PLUGIN_222_DEBUG true
+# 29 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P222_HCMSDisp.ino"
+#include <LedDisplay.h>
+# 42 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P222_HCMSDisp.ino"
+LedDisplay *Plugin_222_M = NULL;
+
+uint8_t p222_showbuffer[8];
+
+boolean Plugin_222(byte function, struct EventStruct *event, String& string)
+{
+
+
+
+  boolean success = false;
+  switch (function)
+  {
+    case PLUGIN_DEVICE_ADD:
+    {
+        Device[++deviceCount].Number = PLUGIN_ID_222;
+        Device[deviceCount].Type = DEVICE_TYPE_TRIPLE;
+        Device[deviceCount].VType = SENSOR_TYPE_NONE;
+        Device[deviceCount].Ports = 0;
+        Device[deviceCount].PullUpOption = false;
+        Device[deviceCount].InverseLogicOption = false;
+        Device[deviceCount].FormulaOption = false;
+        Device[deviceCount].ValueCount = 0;
+        Device[deviceCount].SendDataOption = false;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].TimerOptional = false;
+        Device[deviceCount].GlobalSyncOption = true;
+        Device[deviceCount].DecimalsOnly = true;
+        break;
+    }
+
+    case PLUGIN_GET_DEVICENAME:
+    {
+      string = F(PLUGIN_NAME_222);
+      break;
+    }
+
+    case PLUGIN_GET_DEVICEGPIONAMES:
+    {
+      event->String1 = F("GPIO &rarr; dataPin");
+      event->String2 = F("GPIO &rarr; registerSelect");
+      event->String3 = F("GPIO &rarr; clockPin");
+      break;
+    }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+    {
+# 97 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P222_HCMSDisp.ino"
+    break;
+    }
+
+
+
+
+    case PLUGIN_WEBFORM_LOAD:
+    {
+
+
+
+      addFormPinSelect(F("GPIO &rarr; ChipEnable"), F("chipEnable"), (Settings.TaskDevicePluginConfig[event->TaskIndex][3]));
+      addFormPinSelect(F("GPIO &rarr; Reset"), F("reset"), (Settings.TaskDevicePluginConfig[event->TaskIndex][4]));
+      addFormNote(F("HCMS:  1st=DataPin, 2nd=registerSelect, 3rd= clockPin, 4th= Enable 5th=Reset"));
+      addFormNumericBox(F("DisplayLenght"), F("displaylenght"), (int)Settings.TaskDevicePluginConfig[event->TaskIndex][5], 0, 15);
+      addFormNumericBox(F("Brightness"), F("brightness"), (int)Settings.TaskDevicePluginConfig[event->TaskIndex][6], 0, 15);
+      String displout[3] = { F("Manual"), F("Clock"), F("Date") };
+      addFormSelector(F("Display Output"), F("p222_displout"), 3, displout, NULL, Settings.TaskDevicePluginConfig[event->TaskIndex][7]);
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WEBFORM_SAVE:
+    {
+# 130 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P222_HCMSDisp.ino"
+      Settings.TaskDevicePluginConfig[event->TaskIndex][3] = (int8_t)getFormItemInt(F("chipEnable"));
+      Settings.TaskDevicePluginConfig[event->TaskIndex][4] = (int8_t)getFormItemInt(F("reset"));
+
+
+
+      Settings.TaskDevicePluginConfig[event->TaskIndex][5] = getFormItemInt(F("displaylenght"));
+      Settings.TaskDevicePluginConfig[event->TaskIndex][6] = getFormItemInt(F("brightness"));
+      Settings.TaskDevicePluginConfig[event->TaskIndex][7] = getFormItemInt(F("p222_displout"));
+
+      String log = F("HCMS : SAVE HCMS Pins : ");
+      log += Settings.TaskDevicePin1[event->TaskIndex]; log += F(" ");
+      log += Settings.TaskDevicePin2[event->TaskIndex]; log += F(" ");
+      log += Settings.TaskDevicePin3[event->TaskIndex]; log += F(" ");
+      log += Settings.TaskDevicePluginConfig[event->TaskIndex][3]; log += F(" ");
+      log += Settings.TaskDevicePluginConfig[event->TaskIndex][4]; log += F(" ");
+      log += Settings.TaskDevicePluginConfig[event->TaskIndex][5]; log += F(" ");
+      log += Settings.TaskDevicePluginConfig[event->TaskIndex][6]; log += F(" ");
+      log += Settings.TaskDevicePluginConfig[event->TaskIndex][7];
+      addLog(LOG_LEVEL_DEBUG, log);
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_INIT:
+    {
+      if (!Plugin_222_M){
+        Plugin_222_M = new LedDisplay(Settings.TaskDevicePin1[event->TaskIndex], Settings.TaskDevicePin2[event->TaskIndex], Settings.TaskDevicePin3[event->TaskIndex], Settings.TaskDevicePluginConfig[event->TaskIndex][3], Settings.TaskDevicePluginConfig[event->TaskIndex][4], Settings.TaskDevicePluginConfig[event->TaskIndex][5]);
+
+        Plugin_222_M->begin();
+
+        Plugin_222_M->setBrightness(Settings.TaskDevicePluginConfig[event->TaskIndex][6]);
+        Plugin_222_M->clear();
+
+        String log = F("HCMS : Init HCMS ");
+        addLog(LOG_LEVEL_DEBUG, log);
+        }
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_READ:
+    {
+      Plugin_222_M->setBrightness(Settings.TaskDevicePluginConfig[event->TaskIndex][6]);
+
+      success = true;
+      break;
+    }
+
+    case PLUGIN_WRITE:
+    {
+# 196 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P222_HCMSDisp.ino"
+    String command = parseString(string,1);
+
+      if (command == F("setbrightness")) {
+        String param = parseString(string, 2);
+        int brightness;
+        if (validIntFromString(param, brightness)) {
+          if (brightness >= 0 && brightness <= 15)
+            Plugin_222_M->setBrightness(brightness);
+        }
+        success = true;
+
+      }
+      success = true;
+    break;
+    }
+
+   case PLUGIN_EXIT:
+    {
+
+   break;
+   }
+
+    case PLUGIN_ONCE_A_SECOND:
+    {
+byte p222_output=Settings.TaskDevicePluginConfig[event->TaskIndex][7];
+      switch (p222_output){
+        case 1:
+        {
+          p222_FillBufferWithTime();
+
+          Plugin_222_M->home();
+          Plugin_222_M->print(p222_showbuffer[0]);
+          Plugin_222_M->print(p222_showbuffer[1]);
+
+          if (p222_showbuffer [5] % 2)
+            Plugin_222_M->print(":");
+          else
+            Plugin_222_M->print(" ");
+
+          Plugin_222_M->print(p222_showbuffer[2]);
+          Plugin_222_M->print(p222_showbuffer[3]);
+
+          if (p222_showbuffer [5] % 2)
+            Plugin_222_M->print(":");
+          else
+            Plugin_222_M->print(" ");
+
+          Plugin_222_M->print(p222_showbuffer[4]);
+          Plugin_222_M->print(p222_showbuffer[5]);
+        break;
+        }
+        case 2:
+        {
+          p222_FillBufferWithDate();
+
+          Plugin_222_M->home();
+          Plugin_222_M->print(p222_showbuffer[0]);
+          Plugin_222_M->print(p222_showbuffer[1]);
+          Plugin_222_M->print("/");
+          Plugin_222_M->print(p222_showbuffer[2]);
+          Plugin_222_M->print(p222_showbuffer[3]);
+          Plugin_222_M->print("/");
+          Plugin_222_M->print(p222_showbuffer[4]);
+          Plugin_222_M->print(p222_showbuffer[5]);
+        break;
+        }
+      }
+      success = true;
+    break;
+    }
+
+    case PLUGIN_TEN_PER_SECOND:
+    {
+
+
+
+      success = true;
+      break;
+    }
+  }
+  return success;
+
+}
+# 287 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_P222_HCMSDisp.ino"
+void p222_FillBufferWithTime(void)
+{
+  memset(p222_showbuffer,0,sizeof(p222_showbuffer));
+  byte hours = hour();
+  byte minutes = minute();
+  byte seconds = second();
+  uint8_t p222_digit1, p222_digit2;
+  p222_digit1 = (uint8_t)(hours / 10);
+  p222_digit2 = hours - p222_digit1*10;
+  p222_showbuffer[0] = p222_digit1; p222_showbuffer[1] = p222_digit2;
+  p222_digit1 = (uint8_t)(minutes / 10);
+  p222_digit2 = minutes - p222_digit1*10;
+  p222_showbuffer[2] = p222_digit1; p222_showbuffer[3] = p222_digit2;
+  p222_digit1 = (uint8_t)(seconds / 10);
+  p222_digit2 = seconds - p222_digit1*10;
+  p222_showbuffer[4] = p222_digit1; p222_showbuffer[5] = p222_digit2;
+}
+
+void p222_FillBufferWithDate(void)
+{
+  memset(p222_showbuffer,0,sizeof(p222_showbuffer));
+  byte digit_day = day();
+  byte digit_month = month();
+  byte digit1_year = uint8_t(year()/100);
+  byte digit2_year = uint8_t(year()-digit1_year*100);
+  uint8_t p222_digit1, p222_digit2;
+  p222_digit1 = (uint8_t)(digit_day / 10);
+  p222_digit2 = digit_day - p222_digit1*10;
+  p222_showbuffer[0] = p222_digit1; p222_showbuffer[1] = p222_digit2;
+  p222_digit1 = (uint8_t)(digit_month / 10);
+  p222_digit2 = digit_month - p222_digit1*10;
+  p222_showbuffer[2] = p222_digit1; p222_showbuffer[3] = p222_digit2;
+  p222_digit1 = (uint8_t)(digit2_year / 10);
+  p222_digit2 = digit2_year - p222_digit1*10;
+  p222_showbuffer[4] = p222_digit1; p222_showbuffer[5] = p222_digit2;
+}
+
+#endif PLUGIN_BUILD_DEVELOPMENT
+
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_Plugin_Helper_serial.ino"
+#include "ESPeasySerial.h"
+
+struct ESPeasySerialType;
+
+static String serialHelper_getSerialTypeLabel(ESPeasySerialType::serialtype serType) {
+  if (serType == ESPeasySerialType::serialtype::software) { return F("SoftwareSerial"); }
+
+  if (serType == ESPeasySerialType::serialtype::serial0_swap) { return F("HW Serial0 swap"); }
+  int portnr = 0;
+
+  if (serType == ESPeasySerialType::serialtype::serial1) { portnr = 1; }
+
+  if (serType == ESPeasySerialType::serialtype::serial2) { portnr = 2; }
+
+  String label = F("HW Serial");
+  label += portnr;
+  return label;
+}
+
+void serialHelper_getGpioNames(struct EventStruct *event, bool rxOptional, bool txOptional) {
+  event->String1 = formatGpioName_RX(rxOptional);
+  event->String2 = formatGpioName_TX(txOptional);
+}
+
+int8_t serialHelper_getRxPin(struct EventStruct *event) {
+  return CONFIG_PIN1;
+}
+
+int8_t serialHelper_getTxPin(struct EventStruct *event) {
+  return CONFIG_PIN2;
+}
+
+ESPeasySerialType::serialtype serialHelper_getSerialType(struct EventStruct *event) {
+  return ESPeasySerialType::getSerialType(
+    serialHelper_getRxPin(event),
+    serialHelper_getTxPin(event));
+}
+
+void serialHelper_webformLoad(struct EventStruct *event) {
+  serialHelper_webformLoad(event, true);
+}
+
+
+
+
+void serialHelper_webformLoad(struct EventStruct *event, bool allowSoftwareSerial) {
+  html_add_script(F(
+                    "function serialPortChanged(elem){ var style = elem.value == 0 ? '' : 'none'; document.getElementById('tr_taskdevicepin1').style.display = style; document.getElementById('tr_taskdevicepin2').style.display = style; }"),
+                  false);
+
+  String options[NR_ESPEASY_SERIAL_TYPES];
+  int ids[NR_ESPEASY_SERIAL_TYPES];
+  String attr[NR_ESPEASY_SERIAL_TYPES];
+
+  int index = 0;
+
+  for (int i = 0; (index < NR_ESPEASY_SERIAL_TYPES) && (i < ESPeasySerialType::serialtype::MAX_SERIAL_TYPE); ++i) {
+    int rxPin, txPin;
+    ESPeasySerialType::serialtype serType = static_cast<ESPeasySerialType::serialtype>(i);
+
+    if (ESPeasySerialType::getSerialTypePins(serType, rxPin, txPin)) {
+      String option;
+      option.reserve(48);
+      option = serialHelper_getSerialTypeLabel(serType);
+
+      if (serType != ESPeasySerialType::serialtype::software) {
+        option += ": ";
+        option += formatGpioLabel(rxPin, false);
+        option += ' ';
+        option += formatGpioDirection(gpio_input);
+        option += "TX / ";
+        option += formatGpioLabel(txPin, false);
+        option += ' ';
+        option += formatGpioDirection(gpio_output);
+        option += "RX";
+      } else {
+        if (!allowSoftwareSerial) {
+          attr[i] = F("disabled");
+        }
+      }
+      options[index] = option;
+      ids[index] = i;
+      ++index;
+    }
+  }
+  addFormSelector_script(F("Serial Port"), F("serPort"), NR_ESPEASY_SERIAL_TYPES,
+                         options, ids, NULL,
+                         static_cast<int>(serialHelper_getSerialType(event)),
+                         F("serialPortChanged(this)"));
+  html_add_script(F("document.getElementById('serPort').onchange();"), false);
+
+  if (Settings.UseSerial) {
+    addFormNote(F("Do <b>NOT</b> combine HW Serial0 and log to serial on Tools->Advanced->Serial Port."));
+  }
+
+  if ((serialHelper_getRxPin(event) == 15) || (serialHelper_getTxPin(event) == 15)) {
+    addFormNote(F("GPIO-15 (D8) requires a Buffer Circuit (PNP transistor) or ESP boot may fail."));
+  }
+}
+
+void serialHelper_webformSave(struct EventStruct *event) {
+  int serialPortSelected = getFormItemInt(F("serPort"), 0);
+
+  if (serialPortSelected > 0) {
+    int rxPin, txPin;
+    ESPeasySerialType::serialtype serType = static_cast<ESPeasySerialType::serialtype>(serialPortSelected);
+
+    if (ESPeasySerialType::getSerialTypePins(serType, rxPin, txPin)) {
+      CONFIG_PIN1 = rxPin;
+      CONFIG_PIN2 = txPin;
+    }
+  }
+}
+
+void serialHelper_plugin_init(struct EventStruct *event) {
+  ESPeasySerialType::serialtype serType = serialHelper_getSerialType(event);
+
+  if (serType == ESPeasySerialType::serialtype::serial0) {
+    Settings.UseSerial = false;
+  }
+}
+
+bool serialHelper_isValid_serialconfig(byte serialconfig) {
+  if ((serialconfig >= 0x10) && (serialconfig <= 0x3f)) {
+    return true;
+  }
+  return false;
+}
+
+void serialHelper_serialconfig_webformLoad(struct EventStruct *event, byte currentSelection) {
+
+  String options[24];
+  int values[24];
+  byte index = 0;
+
+  for (byte parity = 0; parity < 3; ++parity) {
+    for (byte stopBits = 1; stopBits <= 2; ++stopBits) {
+      for (byte bits = 5; bits <= 8; ++bits) {
+        String label;
+        label.reserve(36);
+        label = String(bits);
+        label += F(" bit / parity: ");
+        int value = ((bits - 5) << 2);
+
+        switch (parity) {
+          case 0: label += "None"; break;
+          case 1: label += "Even"; value += 2; break;
+          case 2: label += "Odd"; value += 3; break;
+        }
+        label += F(" / stop bits: ");
+        label += String(stopBits);
+
+
+        switch (stopBits) {
+          case 1: value += 0x10; break;
+          case 2: value += 0x30; break;
+        }
+        options[index] = label;
+        values[index] = value;
+        ++index;
+      }
+    }
+  }
+
+  if (currentSelection == 0) {
+
+    currentSelection = static_cast<byte>(SERIAL_8N1 & 0xFF);
+  }
+  addFormSelector(F("Serial Config"), F("serConf"), 24,
+                  options, values, currentSelection);
+}
+
+byte serialHelper_serialconfig_webformSave() {
+  int serialConfSelected = getFormItemInt(F("serConf"), 0);
+
+  if (serialHelper_isValid_serialconfig(serialConfSelected)) {
+    return serialConfSelected;
+  }
+
+
+  return static_cast<byte>(SERIAL_8N1 & 0xFF);
+}
+
+
+byte serialHelper_convertOldSerialConfig(byte newLocationConfig) {
+  if (serialHelper_isValid_serialconfig(newLocationConfig)) {
+    return newLocationConfig;
+  }
+  byte serialconfig = 0x10;
+  serialconfig += ExtraTaskSettings.TaskDevicePluginConfigLong[3];
+  serialconfig += (ExtraTaskSettings.TaskDevicePluginConfigLong[2] - 5) << 2;
+
+  if (ExtraTaskSettings.TaskDevicePluginConfigLong[4] == 2) {
+    serialconfig += 0x20;
+  }
+
+  if (serialHelper_isValid_serialconfig(serialconfig)) {
+    return serialconfig;
+  }
+
+
+  return static_cast<byte>(SERIAL_8N1 & 0xFF);
+}
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_Pxxx_PluginTemplate.ino"
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_Reporting.ino"
+
+
+#ifdef FEATURE_REPORTING
+
+
+#include <ArduinoJson.h>
+
+
+
+#define REPORT_HOST "espeasy.datux.nl"
+#define FEATURE_REPORTING 
+
+void ReportStatus()
+{
+  String log;
+  String host = F(REPORT_HOST);
+
+  log = F("REP  : Reporting status to ");
+  log += host;
+  addLog(LOG_LEVEL_INFO, log);
+
+
+  WiFiClient client;
+  client.setTimeout(CONTROLLER_CLIENTTIMEOUT_DFLT);
+
+  if (!connectClient(client, host.c_str(), 80))
+  {
+    addLog(LOG_LEVEL_ERROR, F("REP  : connection failed"));
+    return;
+  }
+
+  StaticJsonBuffer<256> jsonBuffer;
+  JsonObject& root = jsonBuffer.createObject();
+
+  root[F("chipId")] = ESP.getChipId();
+  root[F("flashId")] = ESP.getFlashChipId();
+  root[F("uptime")] = wdcounter / 2;
+
+
+  String body;
+  root.printTo(body);
+
+  String payload = F("POST /report.php HTTP/1.1");
+  addNewLine(payload);
+  payload += F("Host: ");
+  payload += host;
+  addNewLine(payload);
+  payload += F("Connection: close");
+  addNewLine(payload);
+  payload += F("Content-Length: ");
+  payload += String(body.length());
+  addNewLine(payload);
+  addNewLine(payload);
+  payload += body;
+
+  serialPrintln(payload);
+  client.print(payload);
+
+
+  addLog(LOG_LEVEL_INFO, F("REP  : report uploaded"));
+}
+# 97 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/_Reporting.ino"
+#endif
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/__CPlugin.ino"
+
+
+
+
+
+static const char ADDCPLUGIN_ERROR[] PROGMEM = "System: Error - To much C-Plugins";
+# 19 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/__CPlugin.ino"
+#define ADDCPLUGIN(NNN) if (x < CPLUGIN_MAX) { CPlugin_id[x] = CPLUGIN_ID_ ##NNN; CPlugin_ptr[x++] = &CPlugin_ ##NNN; } else addLog(LOG_LEVEL_ERROR, FPSTR(ADDCPLUGIN_ERROR));
+
+void CPluginInit(void)
+{
+  byte x;
+
+
+  for (x = 0; x < CPLUGIN_MAX; x++)
+  {
+    CPlugin_ptr[x] = 0;
+    CPlugin_id[x] = 0;
+  }
+
+  x = 0;
+
+#ifdef CPLUGIN_001
+  ADDCPLUGIN(001)
+#endif
+
+#ifdef CPLUGIN_002
+  ADDCPLUGIN(002)
+#endif
+
+#ifdef CPLUGIN_003
+  ADDCPLUGIN(003)
+#endif
+
+#ifdef CPLUGIN_004
+  ADDCPLUGIN(004)
+#endif
+
+#ifdef CPLUGIN_005
+  ADDCPLUGIN(005)
+#endif
+
+#ifdef CPLUGIN_006
+  ADDCPLUGIN(006)
+#endif
+
+#ifdef CPLUGIN_007
+  ADDCPLUGIN(007)
+#endif
+
+#ifdef CPLUGIN_008
+  ADDCPLUGIN(008)
+#endif
+
+#ifdef CPLUGIN_009
+  ADDCPLUGIN(009)
+#endif
+
+#ifdef CPLUGIN_010
+  ADDCPLUGIN(010)
+#endif
+
+#ifdef CPLUGIN_011
+  ADDCPLUGIN(011)
+#endif
+
+#ifdef CPLUGIN_012
+  ADDCPLUGIN(012)
+#endif
+
+#ifdef CPLUGIN_013
+  ADDCPLUGIN(013)
+#endif
+
+#ifdef CPLUGIN_014
+  ADDCPLUGIN(014)
+#endif
+
+#ifdef CPLUGIN_015
+  ADDCPLUGIN(015)
+#endif
+
+#ifdef CPLUGIN_016
+  ADDCPLUGIN(016)
+#endif
+
+#ifdef CPLUGIN_017
+  ADDCPLUGIN(017)
+#endif
+
+#ifdef CPLUGIN_018
+  ADDCPLUGIN(018)
+#endif
+
+#ifdef CPLUGIN_019
+  ADDCPLUGIN(019)
+#endif
+
+#ifdef CPLUGIN_020
+  ADDCPLUGIN(020)
+#endif
+
+#ifdef CPLUGIN_021
+  ADDCPLUGIN(021)
+#endif
+
+#ifdef CPLUGIN_022
+  ADDCPLUGIN(022)
+#endif
+
+#ifdef CPLUGIN_023
+  ADDCPLUGIN(023)
+#endif
+
+#ifdef CPLUGIN_024
+  ADDCPLUGIN(024)
+#endif
+
+#ifdef CPLUGIN_025
+  ADDCPLUGIN(025)
+#endif
+
+  CPluginCall(CPLUGIN_PROTOCOL_ADD, 0);
+  CPluginCall(CPLUGIN_INIT, 0);
+}
+
+bool CPluginCall(byte pluginNumber, byte Function, struct EventStruct *event, String& str) {
+  START_TIMER;
+  bool ret = CPlugin_ptr[pluginNumber](Function, event, str);
+  STOP_TIMER_CONTROLLER(pluginNumber, Function);
+  return ret;
+}
+
+bool CPluginCall(byte Function, struct EventStruct *event, String& str)
+{
+  int x;
+  struct EventStruct TempEvent;
+
+ if (event == 0)
+    event=&TempEvent;
+
+  switch (Function)
+  {
+
+    case CPLUGIN_PROTOCOL_ADD:
+      for (x = 0; x < CPLUGIN_MAX; x++) {
+        if (CPlugin_id[x] != 0) {
+          const unsigned int next_ProtocolIndex = protocolCount + 2;
+          if (next_ProtocolIndex > Protocol.size()) {
+
+            unsigned int newSize = Protocol.size();
+            newSize = newSize + 8 - (newSize % 8);
+            Protocol.resize(newSize);
+          }
+          checkRAM(F("CPluginCallADD"),x);
+          CPluginCall(x, Function, event, dummyString);
+        }
+      }
+      return true;
+      break;
+
+
+
+    case CPLUGIN_INIT:
+    case CPLUGIN_UDP_IN:
+    case CPLUGIN_INTERVAL:
+    case CPLUGIN_GOT_CONNECTED:
+    case CPLUGIN_GOT_INVALID:
+    case CPLUGIN_FLUSH:
+      for (byte x=0; x < CONTROLLER_MAX; x++)
+        if (Settings.Protocol[x] != 0 && Settings.ControllerEnabled[x]) {
+          event->ProtocolIndex = getProtocolIndex(Settings.Protocol[x]);
+          CPluginCall(event->ProtocolIndex, Function, event, dummyString);
+        }
+      return true;
+      break;
+
+    case CPLUGIN_ACKNOWLEDGE:
+    for (byte x=0; x < CONTROLLER_MAX; x++)
+      if (Settings.Protocol[x] != 0 && Settings.ControllerEnabled[x]) {
+        event->ProtocolIndex = getProtocolIndex(Settings.Protocol[x]);
+        CPluginCall(event->ProtocolIndex, Function, event, str);
+      }
+    return true;
+    break;
+
+  }
+
+  return false;
+}
+
+
+bool anyControllerEnabled() {
+  for (byte i=0; i < CONTROLLER_MAX; i++) {
+    if (Settings.Protocol[i] != 0 && Settings.ControllerEnabled[i]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+
+byte findFirstEnabledControllerWithId(byte cpluginid) {
+  for (byte i=0; i < CONTROLLER_MAX; i++) {
+    if (Settings.Protocol[i] == cpluginid && Settings.ControllerEnabled[i]) {
+      return i;
+    }
+  }
+  return CONTROLLER_MAX;
+}
+
+bool CPluginCall(byte Function, struct EventStruct *event) {
+  return CPluginCall(Function, event, dummyString);
+}
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/__NPlugin.ino"
+
+
+
+
+
+static const char ADDNPLUGIN_ERROR[] PROGMEM = "System: Error - To much N-Plugins";
+# 20 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/__NPlugin.ino"
+#define ADDNPLUGIN(NNN) if (x < NPLUGIN_MAX) { NPlugin_id[x] = NPLUGIN_ID_ ##NNN; NPlugin_ptr[x++] = &NPlugin_ ##NNN; } else addLog(LOG_LEVEL_ERROR, FPSTR(ADDNPLUGIN_ERROR));
+
+
+void NPluginInit(void)
+{
+  byte x;
+
+
+  for (x = 0; x < NPLUGIN_MAX; x++)
+  {
+    NPlugin_ptr[x] = 0;
+    NPlugin_id[x] = 0;
+  }
+
+  x = 0;
+
+#ifdef NPLUGIN_001
+  ADDNPLUGIN(001)
+#endif
+
+#ifdef NPLUGIN_002
+  ADDNPLUGIN(002)
+#endif
+
+#ifdef NPLUGIN_003
+  ADDNPLUGIN(003)
+#endif
+
+#ifdef NPLUGIN_004
+  ADDNPLUGIN(004)
+#endif
+
+#ifdef NPLUGIN_005
+  ADDNPLUGIN(005)
+#endif
+
+#ifdef NPLUGIN_006
+  ADDNPLUGIN(006)
+#endif
+
+#ifdef NPLUGIN_007
+  ADDNPLUGIN(007)
+#endif
+
+#ifdef NPLUGIN_008
+  ADDNPLUGIN(008)
+#endif
+
+#ifdef NPLUGIN_009
+  ADDNPLUGIN(009)
+#endif
+
+#ifdef NPLUGIN_010
+  ADDNPLUGIN(010)
+#endif
+
+#ifdef NPLUGIN_011
+  ADDNPLUGIN(011)
+#endif
+
+#ifdef NPLUGIN_012
+  ADDNPLUGIN(012)
+#endif
+
+#ifdef NPLUGIN_013
+  ADDNPLUGIN(013)
+#endif
+
+#ifdef NPLUGIN_014
+  ADDNPLUGIN(014)
+#endif
+
+#ifdef NPLUGIN_015
+  ADDNPLUGIN(015)
+#endif
+
+#ifdef NPLUGIN_016
+  ADDNPLUGIN(016)
+#endif
+
+#ifdef NPLUGIN_017
+  ADDNPLUGIN(017)
+#endif
+
+#ifdef NPLUGIN_018
+  ADDNPLUGIN(018)
+#endif
+
+#ifdef NPLUGIN_019
+  ADDNPLUGIN(019)
+#endif
+
+#ifdef NPLUGIN_020
+  ADDNPLUGIN(020)
+#endif
+
+#ifdef NPLUGIN_021
+  ADDNPLUGIN(021)
+#endif
+
+#ifdef NPLUGIN_022
+  ADDNPLUGIN(022)
+#endif
+
+#ifdef NPLUGIN_023
+  ADDNPLUGIN(023)
+#endif
+
+#ifdef NPLUGIN_024
+  ADDNPLUGIN(024)
+#endif
+
+#ifdef NPLUGIN_025
+  ADDNPLUGIN(025)
+#endif
+
+  NPluginCall(NPLUGIN_PROTOCOL_ADD, 0);
+}
+
+byte NPluginCall(byte Function, struct EventStruct *event)
+{
+  int x;
+  struct EventStruct TempEvent;
+
+ if (event == 0)
+    event=&TempEvent;
+
+  switch (Function)
+  {
+
+    case NPLUGIN_PROTOCOL_ADD:
+      for (x = 0; x < NPLUGIN_MAX; x++)
+        if (NPlugin_id[x] != 0)
+          NPlugin_ptr[x](Function, event, dummyString);
+      return true;
+      break;
+  }
+
+  return false;
+}
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/__Plugin.ino"
+
+
+
+
+#include <algorithm>
+static const char ADDPLUGIN_ERROR[] PROGMEM = "System: Error - To much Plugins";
+# 19 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/__Plugin.ino"
+#define ADDPLUGIN(NNN) if (x < PLUGIN_MAX) { Plugin_id[x] = PLUGIN_ID_ ##NNN; Plugin_ptr[x++] = &Plugin_ ##NNN; } else addLog(LOG_LEVEL_ERROR, FPSTR(ADDPLUGIN_ERROR));
+
+
+void PluginInit(void)
+{
+  byte x;
+
+
+  for (x = 0; x < PLUGIN_MAX; x++)
+  {
+    Plugin_ptr[x] = 0;
+    Plugin_id[x] = 0;
+  }
+
+  for (x = 0; x < TASKS_MAX; x++)
+  {
+    Task_id_to_Plugin_id[x] = -1;
+  }
+
+  x = 0;
+
+#ifdef PLUGIN_001
+  ADDPLUGIN(001)
+#endif
+
+#ifdef PLUGIN_002
+  ADDPLUGIN(002)
+#endif
+
+#ifdef PLUGIN_003
+  ADDPLUGIN(003)
+#endif
+
+#ifdef PLUGIN_004
+  ADDPLUGIN(004)
+#endif
+
+#ifdef PLUGIN_005
+  ADDPLUGIN(005)
+#endif
+
+#ifdef PLUGIN_006
+  ADDPLUGIN(006)
+#endif
+
+#ifdef PLUGIN_007
+  ADDPLUGIN(007)
+#endif
+
+#ifdef PLUGIN_008
+  ADDPLUGIN(008)
+#endif
+
+#ifdef PLUGIN_009
+  ADDPLUGIN(009)
+#endif
+
+#ifdef PLUGIN_010
+  ADDPLUGIN(010)
+#endif
+
+#ifdef PLUGIN_011
+  ADDPLUGIN(011)
+#endif
+
+#ifdef PLUGIN_012
+  ADDPLUGIN(012)
+#endif
+
+#ifdef PLUGIN_013
+  ADDPLUGIN(013)
+#endif
+
+#ifdef PLUGIN_014
+  ADDPLUGIN(014)
+#endif
+
+#ifdef PLUGIN_015
+  ADDPLUGIN(015)
+#endif
+
+#ifdef PLUGIN_016
+  ADDPLUGIN(016)
+#endif
+
+#ifdef PLUGIN_017
+  ADDPLUGIN(017)
+#endif
+
+#ifdef PLUGIN_018
+  ADDPLUGIN(018)
+#endif
+
+#ifdef PLUGIN_019
+  ADDPLUGIN(019)
+#endif
+
+#ifdef PLUGIN_020
+  ADDPLUGIN(020)
+#endif
+
+#ifdef PLUGIN_021
+  ADDPLUGIN(021)
+#endif
+
+#ifdef PLUGIN_022
+  ADDPLUGIN(022)
+#endif
+
+#ifdef PLUGIN_023
+  ADDPLUGIN(023)
+#endif
+
+#ifdef PLUGIN_024
+  ADDPLUGIN(024)
+#endif
+
+#ifdef PLUGIN_025
+  ADDPLUGIN(025)
+#endif
+
+#ifdef PLUGIN_026
+  ADDPLUGIN(026)
+#endif
+
+#ifdef PLUGIN_027
+  ADDPLUGIN(027)
+#endif
+
+#ifdef PLUGIN_028
+  ADDPLUGIN(028)
+#endif
+
+#ifdef PLUGIN_029
+  ADDPLUGIN(029)
+#endif
+
+#ifdef PLUGIN_030
+  ADDPLUGIN(030)
+#endif
+
+#ifdef PLUGIN_031
+  ADDPLUGIN(031)
+#endif
+
+#ifdef PLUGIN_032
+  ADDPLUGIN(032)
+#endif
+
+#ifdef PLUGIN_033
+  ADDPLUGIN(033)
+#endif
+
+#ifdef PLUGIN_034
+  ADDPLUGIN(034)
+#endif
+
+#ifdef PLUGIN_035
+  ADDPLUGIN(035)
+#endif
+
+#ifdef PLUGIN_036
+  ADDPLUGIN(036)
+#endif
+
+#ifdef PLUGIN_037
+  ADDPLUGIN(037)
+#endif
+
+#ifdef PLUGIN_038
+  ADDPLUGIN(038)
+#endif
+
+#ifdef PLUGIN_039
+  ADDPLUGIN(039)
+#endif
+
+#ifdef PLUGIN_040
+  ADDPLUGIN(040)
+#endif
+
+#ifdef PLUGIN_041
+  ADDPLUGIN(041)
+#endif
+
+#ifdef PLUGIN_042
+  ADDPLUGIN(042)
+#endif
+
+#ifdef PLUGIN_043
+  ADDPLUGIN(043)
+#endif
+
+#ifdef PLUGIN_044
+  ADDPLUGIN(044)
+#endif
+
+#ifdef PLUGIN_045
+  ADDPLUGIN(045)
+#endif
+
+#ifdef PLUGIN_046
+  ADDPLUGIN(046)
+#endif
+
+#ifdef PLUGIN_047
+  ADDPLUGIN(047)
+#endif
+
+#ifdef PLUGIN_048
+  ADDPLUGIN(048)
+#endif
+
+#ifdef PLUGIN_049
+  ADDPLUGIN(049)
+#endif
+
+#ifdef PLUGIN_050
+  ADDPLUGIN(050)
+#endif
+
+#ifdef PLUGIN_051
+  ADDPLUGIN(051)
+#endif
+
+#ifdef PLUGIN_052
+  ADDPLUGIN(052)
+#endif
+
+#ifdef PLUGIN_053
+  ADDPLUGIN(053)
+#endif
+
+#ifdef PLUGIN_054
+  ADDPLUGIN(054)
+#endif
+
+#ifdef PLUGIN_055
+  ADDPLUGIN(055)
+#endif
+
+#ifdef PLUGIN_056
+  ADDPLUGIN(056)
+#endif
+
+#ifdef PLUGIN_057
+  ADDPLUGIN(057)
+#endif
+
+#ifdef PLUGIN_058
+  ADDPLUGIN(058)
+#endif
+
+#ifdef PLUGIN_059
+  ADDPLUGIN(059)
+#endif
+
+#ifdef PLUGIN_060
+  ADDPLUGIN(060)
+#endif
+
+#ifdef PLUGIN_061
+  ADDPLUGIN(061)
+#endif
+
+#ifdef PLUGIN_062
+  ADDPLUGIN(062)
+#endif
+
+#ifdef PLUGIN_063
+  ADDPLUGIN(063)
+#endif
+
+#ifdef PLUGIN_064
+  ADDPLUGIN(064)
+#endif
+
+#ifdef PLUGIN_065
+  ADDPLUGIN(065)
+#endif
+
+#ifdef PLUGIN_066
+  ADDPLUGIN(066)
+#endif
+
+#ifdef PLUGIN_067
+  ADDPLUGIN(067)
+#endif
+
+#ifdef PLUGIN_068
+  ADDPLUGIN(068)
+#endif
+
+#ifdef PLUGIN_069
+  ADDPLUGIN(069)
+#endif
+
+#ifdef PLUGIN_070
+  ADDPLUGIN(070)
+#endif
+
+#ifdef PLUGIN_071
+  ADDPLUGIN(071)
+#endif
+
+#ifdef PLUGIN_072
+  ADDPLUGIN(072)
+#endif
+
+#ifdef PLUGIN_073
+  ADDPLUGIN(073)
+#endif
+
+#ifdef PLUGIN_074
+  ADDPLUGIN(074)
+#endif
+
+#ifdef PLUGIN_075
+  ADDPLUGIN(075)
+#endif
+
+#ifdef PLUGIN_076
+  ADDPLUGIN(076)
+#endif
+
+#ifdef PLUGIN_077
+  ADDPLUGIN(077)
+#endif
+
+#ifdef PLUGIN_078
+  ADDPLUGIN(078)
+#endif
+
+#ifdef PLUGIN_079
+  ADDPLUGIN(079)
+#endif
+
+#ifdef PLUGIN_080
+  ADDPLUGIN(080)
+#endif
+
+#ifdef PLUGIN_081
+  ADDPLUGIN(081)
+#endif
+
+#ifdef PLUGIN_082
+  ADDPLUGIN(082)
+#endif
+
+#ifdef PLUGIN_083
+  ADDPLUGIN(083)
+#endif
+
+#ifdef PLUGIN_084
+  ADDPLUGIN(084)
+#endif
+
+#ifdef PLUGIN_085
+  ADDPLUGIN(085)
+#endif
+
+#ifdef PLUGIN_086
+  ADDPLUGIN(086)
+#endif
+
+#ifdef PLUGIN_087
+  ADDPLUGIN(087)
+#endif
+
+#ifdef PLUGIN_088
+  ADDPLUGIN(088)
+#endif
+
+#ifdef PLUGIN_089
+  ADDPLUGIN(089)
+#endif
+
+#ifdef PLUGIN_090
+  ADDPLUGIN(090)
+#endif
+
+#ifdef PLUGIN_091
+  ADDPLUGIN(091)
+#endif
+
+#ifdef PLUGIN_092
+  ADDPLUGIN(092)
+#endif
+
+#ifdef PLUGIN_093
+  ADDPLUGIN(093)
+#endif
+
+#ifdef PLUGIN_094
+  ADDPLUGIN(094)
+#endif
+
+#ifdef PLUGIN_095
+  ADDPLUGIN(095)
+#endif
+
+#ifdef PLUGIN_096
+  ADDPLUGIN(096)
+#endif
+
+#ifdef PLUGIN_097
+  ADDPLUGIN(097)
+#endif
+
+#ifdef PLUGIN_098
+  ADDPLUGIN(098)
+#endif
+
+#ifdef PLUGIN_099
+  ADDPLUGIN(099)
+#endif
+
+#ifdef PLUGIN_100
+  ADDPLUGIN(100)
+#endif
+
+#ifdef PLUGIN_101
+  ADDPLUGIN(101)
+#endif
+
+#ifdef PLUGIN_102
+  ADDPLUGIN(102)
+#endif
+
+#ifdef PLUGIN_103
+  ADDPLUGIN(103)
+#endif
+
+#ifdef PLUGIN_104
+  ADDPLUGIN(104)
+#endif
+
+#ifdef PLUGIN_105
+  ADDPLUGIN(105)
+#endif
+
+#ifdef PLUGIN_106
+  ADDPLUGIN(106)
+#endif
+
+#ifdef PLUGIN_107
+  ADDPLUGIN(107)
+#endif
+
+#ifdef PLUGIN_108
+  ADDPLUGIN(108)
+#endif
+
+#ifdef PLUGIN_109
+  ADDPLUGIN(109)
+#endif
+
+#ifdef PLUGIN_110
+  ADDPLUGIN(110)
+#endif
+
+#ifdef PLUGIN_111
+  ADDPLUGIN(111)
+#endif
+
+#ifdef PLUGIN_112
+  ADDPLUGIN(112)
+#endif
+
+#ifdef PLUGIN_113
+  ADDPLUGIN(113)
+#endif
+
+#ifdef PLUGIN_114
+  ADDPLUGIN(114)
+#endif
+
+#ifdef PLUGIN_115
+  ADDPLUGIN(115)
+#endif
+
+#ifdef PLUGIN_116
+  ADDPLUGIN(116)
+#endif
+
+#ifdef PLUGIN_117
+  ADDPLUGIN(117)
+#endif
+
+#ifdef PLUGIN_118
+  ADDPLUGIN(118)
+#endif
+
+#ifdef PLUGIN_119
+  ADDPLUGIN(119)
+#endif
+
+#ifdef PLUGIN_120
+  ADDPLUGIN(120)
+#endif
+
+#ifdef PLUGIN_121
+  ADDPLUGIN(121)
+#endif
+
+#ifdef PLUGIN_122
+  ADDPLUGIN(122)
+#endif
+
+#ifdef PLUGIN_123
+  ADDPLUGIN(123)
+#endif
+
+#ifdef PLUGIN_124
+  ADDPLUGIN(124)
+#endif
+
+#ifdef PLUGIN_125
+  ADDPLUGIN(125)
+#endif
+
+#ifdef PLUGIN_126
+  ADDPLUGIN(126)
+#endif
+
+#ifdef PLUGIN_127
+  ADDPLUGIN(127)
+#endif
+
+#ifdef PLUGIN_128
+  ADDPLUGIN(128)
+#endif
+
+#ifdef PLUGIN_129
+  ADDPLUGIN(129)
+#endif
+
+#ifdef PLUGIN_130
+  ADDPLUGIN(130)
+#endif
+
+#ifdef PLUGIN_131
+  ADDPLUGIN(131)
+#endif
+
+#ifdef PLUGIN_132
+  ADDPLUGIN(132)
+#endif
+
+#ifdef PLUGIN_133
+  ADDPLUGIN(133)
+#endif
+
+#ifdef PLUGIN_134
+  ADDPLUGIN(134)
+#endif
+
+#ifdef PLUGIN_135
+  ADDPLUGIN(135)
+#endif
+
+#ifdef PLUGIN_136
+  ADDPLUGIN(136)
+#endif
+
+#ifdef PLUGIN_137
+  ADDPLUGIN(137)
+#endif
+
+#ifdef PLUGIN_138
+  ADDPLUGIN(138)
+#endif
+
+#ifdef PLUGIN_139
+  ADDPLUGIN(139)
+#endif
+
+#ifdef PLUGIN_140
+  ADDPLUGIN(140)
+#endif
+
+#ifdef PLUGIN_141
+  ADDPLUGIN(141)
+#endif
+
+#ifdef PLUGIN_142
+  ADDPLUGIN(142)
+#endif
+
+#ifdef PLUGIN_143
+  ADDPLUGIN(143)
+#endif
+
+#ifdef PLUGIN_144
+  ADDPLUGIN(144)
+#endif
+
+#ifdef PLUGIN_145
+  ADDPLUGIN(145)
+#endif
+
+#ifdef PLUGIN_146
+  ADDPLUGIN(146)
+#endif
+
+#ifdef PLUGIN_147
+  ADDPLUGIN(147)
+#endif
+
+#ifdef PLUGIN_148
+  ADDPLUGIN(148)
+#endif
+
+#ifdef PLUGIN_149
+  ADDPLUGIN(149)
+#endif
+
+#ifdef PLUGIN_150
+  ADDPLUGIN(150)
+#endif
+
+#ifdef PLUGIN_151
+  ADDPLUGIN(151)
+#endif
+
+#ifdef PLUGIN_152
+  ADDPLUGIN(152)
+#endif
+
+#ifdef PLUGIN_153
+  ADDPLUGIN(153)
+#endif
+
+#ifdef PLUGIN_154
+  ADDPLUGIN(154)
+#endif
+
+#ifdef PLUGIN_155
+  ADDPLUGIN(155)
+#endif
+
+#ifdef PLUGIN_156
+  ADDPLUGIN(156)
+#endif
+
+#ifdef PLUGIN_157
+  ADDPLUGIN(157)
+#endif
+
+#ifdef PLUGIN_158
+  ADDPLUGIN(158)
+#endif
+
+#ifdef PLUGIN_159
+  ADDPLUGIN(159)
+#endif
+
+#ifdef PLUGIN_160
+  ADDPLUGIN(160)
+#endif
+
+#ifdef PLUGIN_161
+  ADDPLUGIN(161)
+#endif
+
+#ifdef PLUGIN_162
+  ADDPLUGIN(162)
+#endif
+
+#ifdef PLUGIN_163
+  ADDPLUGIN(163)
+#endif
+
+#ifdef PLUGIN_164
+  ADDPLUGIN(164)
+#endif
+
+#ifdef PLUGIN_165
+  ADDPLUGIN(165)
+#endif
+
+#ifdef PLUGIN_166
+  ADDPLUGIN(166)
+#endif
+
+#ifdef PLUGIN_167
+  ADDPLUGIN(167)
+#endif
+
+#ifdef PLUGIN_168
+  ADDPLUGIN(168)
+#endif
+
+#ifdef PLUGIN_169
+  ADDPLUGIN(169)
+#endif
+
+#ifdef PLUGIN_170
+  ADDPLUGIN(170)
+#endif
+
+#ifdef PLUGIN_171
+  ADDPLUGIN(171)
+#endif
+
+#ifdef PLUGIN_172
+  ADDPLUGIN(172)
+#endif
+
+#ifdef PLUGIN_173
+  ADDPLUGIN(173)
+#endif
+
+#ifdef PLUGIN_174
+  ADDPLUGIN(174)
+#endif
+
+#ifdef PLUGIN_175
+  ADDPLUGIN(175)
+#endif
+
+#ifdef PLUGIN_176
+  ADDPLUGIN(176)
+#endif
+
+#ifdef PLUGIN_177
+  ADDPLUGIN(177)
+#endif
+
+#ifdef PLUGIN_178
+  ADDPLUGIN(178)
+#endif
+
+#ifdef PLUGIN_179
+  ADDPLUGIN(179)
+#endif
+
+#ifdef PLUGIN_180
+  ADDPLUGIN(180)
+#endif
+
+#ifdef PLUGIN_181
+  ADDPLUGIN(181)
+#endif
+
+#ifdef PLUGIN_182
+  ADDPLUGIN(182)
+#endif
+
+#ifdef PLUGIN_183
+  ADDPLUGIN(183)
+#endif
+
+#ifdef PLUGIN_184
+  ADDPLUGIN(184)
+#endif
+
+#ifdef PLUGIN_185
+  ADDPLUGIN(185)
+#endif
+
+#ifdef PLUGIN_186
+  ADDPLUGIN(186)
+#endif
+
+#ifdef PLUGIN_187
+  ADDPLUGIN(187)
+#endif
+
+#ifdef PLUGIN_188
+  ADDPLUGIN(188)
+#endif
+
+#ifdef PLUGIN_189
+  ADDPLUGIN(189)
+#endif
+
+#ifdef PLUGIN_190
+  ADDPLUGIN(190)
+#endif
+
+#ifdef PLUGIN_191
+  ADDPLUGIN(191)
+#endif
+
+#ifdef PLUGIN_192
+  ADDPLUGIN(192)
+#endif
+
+#ifdef PLUGIN_193
+  ADDPLUGIN(193)
+#endif
+
+#ifdef PLUGIN_194
+  ADDPLUGIN(194)
+#endif
+
+#ifdef PLUGIN_195
+  ADDPLUGIN(195)
+#endif
+
+#ifdef PLUGIN_196
+  ADDPLUGIN(196)
+#endif
+
+#ifdef PLUGIN_197
+  ADDPLUGIN(197)
+#endif
+
+#ifdef PLUGIN_198
+  ADDPLUGIN(198)
+#endif
+
+#ifdef PLUGIN_199
+  ADDPLUGIN(199)
+#endif
+
+#ifdef PLUGIN_200
+  ADDPLUGIN(200)
+#endif
+
+#ifdef PLUGIN_201
+  ADDPLUGIN(201)
+#endif
+
+#ifdef PLUGIN_202
+  ADDPLUGIN(202)
+#endif
+
+#ifdef PLUGIN_203
+  ADDPLUGIN(203)
+#endif
+
+#ifdef PLUGIN_204
+  ADDPLUGIN(204)
+#endif
+
+#ifdef PLUGIN_205
+  ADDPLUGIN(205)
+#endif
+
+#ifdef PLUGIN_206
+  ADDPLUGIN(206)
+#endif
+
+#ifdef PLUGIN_207
+  ADDPLUGIN(207)
+#endif
+
+#ifdef PLUGIN_208
+  ADDPLUGIN(208)
+#endif
+
+#ifdef PLUGIN_209
+  ADDPLUGIN(209)
+#endif
+
+#ifdef PLUGIN_210
+  ADDPLUGIN(210)
+#endif
+
+#ifdef PLUGIN_211
+  ADDPLUGIN(211)
+#endif
+
+#ifdef PLUGIN_212
+  ADDPLUGIN(212)
+#endif
+
+#ifdef PLUGIN_213
+  ADDPLUGIN(213)
+#endif
+
+#ifdef PLUGIN_214
+  ADDPLUGIN(214)
+#endif
+
+#ifdef PLUGIN_215
+  ADDPLUGIN(215)
+#endif
+
+#ifdef PLUGIN_216
+  ADDPLUGIN(216)
+#endif
+
+#ifdef PLUGIN_217
+  ADDPLUGIN(217)
+#endif
+
+#ifdef PLUGIN_218
+  ADDPLUGIN(218)
+#endif
+
+#ifdef PLUGIN_219
+  ADDPLUGIN(219)
+#endif
+
+#ifdef PLUGIN_220
+  ADDPLUGIN(220)
+#endif
+
+#ifdef PLUGIN_221
+  ADDPLUGIN(221)
+#endif
+
+#ifdef PLUGIN_222
+  ADDPLUGIN(222)
+#endif
+
+#ifdef PLUGIN_223
+  ADDPLUGIN(223)
+#endif
+
+#ifdef PLUGIN_224
+  ADDPLUGIN(224)
+#endif
+
+#ifdef PLUGIN_225
+  ADDPLUGIN(225)
+#endif
+
+#ifdef PLUGIN_226
+  ADDPLUGIN(226)
+#endif
+
+#ifdef PLUGIN_227
+  ADDPLUGIN(227)
+#endif
+
+#ifdef PLUGIN_228
+  ADDPLUGIN(228)
+#endif
+
+#ifdef PLUGIN_229
+  ADDPLUGIN(229)
+#endif
+
+#ifdef PLUGIN_230
+  ADDPLUGIN(230)
+#endif
+
+#ifdef PLUGIN_231
+  ADDPLUGIN(231)
+#endif
+
+#ifdef PLUGIN_232
+  ADDPLUGIN(232)
+#endif
+
+#ifdef PLUGIN_233
+  ADDPLUGIN(233)
+#endif
+
+#ifdef PLUGIN_234
+  ADDPLUGIN(234)
+#endif
+
+#ifdef PLUGIN_235
+  ADDPLUGIN(235)
+#endif
+
+#ifdef PLUGIN_236
+  ADDPLUGIN(236)
+#endif
+
+#ifdef PLUGIN_237
+  ADDPLUGIN(237)
+#endif
+
+#ifdef PLUGIN_238
+  ADDPLUGIN(238)
+#endif
+
+#ifdef PLUGIN_239
+  ADDPLUGIN(239)
+#endif
+
+#ifdef PLUGIN_240
+  ADDPLUGIN(240)
+#endif
+
+#ifdef PLUGIN_241
+  ADDPLUGIN(241)
+#endif
+
+#ifdef PLUGIN_242
+  ADDPLUGIN(242)
+#endif
+
+#ifdef PLUGIN_243
+  ADDPLUGIN(243)
+#endif
+
+#ifdef PLUGIN_244
+  ADDPLUGIN(244)
+#endif
+
+#ifdef PLUGIN_245
+  ADDPLUGIN(245)
+#endif
+
+#ifdef PLUGIN_246
+  ADDPLUGIN(246)
+#endif
+
+#ifdef PLUGIN_247
+  ADDPLUGIN(247)
+#endif
+
+#ifdef PLUGIN_248
+  ADDPLUGIN(248)
+#endif
+
+#ifdef PLUGIN_249
+  ADDPLUGIN(249)
+#endif
+
+#ifdef PLUGIN_250
+  ADDPLUGIN(250)
+#endif
+
+#ifdef PLUGIN_251
+  ADDPLUGIN(251)
+#endif
+
+#ifdef PLUGIN_252
+  ADDPLUGIN(252)
+#endif
+
+#ifdef PLUGIN_253
+  ADDPLUGIN(253)
+#endif
+
+#ifdef PLUGIN_254
+  ADDPLUGIN(254)
+#endif
+
+#ifdef PLUGIN_255
+  ADDPLUGIN(255)
+#endif
+
+  PluginCall(PLUGIN_DEVICE_ADD, 0, dummyString);
+  PluginCall(PLUGIN_INIT_ALL, 0, dummyString);
+
+}
+
+int getPluginId(byte taskId) {
+  if (taskId < TASKS_MAX) {
+    int retry = 1;
+    while (retry >= 0) {
+      int plugin = Task_id_to_Plugin_id[taskId];
+      if (plugin >= 0 && plugin < PLUGIN_MAX) {
+        if (Plugin_id[plugin] == Settings.TaskDeviceNumber[taskId])
+          return plugin;
+      }
+      updateTaskPluginCache();
+      --retry;
+    }
+  }
+  return -1;
+}
+
+void updateTaskPluginCache() {
+  ++countFindPluginId;
+  Task_id_to_Plugin_id.resize(TASKS_MAX);
+  for (byte y = 0; y < TASKS_MAX; ++y) {
+    Task_id_to_Plugin_id[y] = -1;
+    bool foundPlugin = false;
+    for (byte x = 0; x < PLUGIN_MAX && !foundPlugin; ++x) {
+      if (Plugin_id[x] != 0 && Plugin_id[x] == Settings.TaskDeviceNumber[y]) {
+        foundPlugin = true;
+        Task_id_to_Plugin_id[y] = x;
+      }
+    }
+  }
+}
+
+int8_t getXFromPluginId(byte pluginID) {
+  std::vector<byte>::iterator it;
+  int8_t returnValue = -1;
+
+  it = find(Plugin_id.begin(), Plugin_id.end(), pluginID);
+  if (it != Plugin_id.end())
+    returnValue = std::distance(Plugin_id.begin(),it);
+
+  return returnValue;
+}
+
+
+
+
+
+byte PluginCall(byte Function, struct EventStruct *event, String& str)
+{
+  struct EventStruct TempEvent;
+
+  if (event == 0)
+    event = &TempEvent;
+  else
+    TempEvent = (*event);
+
+  switch (Function)
+  {
+
+    case PLUGIN_DEVICE_ADD:
+    case PLUGIN_UNCONDITIONAL_POLL:
+      for (byte x = 0; x < PLUGIN_MAX; x++) {
+        if (Plugin_id[x] != 0){
+          if (Function == PLUGIN_DEVICE_ADD) {
+            const unsigned int next_DeviceIndex = deviceCount + 2;
+            if (next_DeviceIndex > Device.size()) {
+
+              unsigned int newSize = Device.size();
+              newSize = newSize + 16 - (newSize % 16);
+              Device.resize(newSize);
+            }
+          }
+          START_TIMER;
+          Plugin_ptr[x](Function, event, str);
+          STOP_TIMER_TASK(x,Function);
+          delay(0);
+        }
+      }
+      return true;
+      break;
+
+      case PLUGIN_MONITOR:
+        for (auto it=globalMapPortStatus.begin(); it!=globalMapPortStatus.end(); ++it) {
+
+          if (it->second.monitor || it->second.command || it->second.init) {
+            TempEvent.Par1 = getPortFromKey(it->first);;
+
+            if (it->second.x == -1) it->second.x = getXFromPluginId((byte) getPluginFromKey(it->first));
+
+            if (it->second.x != -1) {
+              const byte x = (byte) it->second.x;
+              if (Plugin_id[x] != 0){
+                START_TIMER;
+                Plugin_ptr[x](Function, &TempEvent, str);
+                STOP_TIMER_TASK(x,Function);
+              }
+            }
+          }
+        }
+        return true;
+        break;
+
+
+    case PLUGIN_WRITE:
+    case PLUGIN_REQUEST:
+      {
+        for (byte y = 0; y < TASKS_MAX; y++)
+        {
+          if (Settings.TaskDeviceEnabled[y] && Settings.TaskDeviceNumber[y] != 0)
+          {
+            if (Settings.TaskDeviceDataFeed[y] == 0)
+            {
+              const int x = getPluginId(y);
+              if (x >= 0) {
+                byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[y]);
+                TempEvent.TaskIndex = y;
+                TempEvent.BaseVarIndex = y * VARS_PER_TASK;
+                TempEvent.sensorType = Device[DeviceIndex].VType;
+                checkRAM(F("PluginCall_s"),x);
+                START_TIMER;
+                bool retval = (Plugin_ptr[x](Function, &TempEvent, str));
+                STOP_TIMER_TASK(x,Function);
+                delay(0);
+                if (retval) {
+                  CPluginCall(CPLUGIN_ACKNOWLEDGE, &TempEvent, str);
+                  return true;
+                }
+              }
+            }
+          }
+        }
+
+        for (byte x = 0; x < PLUGIN_MAX; x++) {
+          if (Plugin_id[x] != 0) {
+            if (Plugin_ptr[x](Function, event, str)) {
+              delay(0);
+              CPluginCall(CPLUGIN_ACKNOWLEDGE, event, str);
+              return true;
+            }
+          }
+        }
+      }
+      break;
+
+
+    case PLUGIN_SERIAL_IN:
+    case PLUGIN_UDP_IN:
+      {
+        for (byte y = 0; y < TASKS_MAX; y++)
+        {
+          if (Settings.TaskDeviceEnabled[y] && Settings.TaskDeviceNumber[y] != 0)
+          {
+            const int x = getPluginId(y);
+            if (x >= 0) {
+              byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[y]);
+              TempEvent.TaskIndex = y;
+              TempEvent.BaseVarIndex = y * VARS_PER_TASK;
+
+              TempEvent.sensorType = Device[DeviceIndex].VType;
+              START_TIMER;
+              bool retval = (Plugin_ptr[x](Function, &TempEvent, str));
+              STOP_TIMER_TASK(x,Function);
+              delay(0);
+              if (retval){
+                checkRAM(F("PluginCallUDP"),x);
+                return true;
+              }
+            }
+          }
+        }
+        return false;
+        break;
+      }
+
+
+    case PLUGIN_ONCE_A_SECOND:
+    case PLUGIN_TEN_PER_SECOND:
+    case PLUGIN_FIFTY_PER_SECOND:
+    case PLUGIN_INIT_ALL:
+    case PLUGIN_CLOCK_IN:
+    case PLUGIN_EVENT_OUT:
+    case PLUGIN_TIME_CHANGE:
+      {
+        if (Function == PLUGIN_INIT_ALL)
+          Function = PLUGIN_INIT;
+        for (byte y = 0; y < TASKS_MAX; y++)
+        {
+          if (Settings.TaskDeviceEnabled[y] && Settings.TaskDeviceNumber[y] != 0)
+          {
+            if (Settings.TaskDeviceDataFeed[y] == 0)
+            {
+              const int x = getPluginId(y);
+              if (x >= 0) {
+                byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[y]);
+                TempEvent.TaskIndex = y;
+                TempEvent.BaseVarIndex = y * VARS_PER_TASK;
+
+                TempEvent.sensorType = Device[DeviceIndex].VType;
+                TempEvent.OriginTaskIndex = event->TaskIndex;
+                checkRAM(F("PluginCall_s"),x);
+                if (Function == PLUGIN_INIT) {
+
+                  schedule_task_device_timer_at_init(TempEvent.TaskIndex);
+                }
+                START_TIMER;
+                Plugin_ptr[x](Function, &TempEvent, str);
+                STOP_TIMER_TASK(x,Function);
+                delay(0);
+              }
+            }
+          }
+        }
+        return true;
+        break;
+      }
+
+
+    case PLUGIN_INIT:
+    case PLUGIN_EXIT:
+    case PLUGIN_WEBFORM_LOAD:
+    case PLUGIN_WEBFORM_SAVE:
+    case PLUGIN_WEBFORM_SHOW_VALUES:
+    case PLUGIN_WEBFORM_SHOW_CONFIG:
+    case PLUGIN_GET_DEVICEVALUENAMES:
+    case PLUGIN_GET_DEVICEGPIONAMES:
+    case PLUGIN_READ:
+    case PLUGIN_SET_CONFIG:
+    case PLUGIN_GET_CONFIG:
+    case PLUGIN_SET_DEFAULTS:
+    {
+      const int x = getPluginId(event->TaskIndex);
+      if (x >= 0) {
+        if (Plugin_id[x] != 0 ) {
+          if (Function == PLUGIN_INIT) {
+
+            schedule_task_device_timer_at_init(event->TaskIndex);
+          }
+          if (ExtraTaskSettings.TaskIndex != event->TaskIndex) {
+
+            LoadTaskSettings(event->TaskIndex);
+          }
+          event->BaseVarIndex = event->TaskIndex * VARS_PER_TASK;
+          checkRAM(F("PluginCall_init"),x);
+          START_TIMER;
+          bool retval = Plugin_ptr[x](Function, event, str);
+          if (retval && Function == PLUGIN_READ) {
+            saveUserVarToRTC();
+          }
+          if (Function == PLUGIN_GET_DEVICEVALUENAMES) {
+            ExtraTaskSettings.TaskIndex = event->TaskIndex;
+          }
+          if (Function == PLUGIN_EXIT) {
+            clearPluginTaskData(event->TaskIndex);
+          }
+          STOP_TIMER_TASK(x,Function);
+          delay(0);
+          return retval;
+        }
+      }
+      return false;
+    }
+
+  }
+  return false;
+}
+# 1 "C:/Users/Albert/Documents/GitHub/ESPEasy/src/__ReleaseNotes.ino"
