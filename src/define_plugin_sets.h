@@ -561,6 +561,7 @@ To create/register a plugin, you have to :
     #define USES_P059   // Encoder
 
     #define USES_P063   // TTP229_KeyPad
+    #define USES_P073   // 7DG
     #define USES_P079   // Wemos Motoshield
 #endif
 
@@ -619,8 +620,12 @@ To create/register a plugin, you have to :
     #define USES_P070   // NeoPixel_Clock
     #define USES_P071   // Kamstrup401
     #define USES_P072   // HDC1080
+<<<<<<< HEAD
     #define USES_P073   // 7DG
 //    #define USES_P074   // TSL2561
+=======
+    #define USES_P074   // TSL2561
+>>>>>>> upstream/mega
     #define USES_P075   // Nextion
     #define USES_P076   // HWL8012   in POW r1
     // Needs CSE7766 Energy sensor, via Serial RXD 4800 baud 8E1 (GPIO1), TXD (GPIO3)
