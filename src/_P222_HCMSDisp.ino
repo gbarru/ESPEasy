@@ -321,6 +321,6 @@ void p222_FillBufferWithDate(void)
   p222_showbuffer[4] = p222_digit1; p222_showbuffer[5] = p222_digit2;
 }
 
-#endif PLUGIN_BUILD_DEVELOPMENT
+#endif //PLUGIN_BUILD_DEV
 //#endif PLUGIN_BUILD_TESTING
 #endif // USES_P222
