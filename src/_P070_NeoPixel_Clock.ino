@@ -5,7 +5,7 @@
 
 //This plugin is disabled, change it to PLUGIN_BUILD_NORMAL to re-enable it.
 //#ifdef PLUGIN_BUILD_DISABLED
-
+#ifdef PLUGIN_BUILD_NORMAL
 //A clock that uses a strip/ring of 60 WS2812 NeoPixel LEDs as display for a classic clock.
 //The hours are RED, the minutes are GREEN, the seconds are BLUE and the hour marks are WHITE.
 //The brightness of the clock hands and the hour marks can be set in the device page,
@@ -16,6 +16,15 @@
 #include <Adafruit_NeoPixel.h>
 
 #define NUMBER_LEDS      60			//number of LED in the strip
+
+
+
+#define PLUGIN_070
+#define PLUGIN_ID_070         70
+#define PLUGIN_NAME_070       "Output - NeoPixel Ring Clock [TESTING]"
+#define PLUGIN_VALUENAME1_070 "Enabled"
+#define PLUGIN_VALUENAME2_070 "Brightness"
+#define PLUGIN_VALUENAME3_070 "Marks"
 
 struct P070_data_struct : public PluginTaskData_base {
 
@@ -49,8 +58,7 @@ struct P070_data_struct : public PluginTaskData_base {
 
 
 
-  void Clock_update()
-  {
+  void Clock_update(){
     clearClock();			//turn off the LEDs
     if (display_enabled > 0) {		//if the display is enabled, calculate the LEDs to turn on
       int Hours = hour();
@@ -61,8 +69,7 @@ struct P070_data_struct : public PluginTaskData_base {
     Plugin_070_pixels->show(); // This sends the updated pixel color to the hardware.
   }
 
-  void calculateMarks()
-  { //generate a list of the LEDs that have hour marks
+  void calculateMarks() { //generate a list of the LEDs that have hour marks
     for (int i = 0; i < 12; i++) {
       marks[i] = 5 * i + (offset_12h_mark % 5);
     }
@@ -137,12 +144,6 @@ struct P070_data_struct : public PluginTaskData_base {
 };
 
 
-#define PLUGIN_070
-#define PLUGIN_ID_070         70
-#define PLUGIN_NAME_070       "Output - NeoPixel Ring Clock [TESTING]"
-#define PLUGIN_VALUENAME1_070 "Enabled"
-#define PLUGIN_VALUENAME2_070 "Brightness"
-#define PLUGIN_VALUENAME3_070 "Marks"
 boolean Plugin_070(byte function, struct EventStruct *event, String& string)
 {
   boolean success = false;
@@ -249,7 +250,8 @@ boolean Plugin_070(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_ONCE_A_SECOND:
       {
-        Clock_update();
+        P070_data_struct* P070_data = static_cast<P070_data_struct*>(getPluginTaskData(event->TaskIndex));
+        P070_data->Clock_update();
         success = true;
         break;
       }
@@ -304,6 +306,7 @@ boolean Plugin_070(byte function, struct EventStruct *event, String& string)
         break;
       }
 
+    /*
     case PLUGIN_READ:
       {
         P070_data_struct* P070_data = static_cast<P070_data_struct*>(getPluginTaskData(event->TaskIndex));
@@ -315,11 +318,10 @@ boolean Plugin_070(byte function, struct EventStruct *event, String& string)
           success = true;
         }
       }
-
+*/
   }
   return success;
 }
-
-
+#endif
 //#endif // PLUGIN_BUILD_DISABLED
 #endif //USES_P070
