@@ -209,15 +209,14 @@ boolean Plugin_222(byte function, struct EventStruct *event, String& string)
     break;
     }
 
-	  case PLUGIN_EXIT:
-    {
-	  //perform cleanup tasks here. For example, free memory
-	  break;
+	  case PLUGIN_EXIT:{
+      clearPluginTaskData(event->TaskIndex);
+      success = true;
+      break;
 	  }
 
-    case PLUGIN_ONCE_A_SECOND:
-    {
-byte p222_output=Settings.TaskDevicePluginConfig[event->TaskIndex][7];
+    case PLUGIN_ONCE_A_SECOND:{
+      byte p222_output=Settings.TaskDevicePluginConfig[event->TaskIndex][7];
       switch (p222_output){
         case 1:
         {
