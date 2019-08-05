@@ -442,6 +442,7 @@ void check_size() {
 #define SENSOR_TYPE_DIMMER                 11
 #define SENSOR_TYPE_LONG                   20
 #define SENSOR_TYPE_WIND                   21
+#define SENSOR_TYPE_STRING                 22
 
 #define UNIT_NUMBER_MAX                  9999  // Stored in Settings.Unit
 #define DOMOTICZ_MAX_IDX            999999999  // Looks like it is an unsigned int, so could be up to 4 bln.
@@ -988,7 +989,7 @@ struct SettingsStruct
   byte          Unit;
   char          Name[26];
   char          NTPHost[64];
-  unsigned long Delay;
+  unsigned long Delay;              // Sleep time in seconds
   int8_t        Pin_i2c_sda;
   int8_t        Pin_i2c_scl;
   int8_t        Pin_status_led;
@@ -1002,7 +1003,7 @@ struct SettingsStruct
   byte          SDLogLevel;
   unsigned long BaudRate;
   unsigned long MessageDelay;
-  byte          deepSleep;
+  byte          deepSleep;   // 0 = Sleep Disabled, else time awake from sleep in seconds
   boolean       CustomCSS;
   boolean       DST;
   byte          WDI2CAddress;
