@@ -399,7 +399,8 @@ bool CPlugin_014(byte function, struct EventStruct *event, String& string)
                   }
                 } else {
                   // ignore cutom values for now! Assume all Values are standard float.
-                  // customValues = PluginCall(PLUGIN_WEBFORM_SHOW_VALUES, &TempEvent,TXBuffer.buf);
+                  // String customValuesStr;
+                  // customValues = PluginCall(PLUGIN_WEBFORM_SHOW_VALUES, &TempEvent, customValuesStr);
                   byte customValues = false;
                   if (!customValues)
                   { // standard Values
@@ -700,8 +701,10 @@ bool CPlugin_014(byte function, struct EventStruct *event, String& string)
         }
         statusLED(true);
 
-        if (ExtraTaskSettings.TaskIndex != event->TaskIndex)
-          PluginCall(PLUGIN_GET_DEVICEVALUENAMES, event, dummyString);
+        if (ExtraTaskSettings.TaskIndex != event->TaskIndex) {
+          String dummy;
+          PluginCall(PLUGIN_GET_DEVICEVALUENAMES, event, dummy);
+        }
 
         String pubname = ControllerSettings.Publish;
         parseControllerVariables(pubname, event, false);
@@ -917,6 +920,7 @@ bool CPlugin_014(byte function, struct EventStruct *event, String& string)
             }
           }
         }
+        break;
       }
   }
 

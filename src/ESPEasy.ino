@@ -338,8 +338,6 @@ void setup()
   if (Settings.UDPPort != 0)
     portUDP.begin(Settings.UDPPort);
 
-  sendSysInfoUDP(3);
-
   if (systemTimePresent())
     initTime();
 
@@ -437,11 +435,6 @@ int firstEnabledMQTTController() {
   return -1;
 }
 
-bool getControllerProtocolDisplayName(byte ProtocolIndex, byte parameterIdx, String& protoDisplayName) {
-  EventStruct tmpEvent;
-  tmpEvent.idx=parameterIdx;
-  return CPluginCall(ProtocolIndex, CPLUGIN_GET_PROTOCOL_DISPLAY_NAME, &tmpEvent, protoDisplayName);
-}
 
 void updateLoopStats() {
   ++loopCounter;
@@ -534,19 +527,27 @@ void loop()
     // help the background tasks managing wifi connections
     delay(1);
     if (!processedConnect) {
-      addLog(LOG_LEVEL_INFO, F("WIFI : Entering processConnect()"));
+      #ifndef BUILD_NO_DEBUG
+      addLog(LOG_LEVEL_DEBUG, F("WIFI : Entering processConnect()"));
+      #endif
       processConnect();
     }
     if (!processedGotIP) {
-      addLog(LOG_LEVEL_INFO, F("WIFI : Entering processGotIP()"));
+      #ifndef BUILD_NO_DEBUG
+      addLog(LOG_LEVEL_DEBUG, F("WIFI : Entering processGotIP()"));
+      #endif
       processGotIP();
     }
     if (!processedDisconnect) {
-      addLog(LOG_LEVEL_INFO, F("WIFI : Entering processDisconnect()"));
+      #ifndef BUILD_NO_DEBUG
+      addLog(LOG_LEVEL_DEBUG, F("WIFI : Entering processDisconnect()"));
+      #endif
       processDisconnect();
     }
     if (!processedDHCPTimeout) {
-      addLog(LOG_LEVEL_INFO, F("WIFI : DHCP timeout, Calling disconnect()"));
+      #ifndef BUILD_NO_DEBUG
+      addLog(LOG_LEVEL_DEBUG, F("WIFI : DHCP timeout, Calling disconnect()"));
+      #endif
       processedDHCPTimeout = true;
       processDisconnect();
     }
@@ -558,17 +559,24 @@ void loop()
     // FIXME TD-er: This may happen on WiFi config with AP_STA mode active.
 //    addLog(LOG_LEVEL_ERROR, F("Wifi status out sync"));
 //    resetWiFi();
-    String wifilog  = F("WIFI : Wifi status out sync WiFi.status() = ");
-    wifilog += String(WiFi.status());
+    if (loglevelActiveFor(LOG_LEVEL_ERROR)) {
+        String wifilog  = F("WIFI : Wifi status out sync WiFi.status() = ");
+        wifilog += String(WiFi.status());
 
-    addLog(LOG_LEVEL_INFO, wifilog);
+        addLog(LOG_LEVEL_ERROR, wifilog);
+    }
   }
   if (wifiStatus == ESPEASY_WIFI_DISCONNECTED) {
-    String wifilog  = F("WIFI : Disconnected: WiFi.status() = ");
-    wifilog += String(WiFi.status());
+    #ifndef BUILD_NO_DEBUG
+    if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
+      String wifilog  = F("WIFI : Disconnected: WiFi.status() = ");
+      wifilog += String(WiFi.status());
 
-    addLog(LOG_LEVEL_INFO, wifilog);
-    delay(100);
+      addLog(LOG_LEVEL_DEBUG, wifilog);
+    }
+    #endif
+    // While connecting to WiFi make sure the device has ample time to do so
+    delay(10);
   }
   if (!processedConnectAPmode) processConnectAPmode();
   if (!processedDisconnectAPmode) processDisconnectAPmode();
@@ -588,6 +596,13 @@ void loop()
      }
 
 
+     RTC.bootFailedCount = 0;
+     saveToRTC();
+     sendSysInfoUDP(1);
+  }
+  // Work around for nodes that do not have WiFi connection for a long time and may reboot after N unsuccessful connect attempts
+  if ((wdcounter / 2) > 2) {
+    // Apparently the uptime is already a few minutes. Let's consider it a successful boot.
      RTC.bootFailedCount = 0;
      saveToRTC();
   }
@@ -709,7 +724,8 @@ void updateMQTTclient_connected() {
 
 void run50TimesPerSecond() {
   START_TIMER;
-  PluginCall(PLUGIN_FIFTY_PER_SECOND, 0, dummyString);
+  String dummy;
+  PluginCall(PLUGIN_FIFTY_PER_SECOND, 0, dummy);
   STOP_TIMER(PLUGIN_CALL_50PS);
 }
 
@@ -717,15 +733,16 @@ void run50TimesPerSecond() {
  * Tasks that run 10 times per second
 \*********************************************************************************************/
 void run10TimesPerSecond() {
+  String dummy;
   {
     START_TIMER;
-    PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummyString);
+    PluginCall(PLUGIN_TEN_PER_SECOND, 0, dummy);
     STOP_TIMER(PLUGIN_CALL_10PS);
   }
   {
     START_TIMER;
 //    PluginCall(PLUGIN_UNCONDITIONAL_POLL, 0, dummyString);
-    PluginCall(PLUGIN_MONITOR, 0, dummyString);
+    PluginCall(PLUGIN_MONITOR, 0, dummy);
     STOP_TIMER(PLUGIN_CALL_10PSU);
   }
   if (Settings.UseRules && eventBuffer.length() > 0)
@@ -787,7 +804,8 @@ void runOncePerSecond()
     checkTime();
 
 //  unsigned long start = micros();
-  PluginCall(PLUGIN_ONCE_A_SECOND, 0, dummyString);
+  String dummy;
+  PluginCall(PLUGIN_ONCE_A_SECOND, 0, dummy);
 //  unsigned long elapsed = micros() - start;
 
   if (Settings.UseRules)
@@ -925,7 +943,10 @@ void SensorSendTask(byte TaskIndex)
       preValue[varNr] = UserVar[varIndex + varNr];
 
     if(Settings.TaskDeviceDataFeed[TaskIndex] == 0)  // only read local connected sensorsfeeds
-      success = PluginCall(PLUGIN_READ, &TempEvent, dummyString);
+    {
+      String dummy;
+      success = PluginCall(PLUGIN_READ, &TempEvent, dummy);
+    }
     else
       success = true;
 
@@ -989,7 +1010,8 @@ void backgroundtasks()
   process_serialWriteBuffer();
   if(!UseRTOSMultitasking){
     if (Settings.UseSerial && Serial.available()) {
-      if (!PluginCall(PLUGIN_SERIAL_IN, 0, dummyString)) {
+      String dummy;
+      if (!PluginCall(PLUGIN_SERIAL_IN, 0, dummy)) {
         serial();
       }
     }

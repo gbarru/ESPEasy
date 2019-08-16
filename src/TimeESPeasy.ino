@@ -319,10 +319,13 @@ int weekday()
 
 String weekday_str()
 {
-  const int wday(weekday() - 1); // here: Count from Sunday = 0
-  const String weekDays = F("SunMonTueWedThuFriSat");
+	return weekday_str(weekday()-1);
+}
 
-  return weekDays.substring(wday * 3, wday * 3 + 3);
+String weekday_str(int wday)
+{
+	const String weekDays = F("SunMonTueWedThuFriSat");
+	return weekDays.substring(wday * 3, wday * 3 + 3);
 }
 
 void initTime()
@@ -341,7 +344,8 @@ void checkTime()
 
   if (tm.tm_min != PrevMinutes)
   {
-    PluginCall(PLUGIN_CLOCK_IN, 0, dummyString);
+    String dummy;
+    PluginCall(PLUGIN_CLOCK_IN, 0, dummy);
     PrevMinutes = tm.tm_min;
 
     if (Settings.UseRules)

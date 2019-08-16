@@ -3,15 +3,16 @@
 struct ESPeasySerialType;
 
 static String serialHelper_getSerialTypeLabel(ESPeasySerialType::serialtype serType) {
-  if (serType == ESPeasySerialType::serialtype::software) { return F("SoftwareSerial"); }
-
-  if (serType == ESPeasySerialType::serialtype::serial0_swap) { return F("HW Serial0 swap"); }
   int portnr = 0;
-
-  if (serType == ESPeasySerialType::serialtype::serial1) { portnr = 1; }
-
-  if (serType == ESPeasySerialType::serialtype::serial2) { portnr = 2; }
-
+  switch (serType) {
+    case ESPeasySerialType::serialtype::software:        return F("SoftwareSerial"); 
+    case ESPeasySerialType::serialtype::serial0_swap:    return F("HW Serial0 swap");
+    case ESPeasySerialType::serialtype::serial0:         portnr = 0; break;
+    case ESPeasySerialType::serialtype::serial1:         portnr = 1; break;
+    case ESPeasySerialType::serialtype::serial2:         portnr = 2; break;
+    default:
+      return "";
+  }
   String label = F("HW Serial");
   label += portnr;
   return label;
@@ -36,6 +37,10 @@ ESPeasySerialType::serialtype serialHelper_getSerialType(struct EventStruct *eve
     serialHelper_getTxPin(event));
 }
 
+String serialHelper_getSerialTypeLabel(struct EventStruct *event) {
+  return serialHelper_getSerialTypeLabel(serialHelper_getSerialType(event));
+}
+
 void serialHelper_webformLoad(struct EventStruct *event) {
   serialHelper_webformLoad(event, true);
 }
@@ -44,6 +49,10 @@ void serialHelper_webformLoad(struct EventStruct *event) {
 // See issue #2343 and Pull request https://github.com/letscontrolit/ESPEasy/pull/2352
 // For now P020 and P044 have been reverted to make them work again.
 void serialHelper_webformLoad(struct EventStruct *event, bool allowSoftwareSerial) {
+  serialHelper_webformLoad(serialHelper_getRxPin(event), serialHelper_getTxPin(event), allowSoftwareSerial);
+}
+
+void serialHelper_webformLoad(int rxPinDef, int txPinDef, bool allowSoftwareSerial) {
   html_add_script(F(
                     "function serialPortChanged(elem){ var style = elem.value == 0 ? '' : 'none'; document.getElementById('tr_taskdevicepin1').style.display = style; document.getElementById('tr_taskdevicepin2').style.display = style; }"),
                   false);
@@ -85,7 +94,7 @@ void serialHelper_webformLoad(struct EventStruct *event, bool allowSoftwareSeria
   }
   addFormSelector_script(F("Serial Port"), F("serPort"), NR_ESPEASY_SERIAL_TYPES,
                          options, ids, NULL,
-                         static_cast<int>(serialHelper_getSerialType(event)),
+                         static_cast<int>(ESPeasySerialType::getSerialType(rxPinDef, txPinDef)),
                          F("serialPortChanged(this)")); // Script to toggle GPIO visibility when changing selection.
   html_add_script(F("document.getElementById('serPort').onchange();"), false);
 
@@ -93,23 +102,27 @@ void serialHelper_webformLoad(struct EventStruct *event, bool allowSoftwareSeria
     addFormNote(F("Do <b>NOT</b> combine HW Serial0 and log to serial on Tools->Advanced->Serial Port."));
   }
 
-  if ((serialHelper_getRxPin(event) == 15) || (serialHelper_getTxPin(event) == 15)) {
+  if ((rxPinDef == 15) || (txPinDef == 15)) {
     addFormNote(F("GPIO-15 (D8) requires a Buffer Circuit (PNP transistor) or ESP boot may fail."));
   }
 }
 
-void serialHelper_webformSave(struct EventStruct *event) {
+void serialHelper_webformSave(int8_t &rxPin, int8_t &txPin) {
   int serialPortSelected = getFormItemInt(F("serPort"), 0);
 
   if (serialPortSelected > 0) {
-    int rxPin, txPin;
+    int tmprxPin, tmptxPin;
     ESPeasySerialType::serialtype serType = static_cast<ESPeasySerialType::serialtype>(serialPortSelected);
 
-    if (ESPeasySerialType::getSerialTypePins(serType, rxPin, txPin)) {
-      CONFIG_PIN1 = rxPin;
-      CONFIG_PIN2 = txPin;
+    if (ESPeasySerialType::getSerialTypePins(serType, tmprxPin, tmptxPin)) {
+      rxPin = tmprxPin;
+      txPin = tmptxPin;
     }
   }
+}
+
+void serialHelper_webformSave(struct EventStruct *event) {
+  serialHelper_webformSave(CONFIG_PIN1, CONFIG_PIN2);
 }
 
 void serialHelper_plugin_init(struct EventStruct *event) {

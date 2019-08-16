@@ -314,6 +314,57 @@ public:
 };
 
 /*********************************************************************************************\
+* C018_queue_element for queueing requests for C018: TTN/RN2483
+\*********************************************************************************************/
+
+
+
+class C018_queue_element {
+public:
+
+  C018_queue_element() {}
+
+  C018_queue_element(const struct EventStruct *event, byte value_count, uint8_t sampleSetCount, const String& raw_packed) :
+    controller_idx(event->ControllerIndex)
+  {
+    packed.reserve(32);
+    packed += LoRa_addInt(Settings.TaskDeviceNumber[event->TaskIndex], PackedData_uint8);
+    packed += LoRa_addInt(event->idx, PackedData_uint16);
+    packed += LoRa_addInt(sampleSetCount, PackedData_uint8);
+    packed += LoRa_addInt(value_count, PackedData_uint8);
+
+    if (raw_packed.length() > 0) {
+      packed += raw_packed;
+    } else {
+      const byte BaseVarIndex = event->TaskIndex * VARS_PER_TASK;
+      switch (event->sensorType)
+      {
+      case SENSOR_TYPE_LONG:
+      {
+        unsigned long longval = (unsigned long)UserVar[BaseVarIndex] + ((unsigned long)UserVar[BaseVarIndex + 1] << 16);
+        packed += LoRa_addInt(longval, PackedData_uint32);
+        break;
+      }
+      
+      default:
+        for (byte i = 0; i < value_count && i < VARS_PER_TASK; ++i) {
+          // For now, just store the floats as an int32 by multiplying the value with 10000.
+          packed += LoRa_addFloat(value_count, PackedData_int32_1e4);
+        }
+        break;
+      }      
+    }
+  }
+
+  size_t getSize() const {
+    return sizeof(this);
+  }
+
+  int controller_idx = 0;
+  String packed;
+};
+
+/*********************************************************************************************\
 * ControllerDelayHandlerStruct
 \*********************************************************************************************/
 template<class T>
@@ -552,11 +603,10 @@ DEFINE_Cxxx_DELAY_QUEUE_MACRO(016, 16)
 DEFINE_Cxxx_DELAY_QUEUE_MACRO(017, 17)
 #endif // ifdef USES_C017
 
-/*
- #ifdef USES_C018
-   DEFINE_Cxxx_DELAY_QUEUE_MACRO(018, 18)
- #endif
- */
+#ifdef USES_C018
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(018, 18)
+#endif
+
 
 /*
  #ifdef USES_C019
@@ -824,6 +874,7 @@ bool count_connection_results(bool success, const String& prefix, int controller
 
 bool try_connect_host(int controller_number, WiFiUDP& client, ControllerSettingsStruct& ControllerSettings) {
   START_TIMER;
+  if (!WiFiConnected()) return false;
   client.setTimeout(ControllerSettings.ClientTimeout);
 #ifndef BUILD_NO_DEBUG
   log_connecting_to(F("UDP  : "), controller_number, ControllerSettings);
@@ -838,6 +889,7 @@ bool try_connect_host(int controller_number, WiFiUDP& client, ControllerSettings
 
 bool try_connect_host(int controller_number, WiFiClient& client, ControllerSettingsStruct& ControllerSettings) {
   START_TIMER;
+  if (!WiFiConnected()) return false;
 
   // Use WiFiClient class to create TCP connections
   client.setTimeout(ControllerSettings.ClientTimeout);
