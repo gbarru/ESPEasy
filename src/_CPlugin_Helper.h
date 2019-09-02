@@ -46,16 +46,21 @@ public:
 };
 
 
+//#ifdef USES_C001
 /*********************************************************************************************\
 * C001_queue_element for queueing requests for C001.
 \*********************************************************************************************/
 #define C001_queue_element simple_queue_element_string_only
+//#endif //USES_C001
 
+//#ifdef USES_C003
 /*********************************************************************************************\
 * C003_queue_element for queueing requests for C003 Nodo Telnet.
 \*********************************************************************************************/
 #define C003_queue_element simple_queue_element_string_only
+//#endif //USES_C003
 
+//#ifdef USES_C004
 /*********************************************************************************************\
 * C004_queue_element for queueing requests for C004 ThingSpeak.
 *   Typical use case for Thingspeak is to only send values every N seconds/minutes.
@@ -86,7 +91,9 @@ public:
   byte sensorType;
   String txt;
 };
+//#endif //USES_C004
 
+//#ifdef USES_C007
 /*********************************************************************************************\
 * C007_queue_element for queueing requests for C007 Emoncms
 \*********************************************************************************************/
@@ -110,6 +117,7 @@ public:
   int idx;
   byte sensorType;
 };
+//#endif //USES_C007
 
 /*********************************************************************************************\
 * Base class for controllers that only send a single value per request and thus needs to
@@ -150,12 +158,15 @@ public:
 };
 
 
+//#ifdef USES_C008
 /*********************************************************************************************\
 * C008_queue_element for queueing requests for 008: Generic HTTP
 * Using queue_element_single_value_base
 \*********************************************************************************************/
 #define C008_queue_element queue_element_single_value_base
+//#endif //USES_C008
 
+//#ifdef USES_C009
 /*********************************************************************************************\
 * C009_queue_element for queueing requests for C009: FHEM HTTP.
 \*********************************************************************************************/
@@ -185,25 +196,33 @@ public:
   int idx;
   byte sensorType;
 };
+//#endif //USES_C009
 
 
+//#ifdef USES_C010
 /*********************************************************************************************\
 * C010_queue_element for queueing requests for 010: Generic UDP
 * Using queue_element_single_value_base
 \*********************************************************************************************/
 #define C010_queue_element queue_element_single_value_base
+//#endif //USES_C010
 
+//#ifdef USES_C011
 /*********************************************************************************************\
 * C011_queue_element for queueing requests for 011: Generic HTTP Advanced
 \*********************************************************************************************/
 #define C011_queue_element simple_queue_element_string_only
+//#endif //USES_C011
 
+//#ifdef USES_C012
 /*********************************************************************************************\
 * C012_queue_element for queueing requests for 012: Blynk
 * Using queue_element_single_value_base
 \*********************************************************************************************/
 #define C012_queue_element queue_element_single_value_base
+//#endif //USES_C012
 
+//#ifdef USES_C015
 /*********************************************************************************************\
 * C015_queue_element for queueing requests for 015: Blynk
 * Using queue_element_single_value_base
@@ -244,7 +263,9 @@ public:
   mutable byte valuesSent; // Value must be set by const function checkDone()
   byte valueCount;
 };
+//#endif //USES_C015
 
+//#ifdef USES_C016
 /*********************************************************************************************\
 * C016_queue_element for queueing requests for C016: Cached HTTP.
 \*********************************************************************************************/
@@ -283,6 +304,9 @@ public:
   byte valueCount;
 };
 
+//#endif //USES_C016
+
+//#ifdef USES_C017
 /*********************************************************************************************\
 * C017_queue_element for queueing requests for C017: Zabbix Trapper Protocol.
 \*********************************************************************************************/
@@ -312,7 +336,9 @@ public:
   int idx;
   byte sensorType;
 };
+//#endif //USES_C017
 
+//#ifdef USES_C018
 /*********************************************************************************************\
 * C018_queue_element for queueing requests for C018: TTN/RN2483
 \*********************************************************************************************/
@@ -324,45 +350,23 @@ public:
 
   C018_queue_element() {}
 
-  C018_queue_element(const struct EventStruct *event, byte value_count, uint8_t sampleSetCount, const String& raw_packed) :
+  C018_queue_element(struct EventStruct *event, uint8_t sampleSetCount) :
     controller_idx(event->ControllerIndex)
   {
-    packed.reserve(32);
-    packed += LoRa_addInt(Settings.TaskDeviceNumber[event->TaskIndex], PackedData_uint8);
-    packed += LoRa_addInt(event->idx, PackedData_uint16);
-    packed += LoRa_addInt(sampleSetCount, PackedData_uint8);
-    packed += LoRa_addInt(value_count, PackedData_uint8);
-
-    if (raw_packed.length() > 0) {
-      packed += raw_packed;
-    } else {
-      const byte BaseVarIndex = event->TaskIndex * VARS_PER_TASK;
-      switch (event->sensorType)
-      {
-      case SENSOR_TYPE_LONG:
-      {
-        unsigned long longval = (unsigned long)UserVar[BaseVarIndex] + ((unsigned long)UserVar[BaseVarIndex + 1] << 16);
-        packed += LoRa_addInt(longval, PackedData_uint32);
-        break;
-      }
-      
-      default:
-        for (byte i = 0; i < value_count && i < VARS_PER_TASK; ++i) {
-          // For now, just store the floats as an int32 by multiplying the value with 10000.
-          packed += LoRa_addFloat(value_count, PackedData_int32_1e4);
-        }
-        break;
-      }      
-    }
+    #ifdef USES_PACKED_RAW_DATA
+    packed = getPackedFromPlugin(event, sampleSetCount);
+    #endif // USES_PACKED_RAW_DATA
   }
 
   size_t getSize() const {
-    return sizeof(this);
+    return sizeof(this) + packed.length();
   }
 
   int controller_idx = 0;
   String packed;
 };
+
+//#endif //USES_C018
 
 /*********************************************************************************************\
 * ControllerDelayHandlerStruct
@@ -518,7 +522,7 @@ ControllerDelayHandlerStruct<MQTT_queue_element> MQTTDelayHandler;
 // *INDENT-OFF*
 
 
-// This macro defines the code needed to create the 'process_c##NNN##_delay_queue()'
+// This macro defines the code needed to create the 'process_c##NNN####M##_delay_queue()'
 // function and all needed objects and forward declarations.
 // It is a macro to prevent common typo errors.
 // This function will perform the (re)scheduling and mark if it is processed (and can be removed)
@@ -528,95 +532,95 @@ ControllerDelayHandlerStruct<MQTT_queue_element> MQTTDelayHandler;
 // N.B. some controllers only can send one value per iteration, so a returned "false" can mean it
 //      was still successful. The controller should keep track of the last value sent
 //      in the element stored in the queue.
-#define DEFINE_Cxxx_DELAY_QUEUE_MACRO(NNN, M)                                                              \
-  ControllerDelayHandlerStruct<C##NNN##_queue_element>C##NNN##_DelayHandler;                               \
-  bool do_process_c##NNN##_delay_queue(int controller_number,                                              \
-                                           const C##NNN##_queue_element & element,                         \
-                                           ControllerSettingsStruct & ControllerSettings);                 \
-  void process_c##NNN##_delay_queue() {                                                                    \
-    C##NNN##_queue_element *element(C##NNN##_DelayHandler.getNext());                                      \
-    if (element == NULL) return;                                                                           \
-    MakeControllerSettings (ControllerSettings);                                                           \
-    LoadControllerSettings(element->controller_idx, ControllerSettings);                                   \
-    C##NNN##_DelayHandler.configureControllerSettings(ControllerSettings);                                 \
-    if (!WiFiConnected(10)) {                                                                              \
-      scheduleNextDelayQueue(TIMER_C##NNN##_DELAY_QUEUE, C##NNN##_DelayHandler.getNextScheduleTime());     \
-      return;                                                                                              \
-    }                                                                                                      \
-    START_TIMER;                                                                                           \
-    C##NNN##_DelayHandler.markProcessed(do_process_c##NNN##_delay_queue(M, *element, ControllerSettings)); \
-    STOP_TIMER(C##NNN##_DELAY_QUEUE);                                                                      \
-    scheduleNextDelayQueue(TIMER_C##NNN##_DELAY_QUEUE, C##NNN##_DelayHandler.getNextScheduleTime());       \
+#define DEFINE_Cxxx_DELAY_QUEUE_MACRO(NNN, M)                                                                        \
+  ControllerDelayHandlerStruct<C##NNN####M##_queue_element>C##NNN####M##_DelayHandler;                               \
+  bool do_process_c##NNN####M##_delay_queue(int controller_number,                                                   \
+                                           const C##NNN####M##_queue_element & element,                              \
+                                           ControllerSettingsStruct & ControllerSettings);                           \
+  void process_c##NNN####M##_delay_queue() {                                                                         \
+    C##NNN####M##_queue_element *element(C##NNN####M##_DelayHandler.getNext());                                      \
+    if (element == NULL) return;                                                                                     \
+    MakeControllerSettings (ControllerSettings);                                                                     \
+    LoadControllerSettings(element->controller_idx, ControllerSettings);                                             \
+    C##NNN####M##_DelayHandler.configureControllerSettings(ControllerSettings);                                      \
+    if (!WiFiConnected(10)) {                                                                                        \
+      scheduleNextDelayQueue(TIMER_C##NNN####M##_DELAY_QUEUE, C##NNN####M##_DelayHandler.getNextScheduleTime());     \
+      return;                                                                                                        \
+    }                                                                                                                \
+    START_TIMER;                                                                                                     \
+    C##NNN####M##_DelayHandler.markProcessed(do_process_c##NNN####M##_delay_queue(M, *element, ControllerSettings)); \
+    STOP_TIMER(C##NNN####M##_DELAY_QUEUE);                                                                           \
+    scheduleNextDelayQueue(TIMER_C##NNN####M##_DELAY_QUEUE, C##NNN####M##_DelayHandler.getNextScheduleTime());       \
   }
 
 // Define the function wrappers to handle the calling to Cxxx_DelayHandler etc.
 // If someone knows how to add leading zeros in macros, please be my guest :)
 #ifdef USES_C001
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(001,  1)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(00,  1)
 #endif // ifdef USES_C001
 #ifdef USES_C003
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(003,  3)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(00,  3)
 #endif // ifdef USES_C003
 #ifdef USES_C004
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(004,  4)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(00,  4)
 #endif // ifdef USES_C004
 #ifdef USES_C007
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(007,  7)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(00,  7)
 #endif // ifdef USES_C007
 #ifdef USES_C008
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(008, 8)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(00, 8)
 #endif // ifdef USES_C008
 #ifdef USES_C009
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(009, 9)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(00, 9)
 #endif // ifdef USES_C009
 #ifdef USES_C010
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(010,  10)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(0,  10)
 #endif // ifdef USES_C010
 #ifdef USES_C011
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(011,  11)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(0,  11)
 #endif // ifdef USES_C011
 #ifdef USES_C012
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(012,  12)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(0,  12)
 #endif // ifdef USES_C012
 
 /*
  #ifdef USES_C013
-   DEFINE_Cxxx_DELAY_QUEUE_MACRO(013, 13)
+   DEFINE_Cxxx_DELAY_QUEUE_MACRO(0, 13)
  #endif
  */
 
 /*
  #ifdef USES_C014
-   DEFINE_Cxxx_DELAY_QUEUE_MACRO(014, 14)
+   DEFINE_Cxxx_DELAY_QUEUE_MACRO(0, 14)
  #endif
  */
 #ifdef USES_C015
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(015, 15)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(0, 15)
 #endif // ifdef USES_C015
 
 #ifdef USES_C016
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(016, 16)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(0, 16)
 #endif // ifdef USES_C016
 
 
 #ifdef USES_C017
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(017, 17)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(0, 17)
 #endif // ifdef USES_C017
 
 #ifdef USES_C018
-DEFINE_Cxxx_DELAY_QUEUE_MACRO(018, 18)
+DEFINE_Cxxx_DELAY_QUEUE_MACRO(0, 18)
 #endif
 
 
 /*
  #ifdef USES_C019
-   DEFINE_Cxxx_DELAY_QUEUE_MACRO(019, 19)
+   DEFINE_Cxxx_DELAY_QUEUE_MACRO(0, 19)
  #endif
  */
 
 /*
  #ifdef USES_C020
-   DEFINE_Cxxx_DELAY_QUEUE_MACRO(020, 20)
+   DEFINE_Cxxx_DELAY_QUEUE_MACRO(0, 20)
  #endif
  */
 
@@ -703,6 +707,22 @@ String get_formatted_Controller_number(int controller_number) {
   return result;
 }
 
+
+String get_auth_header(const String& user, const String& pass) {
+  String authHeader = "";
+
+  if (user.length() != 0 && pass.length() != 0) {
+      base64 encoder;
+      String auth = user;
+      auth       += ":";
+      auth       += pass;
+      authHeader  = F("Authorization: Basic ");
+      authHeader += encoder.encode(auth);
+      authHeader += F(" \r\n");
+  }
+  return authHeader;
+}
+
 String get_auth_header(int controller_index) {
   String authHeader = "";
 
@@ -710,13 +730,9 @@ String get_auth_header(int controller_index) {
     if ((SecuritySettings.ControllerUser[controller_index][0] != 0) &&
         (SecuritySettings.ControllerPassword[controller_index][0] != 0))
     {
-      base64 encoder;
-      String auth = SecuritySettings.ControllerUser[controller_index];
-      auth       += ":";
-      auth       += SecuritySettings.ControllerPassword[controller_index];
-      authHeader  = F("Authorization: Basic ");
-      authHeader += encoder.encode(auth);
-      authHeader += F(" \r\n");
+      authHeader = get_auth_header(
+        String(SecuritySettings.ControllerUser[controller_index]), 
+        String(SecuritySettings.ControllerPassword[controller_index]));
     }
   } else {
     addLog(LOG_LEVEL_ERROR, F("Invalid controller index"));

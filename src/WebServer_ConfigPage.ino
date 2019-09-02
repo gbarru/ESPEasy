@@ -11,10 +11,6 @@ void handle_config() {
   TXBuffer.startStream();
   sendHeadandTail_stdtemplate(_HEAD);
 
-  if (timerAPoff) {
-    timerAPoff = millis() + 2000L; // user has reached the main page - AP can be switched off in 2..3 sec
-  }
-
   if (WebServer.args() != 0)
   {
     String name = WebServer.arg(F("name"));
@@ -39,9 +35,13 @@ void handle_config() {
       addLog(LOG_LEVEL_INFO, F("Unit Name changed."));
 
       if (CPluginCall(CPLUGIN_GOT_INVALID, 0)) { // inform controllers that the old name will be invalid from now on.
+#ifdef USES_MQTT
         MQTTDisconnect();                        // disconnect form MQTT Server if invalid message was sent succesfull.
+#endif //USES_MQTT
       }
+#ifdef USES_MQTT
       MQTTclient_should_reconnect = true;
+#endif //USES_MQTT
     }
 
     // Unit name

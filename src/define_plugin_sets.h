@@ -56,6 +56,16 @@ To create/register a plugin, you have to :
   #endif
 #endif // ESP32
 
+
+/******************************************************************************\
+ * Available options **********************************************************
+\******************************************************************************/
+#ifdef CORE_POST_2_5_0
+    #ifndef USE_SETTINGS_ARCHIVE
+        #define USE_SETTINGS_ARCHIVE
+    #endif // USE_SETTINGS_ARCHIVE
+#endif
+
 /******************************************************************************\
  * BUILD Configs **************************************************************
 \******************************************************************************/
@@ -73,13 +83,26 @@ To create/register a plugin, you have to :
 
 #ifdef PLUGIN_BUILD_MINIMAL_IR
     #define PLUGIN_BUILD_MINIMAL_OTA
+    #define PLUGIN_DESCR  "Minimal, IR"
     #define PLUGIN_BUILD_IR
+#endif
+
+#ifdef PLUGIN_BUILD_MINIMAL_IRext
+    #define PLUGIN_BUILD_MINIMAL_OTA
+    #define PLUGIN_DESCR  "Minimal, IR with AC"
+    #define PLUGIN_BUILD_IR_EXTENDED
 #endif
 
 #ifdef PLUGIN_BUILD_NORMAL_IR
     #define PLUGIN_BUILD_NORMAL     // add stable
-    #define PLUGIN_DESCR  "Minimal 1M IR"
+    #define PLUGIN_DESCR  "Normal, IR"
     #define PLUGIN_BUILD_IR
+#endif
+
+#ifdef PLUGIN_BUILD_NORMAL_IRext
+    #define PLUGIN_BUILD_NORMAL     // add stable
+    #define PLUGIN_DESCR  "Normal, IR with AC"
+    #define PLUGIN_BUILD_IR_EXTENDED
 #endif
 
 #ifdef PLUGIN_BUILD_DEV
@@ -146,6 +169,11 @@ To create/register a plugin, you have to :
 
     #define PLUGIN_SET_NONE
 
+    #ifdef USE_SETTINGS_ARCHIVE
+        #undef USE_SETTINGS_ARCHIVE
+    #endif // USE_SETTINGS_ARCHIVE
+
+
     #ifndef USES_P001
         #define USES_P001   // switch
     #endif
@@ -200,11 +228,14 @@ To create/register a plugin, you have to :
 #endif
 
 #ifdef PLUGIN_BUILD_IR_EXTENDED
-    #define PLUGIN_DESCR  "IR_Extended"
+    #ifndef PLUGIN_DESCR
+        #define PLUGIN_DESCR  "IR_Extended"
+    #endif // PLUGIN_DESCR
     #define USES_P016      // IR
     #define USES_P035      // IRTX
     // The following define is needed for extended decoding of A/C Messages and or using standardised common arguments for controlling all deeply supported A/C units
     #define P016_P035_Extended_AC
+    #define USES_P088      //ToniA IR plugin
 #endif
 
 /******************************************************************************\
@@ -643,6 +674,7 @@ To create/register a plugin, you have to :
     #define USES_C014   // homie 3 & 4dev MQTT
     #define USES_C015   // Blynk
     #define USES_C017   // Zabbix
+    // #define USES_C018 // TTN RN2483
 #endif
 
 #ifdef NOTIFIER_SET_TESTING
@@ -677,7 +709,7 @@ To create/register a plugin, you have to :
 	//#define USES_P112	// RFTX
 	#define USES_P113	// SI1145
 	#define USES_P114	// DSM501
-	#define USES_P115	// HeatpumpIR
+	//#define USES_P115	// HeatpumpIR - P088 in the main repo.
 	#define USES_P116	// ID12
 	#define USES_P117	// LW12FC
 	//#define USES_P117	// Neopixels
@@ -779,8 +811,44 @@ To create/register a plugin, you have to :
   #define DISABLE_SOFTWARE_SERIAL
 #endif
 
+
 /*
 #if defined(USES_P00x) || defined(USES_P00y)
 #include <the_required_lib.h>
 #endif
 */
+
+
+#if defined(USES_C018)
+  #define USES_PACKED_RAW_DATA
+#endif
+
+#if defined(USES_P085) || defined (USES_P052) || defined(USES_P078)
+  #define USES_MODBUS
+#endif
+
+#if defined(USES_C001) || defined (USES_C002) || defined(USES_P029)
+  #define USES_DOMOTICZ
+#endif
+
+#if defined(USES_C002) || defined (USES_C005) || defined(USES_C006) || defined(USES_C014) || defined(USES_P037)
+  #define USES_MQTT
+#endif
+
+#if defined(USES_C012) || defined (USES_C015)
+  #define USES_BLYNK
+#endif
+
+
+#ifdef USES_MQTT
+// MQTT_MAX_PACKET_SIZE : Maximum packet size
+#ifndef MQTT_MAX_PACKET_SIZE
+  #define MQTT_MAX_PACKET_SIZE 1024 // Is also used in PubSubClient
+#endif
+#endif //USES_MQTT
+
+
+// Disable Homie plugin for now in the dev build to make it fit.
+#if defined(PLUGIN_BUILD_DEV) && defined(USES_C014)
+  #undef USES_C014
+#endif

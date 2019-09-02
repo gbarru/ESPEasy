@@ -1,4 +1,85 @@
 -------------------------------------------------
+Changes in release mega-20190830 (since mega-20190827)
+-------------------------------------------------
+
+Release date: Fri Aug 30 04:00:13 CEST 2019
+
+Bartłomiej Zimoń (2):
+      [DHT] start conversion improvements
+      [DHT] fix timeout reading
+
+Gijs Noorlander (9):
+      [Settings Archive] Allow to download settings from some HTTP archive
+      [Settings Archive] Documentation
+      [Settings Archive] Only allow on core 2.5.0 and newer
+      [Gratuitous ARP] Only send ARP packets when IF is up
+      [PlatformIO] Changes for core 2.6.0 (Tasmota patched core)
+      [Settings Archive] Allow to download settings from some HTTP archive
+      [Settings Archive] Documentation
+      [Settings Archive] Only allow on core 2.5.0 and newer
+      Move dev build to core 2.6.0 (to make it fit)
+
+stefan (7):
+      Reduce bin size by excluding unneded parts
+      Reduce bin size -- Typos.
+      Reduce bin size -- changed macro definitions
+      Reduce bin size -- add PubSubClient to #ifdef's
+      Reduce bin size -- cast blynk code
+      Reduce bin size -- enable all controller structs again
+      Revert "Reduce bin size -- cast blynk code"
+
+
+-------------------------------------------------
+Changes in release mega-20190827 (since mega-20190823)
+-------------------------------------------------
+
+Release date: Tue Aug 27 04:00:07 CEST 2019
+
+Gijs Noorlander (5):
+      [WiFi] Improve WiFi reconnect stability and fix initial setup
+      [Docs] Document Timing Stats page
+      [WiFi] Move functions to separate files and document
+      [WiFi] Clean up WiFi code and modernize WiFi setup page
+      [WiFi] Add RSSI symbol to WiFi setup page
+
+TD-er (1):
+      [LoRa] Keep out LoRa code if no supported controller is used
+
+jimmys01 (1):
+      IR Update library and usage instructions
+
+
+-------------------------------------------------
+Changes in release mega-20190823 (since mega-20190817)
+-------------------------------------------------
+
+Release date: Fri Aug 23 04:00:05 CEST 2019
+
+Bartlomiej Zimon (4):
+      [Modbus RTU] drop all data in buffers
+      [Modbus RTU] do more checks with received packet
+      [Modbus RTU] one more buffer check
+      [Modbus RTU] add slave number check
+
+Gijs Noorlander (9):
+      Rename _P115_HeatpumpIR.ino to _P088_HeatpumpIR.ino
+      Wrap P088 in USES_P088 defines
+      Fix Build issues P088_HeatpumpIR
+      [Heatpump IR] Add minimal IR_ext build for 4M flash nodes
+      [PlatformIO] Move duplicate lines to global [env]
+      [PlatformIO]  Maintain same order of platform and build_flags
+      [PlatformIO] Fix missing define on some core 2.4.x builds
+      Remove test_core_260_sdk2_alpha builds
+      [Build] Remove all core 2.6.0 SDK2 builds
+
+Toni (4):
+      Add HeatpumpIR 1.0.9 library
+      Add HeatpumpIR plugin P115
+      Fix compile warnings in HeatpumpIR plugin
+      Configurable MQTT package size in Controller.ino
+
+
+-------------------------------------------------
 Changes in release mega-20190817 (since mega-20190813)
 -------------------------------------------------
 

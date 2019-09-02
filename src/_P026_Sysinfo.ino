@@ -144,7 +144,8 @@ boolean Plugin_026(byte function, struct EventStruct *event, String& string)
       success = true;
       break;
     }
-    case PLUGIN_GET_PACKED_RAW_DATA:
+#ifdef USES_PACKED_RAW_DATA
+   case PLUGIN_GET_PACKED_RAW_DATA:
     {
       // Matching JS code:
       // return decode(bytes, 
@@ -163,10 +164,10 @@ boolean Plugin_026(byte function, struct EventStruct *event, String& string)
       string += LoRa_addInt(P026_get_value(index++), PackedData_uint24);  // web
       string += LoRa_addInt(P026_get_value(index++), PackedData_uint16);  // freestack
       event->Par1 = index; // valuecount
-
       success = true;
       break;
     }
+#endif // USES_PACKED_RAW_DATA
   }
   return success;
 }

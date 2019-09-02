@@ -133,7 +133,7 @@ void check_size() {
 #define LOG_TO_SDCARD         4
 #define DEFAULT_SYSLOG_IP                       ""                      // Syslog IP Address
 #define DEFAULT_SYSLOG_LEVEL            0                               // Syslog Log Level
-#define DEFAULT_SERIAL_LOG_LEVEL        0                               // Serial Log Level
+#define DEFAULT_SERIAL_LOG_LEVEL        LOG_LEVEL_INFO                  // Serial Log Level
 #define DEFAULT_WEB_LOG_LEVEL           LOG_LEVEL_INFO                  // Web Log Level
 #define DEFAULT_SD_LOG_LEVEL            0                               // SD Card Log Level
 #define DEFAULT_USE_SD_LOG                      false                   // (true|false) Enable Logging to the SD card
@@ -316,7 +316,8 @@ void check_size() {
 #define PLUGIN_TIME_CHANGE                 27
 #define PLUGIN_MONITOR                     28
 #define PLUGIN_SET_DEFAULTS                29
-#define PLUGIN_GET_PACKED_RAW_DATA                30 // Return all data in a compact binary format specific for that plugin.
+#define PLUGIN_GET_PACKED_RAW_DATA         30 // Return all data in a compact binary format specific for that plugin.
+                                              // Needs USES_PACKED_RAW_DATA
 
 
 // Make sure the CPLUGIN_* does not overlap PLUGIN_*
@@ -497,28 +498,6 @@ void check_size() {
 #define ZERO_FILL(S)  memset((S), 0, sizeof(S))
 #define ZERO_TERMINATE(S)  S[sizeof(S) - 1] = 0
 
-// Forward declaration
-struct ControllerSettingsStruct;
-static String getUnknownString();
-void scheduleNextDelayQueue(unsigned long id, unsigned long nextTime);
-String LoadControllerSettings(int ControllerIndex, ControllerSettingsStruct& controller_settings);
-String get_formatted_Controller_number(int controller_index);
-bool loglevelActiveFor(byte logLevel);
-void addToLog(byte loglevel, const String& string);
-void addToLog(byte logLevel, const __FlashStringHelper* flashString);
-void statusLED(boolean traffic);
-void backgroundtasks();
-uint32_t getCurrentFreeStack();
-uint32_t getFreeStackWatermark();
-bool canYield();
-
-bool getBitFromUL(uint32_t number, byte bitnr);
-void setBitToUL(uint32_t& number, byte bitnr, bool value);
-
-void serialHelper_getGpioNames(struct EventStruct *event, bool rxOptional=false, bool txOptional=false);
-
-fs::File tryOpenFile(const String& fname, const String& mode);
-
 enum SettingsType {
   BasicSettings_Type = 0,
   TaskSettings_Type,
@@ -551,6 +530,8 @@ bool showSettingsFileLayout = false;
 #include "ESPEasyTimeTypes.h"
 #include "StringProviderTypes.h"
 #include "ESPeasySerial.h"
+#include "ESPEasy_fdwdecl.h"
+#include "WebServer_fwddecl.h"
 #include "I2CTypes.h"
 #include <I2Cdev.h>
 #include <map>
@@ -654,7 +635,9 @@ bool showSettingsFileLayout = false;
 #include <DNSServer.h>
 #include <Wire.h>
 #include <SPI.h>
+#ifdef USES_MQTT
 #include <PubSubClient.h>
+#endif //USES_MQTT
 #include <FS.h>
 #ifdef FEATURE_SD
 #include <SD.h>
@@ -688,12 +671,14 @@ IPAddress apIP(DEFAULT_AP_IP);
 DNSServer dnsServer;
 bool dnsServerActive = false;
 
+#ifdef USES_MQTT
 // MQTT client
 WiFiClient mqtt;
 PubSubClient MQTTclient(mqtt);
 bool MQTTclient_should_reconnect = true;
 bool MQTTclient_connected = false;
 int mqtt_reconnect_count = 0;
+#endif //USES_MQTT
 
 //NTP status
 bool statusNTPInitialized = false;
@@ -703,10 +688,6 @@ bool P037_MQTTImport_connected = false;
 
 // udp protocol stuff (syslog, global sync, node info list, ntp time)
 WiFiUDP portUDP;
-
-bool resolveHostByName(const char* aHostname, IPAddress& aResult);
-bool connectClient(WiFiClient& client, const char* hostname, uint16_t port);
-bool connectClient(WiFiClient& client, IPAddress ip, uint16_t port);
 
 class TimingStats;
 
@@ -723,27 +704,6 @@ struct CRCStruct{
   uint32_t numberOfCRCBytes=0;
 }CRCValues;
 
-
-bool WiFiConnected(uint32_t timeout_ms);
-bool WiFiConnected();
-bool hostReachable(const IPAddress& ip);
-bool hostReachable(const String& hostname);
-void formatMAC(const uint8_t* mac, char (&strMAC)[20]);
-String to_json_object_value(const String& object, const String& value);
-
-
-bool I2C_read_bytes(uint8_t i2caddr, I2Cdata_bytes& data);
-bool I2C_write8_reg(uint8_t i2caddr, byte reg, byte value);
-uint8_t I2C_read8_reg(uint8_t i2caddr, byte reg, bool * is_ok = NULL);
-uint16_t I2C_read16_reg(uint8_t i2caddr, byte reg);
-int32_t I2C_read24_reg(uint8_t i2caddr, byte reg);
-uint16_t I2C_read16_LE_reg(uint8_t i2caddr, byte reg);
-int16_t I2C_readS16_reg(uint8_t i2caddr, byte reg);
-int16_t I2C_readS16_LE_reg(uint8_t i2caddr, byte reg);
-I2Cdev i2cdev;
-
-bool safe_strncpy(char* dest, const String& source, size_t max_size);
-bool safe_strncpy(char* dest, const char* source, size_t max_size);
 
 
 
@@ -929,7 +889,7 @@ struct SettingsStruct
     CustomCSS = false;
     WDI2CAddress = 0;
     UseRules = false;
-    UseSerial = false;
+    UseSerial = true;
     UseSSDP = false;
     WireClockStretchLimit = 0;
     GlobalSync = false;
@@ -1789,9 +1749,8 @@ unsigned long lastWeb = 0;
 byte cmd_within_mainloop = 0;
 unsigned long connectionFailures = 0;
 unsigned long wdcounter = 0;
-unsigned long timerAPoff = 0;
-unsigned long timerAPstart = 0;
-unsigned long timerWiFiReconnect = 0;
+unsigned long timerAPoff = 0;    // Timer to check whether the AP mode should be disabled (0 = disabled)
+unsigned long timerAPstart = 0;  // Timer to start AP mode, started when no valid network is detected.
 unsigned long timerAwakeFromDeepSleep = 0;
 unsigned long last_system_event_run = 0;
 
@@ -1864,15 +1823,6 @@ enum WiFiDisconnectReason
 #endif
 
 
-#ifndef ESP32
-// To do some reconnection check.
-#include <Ticker.h>
-Ticker connectionCheck;
-#endif
-
-
-void connectionCheckHandler();
-
 bool useStaticIP();
 
 // WiFi related data
@@ -1909,8 +1859,9 @@ volatile bool processedDHCPTimeout = true;
 volatile bool processedConnectAPmode = true;
 volatile bool processedDisconnectAPmode = true;
 volatile bool processedScanDone = true;
+bool wifiConnectAttemptNeeded = true;
 
-bool webserver_state = false;
+bool webserverRunning = false;
 bool webserver_init = false;
 
 unsigned long idle_msec_per_sec = 0;
@@ -2292,6 +2243,9 @@ enum DeviceModel {
   DeviceModel_MAX
 };
 
+bool modelMatchingFlashSize(DeviceModel model, int size_MB);
+
+
 struct ResetFactoryDefaultPreference_struct {
   ResetFactoryDefaultPreference_struct(uint32_t preference = 0) : _preference(preference) {}
 
@@ -2318,6 +2272,24 @@ struct ResetFactoryDefaultPreference_struct {
 
   bool keepUnitName() const { return getBitFromUL(_preference, 13); }
   void keepUnitName(bool keep) {       setBitToUL(_preference, 13, keep); }
+
+  // filenr = 0...3 for files rules1.txt ... rules4.txt
+  bool fetchRulesTXT(int filenr) const { return getBitFromUL(_preference, 14 + filenr); }
+  void fetchRulesTXT(int filenr, bool fetch) {       setBitToUL(_preference, 14 + filenr, fetch); }
+
+  bool fetchNotificationDat() const { return getBitFromUL(_preference, 18); }
+  void fetchNotificationDat(bool fetch) {       setBitToUL(_preference, 18, fetch); }
+
+  bool fetchSecurityDat() const { return getBitFromUL(_preference, 19); }
+  void fetchSecurityDat(bool fetch) {       setBitToUL(_preference, 19, fetch); }
+
+  bool fetchConfigDat() const { return getBitFromUL(_preference, 20); }
+  void fetchConfigDat(bool fetch) {       setBitToUL(_preference, 20, fetch); }
+
+  bool deleteFirst() const { return getBitFromUL(_preference, 21); }
+  void deleteFirst(bool checked) {       setBitToUL(_preference, 21, checked); }
+
+  
 
   uint32_t getPreference() { return _preference; }
 
@@ -2411,7 +2383,6 @@ struct GpioFactorySettingsStruct {
   int8_t i2c_scl = DEFAULT_PIN_I2C_SCL;
 };
 
-bool modelMatchingFlashSize(DeviceModel model, int size_MB);
 void addPredefinedPlugins(const GpioFactorySettingsStruct& gpio_settings);
 void addPredefinedRules(const GpioFactorySettingsStruct& gpio_settings);
 
@@ -2431,127 +2402,98 @@ struct UnitOfMeasure {
   };
 };
 
-
+#ifdef USES_PACKED_RAW_DATA
 
 // Data types used in packed encoder.
 // p_uint16_1e2 means it is a 16 bit unsigned int, but multiplied by 100 first.
 // This allows to store 2 decimals of a floating point value in 8 bits, ranging from 0.00 ... 2.55
 // For example p_int24_1e6 is a 24-bit signed value, ideal to store a GPS coordinate
 // with 6 decimals using only 3 bytes instead of 4 a normal float would use.
-enum PackedData_enum {
-  PackedData_uint8,
-  PackedData_uint16,
-  PackedData_uint24,
-  PackedData_uint32,
-  PackedData_int8,
-  PackedData_int16,
-  PackedData_int24,
-  PackedData_int32,
-  PackedData_uint8_1e3,
-  PackedData_uint8_1e2,
-  PackedData_uint8_1e1,
-  PackedData_uint16_1e5,
-  PackedData_uint16_1e4,
-  PackedData_uint16_1e3,
-  PackedData_uint16_1e2,
-  PackedData_uint16_1e1,
-  PackedData_uint24_1e6,
-  PackedData_uint24_1e5,
-  PackedData_uint24_1e4,
-  PackedData_uint24_1e3,
-  PackedData_uint24_1e2,
-  PackedData_uint24_1e1,
-  PackedData_uint32_1e6,
-  PackedData_uint32_1e5,
-  PackedData_uint32_1e4,
-  PackedData_uint32_1e3,
-  PackedData_uint32_1e2,
-  PackedData_uint32_1e1,
-  PackedData_int8_1e3,
-  PackedData_int8_1e2,
-  PackedData_int8_1e1,
-  PackedData_int16_1e5,
-  PackedData_int16_1e4,
-  PackedData_int16_1e3,
-  PackedData_int16_1e2,
-  PackedData_int16_1e1,
-  PackedData_int24_1e6,
-  PackedData_int24_1e5,
-  PackedData_int24_1e4,
-  PackedData_int24_1e3,
-  PackedData_int24_1e2,
-  PackedData_int24_1e1,
-  PackedData_int32_1e6,
-  PackedData_int32_1e5,
-  PackedData_int32_1e4,
-  PackedData_int32_1e3,
-  PackedData_int32_1e2,
-  PackedData_int32_1e1,
-  PackedData_pluginid,
-  PackedData_latLng,
-  PackedData_hdop,
-  PackedData_altitude,
-  PackedData_vcc,
-  PackedData_pct_8
-};
+//
+// PackedData_uintX_1eY = 0x11XY  (X= #bytes, Y=exponent)
+// PackedData_intX_1eY  = 0x12XY  (X= #bytes, Y=exponent)
+typedef uint32_t PackedData_enum;
+#define PackedData_uint8        0x1110
+#define PackedData_uint16       0x1120
+#define PackedData_uint24       0x1130
+#define PackedData_uint32       0x1140
+#define PackedData_uint8_1e3    0x1113
+#define PackedData_uint8_1e2    0x1112
+#define PackedData_uint8_1e1    0x1111
+#define PackedData_uint16_1e5   0x1125
+#define PackedData_uint16_1e4   0x1124
+#define PackedData_uint16_1e3   0x1123
+#define PackedData_uint16_1e2   0x1122
+#define PackedData_uint16_1e1   0x1121
+#define PackedData_uint24_1e6   0x1136
+#define PackedData_uint24_1e5   0x1135
+#define PackedData_uint24_1e4   0x1134
+#define PackedData_uint24_1e3   0x1133
+#define PackedData_uint24_1e2   0x1132
+#define PackedData_uint24_1e1   0x1131
+#define PackedData_uint32_1e6   0x1146
+#define PackedData_uint32_1e5   0x1145
+#define PackedData_uint32_1e4   0x1144
+#define PackedData_uint32_1e3   0x1143
+#define PackedData_uint32_1e2   0x1142
+#define PackedData_uint32_1e1   0x1141
+#define PackedData_int8         0x1210
+#define PackedData_int16        0x1220
+#define PackedData_int24        0x1230
+#define PackedData_int32        0x1240
+#define PackedData_int8_1e3     0x1213
+#define PackedData_int8_1e2     0x1212
+#define PackedData_int8_1e1     0x1211
+#define PackedData_int16_1e5    0x1225
+#define PackedData_int16_1e4    0x1224
+#define PackedData_int16_1e3    0x1223
+#define PackedData_int16_1e2    0x1222
+#define PackedData_int16_1e1    0x1221
+#define PackedData_int24_1e6    0x1236
+#define PackedData_int24_1e5    0x1235
+#define PackedData_int24_1e4    0x1234
+#define PackedData_int24_1e3    0x1233
+#define PackedData_int24_1e2    0x1232
+#define PackedData_int24_1e1    0x1231
+#define PackedData_int32_1e6    0x1246
+#define PackedData_int32_1e5    0x1245
+#define PackedData_int32_1e4    0x1244
+#define PackedData_int32_1e3    0x1243
+#define PackedData_int32_1e2    0x1242
+#define PackedData_int32_1e1    0x1241
+#define PackedData_pluginid     1
+#define PackedData_latLng       2
+#define PackedData_hdop         3
+#define PackedData_altitude     4
+#define PackedData_vcc          5
+#define PackedData_pct_8        6
 
-static uint8_t getPackedDataTypeSize(PackedData_enum dtype, float& factor, float& offset) {
+uint8_t getPackedDataTypeSize(PackedData_enum dtype, float& factor, float& offset) {
   offset = 0;
+  factor = 1;
+  if (dtype > 0x1000 && dtype < 0x12FF) {
+    const uint8_t exponent = dtype & 0xF;
+    switch(exponent) {
+      case 0: factor = 1; break;
+      case 1: factor = 1e1; break;
+      case 2: factor = 1e2; break;
+      case 3: factor = 1e3; break;
+      case 4: factor = 1e4; break;
+      case 5: factor = 1e5; break;
+      case 6: factor = 1e6; break;
+    }
+    const uint8_t size = (dtype >> 8) & 0xF;
+    return size;
+  }
   switch (dtype) {
-    case PackedData_uint8:       factor = 1;         return 1;
-    case PackedData_uint16:      factor = 1;         return 2;
-    case PackedData_uint24:      factor = 1;         return 3;
-    case PackedData_uint32:      factor = 1;         return 4;
-    case PackedData_int8:        factor = 1;         return 1;
-    case PackedData_int16:       factor = 1;         return 2;
-    case PackedData_int24:       factor = 1;         return 3;
-    case PackedData_int32:       factor = 1;         return 4;
-    case PackedData_uint8_1e3:   factor = 1e3;       return 1;
-    case PackedData_uint8_1e2:   factor = 1e2;       return 1;
-    case PackedData_uint8_1e1:   factor = 1e1;       return 1;
-    case PackedData_uint16_1e5:  factor = 1e5;       return 2;
-    case PackedData_uint16_1e4:  factor = 1e4;       return 2;
-    case PackedData_uint16_1e3:  factor = 1e3;       return 2;
-    case PackedData_uint16_1e2:  factor = 1e2;       return 2;
-    case PackedData_uint16_1e1:  factor = 1e1;       return 2;
-    case PackedData_uint24_1e6:  factor = 1e6;       return 3;
-    case PackedData_uint24_1e5:  factor = 1e5;       return 3;
-    case PackedData_uint24_1e4:  factor = 1e4;       return 3;
-    case PackedData_uint24_1e3:  factor = 1e3;       return 3;
-    case PackedData_uint24_1e2:  factor = 1e2;       return 3;
-    case PackedData_uint24_1e1:  factor = 1e1;       return 3;
-    case PackedData_uint32_1e6:  factor = 1e6;       return 4;
-    case PackedData_uint32_1e5:  factor = 1e5;       return 4;
-    case PackedData_uint32_1e4:  factor = 1e4;       return 4;
-    case PackedData_uint32_1e3:  factor = 1e3;       return 4;
-    case PackedData_uint32_1e2:  factor = 1e2;       return 4;
-    case PackedData_uint32_1e1:  factor = 1e1;       return 4;
-    case PackedData_int8_1e3:    factor = 1e3;       return 1;
-    case PackedData_int8_1e2:    factor = 1e2;       return 1;
-    case PackedData_int8_1e1:    factor = 1e1;       return 1;
-    case PackedData_int16_1e5:   factor = 1e5;       return 2;
-    case PackedData_int16_1e4:   factor = 1e4;       return 2;
-    case PackedData_int16_1e3:   factor = 1e3;       return 2;
-    case PackedData_int16_1e2:   factor = 1e2;       return 2;
-    case PackedData_int16_1e1:   factor = 1e1;       return 2;
-    case PackedData_int24_1e6:   factor = 1e6;       return 3;
-    case PackedData_int24_1e5:   factor = 1e5;       return 3;
-    case PackedData_int24_1e4:   factor = 1e4;       return 3;
-    case PackedData_int24_1e3:   factor = 1e3;       return 3;
-    case PackedData_int24_1e2:   factor = 1e2;       return 3;
-    case PackedData_int24_1e1:   factor = 1e1;       return 3;
-    case PackedData_int32_1e6:   factor = 1e6;       return 4;
-    case PackedData_int32_1e5:   factor = 1e5;       return 4;
-    case PackedData_int32_1e4:   factor = 1e4;       return 4;
-    case PackedData_int32_1e3:   factor = 1e3;       return 4;
-    case PackedData_int32_1e2:   factor = 1e2;       return 4;
-    case PackedData_int32_1e1:   factor = 1e1;       return 4;
     case PackedData_pluginid:    factor = 1;         return 1;
     case PackedData_latLng:      factor = 46600;     return 3; // 2^23 / 180
     case PackedData_hdop:        factor = 10;        return 1;
     case PackedData_altitude:    factor = 4;     offset = 1000; return 2; // -1000 .. 15383.75 meter
     case PackedData_vcc:         factor = 41.83; offset = 1;    return 1; // -1 .. 5.12V
     case PackedData_pct_8:       factor = 2.56;                 return 1; // 0 .. 100%
+    default:
+      break;
   }
 
   // Unknown type
@@ -2559,9 +2501,67 @@ static uint8_t getPackedDataTypeSize(PackedData_enum dtype, float& factor, float
   return 0;
 }
 
+void LoRa_uintToBytes(uint64_t value, uint8_t byteSize, byte *data, uint8_t& cursor) {
+  // Clip values to upper limit
+  const uint64_t upperlimit = (1 << (8*byteSize)) - 1;
+  if (value > upperlimit) { value = upperlimit; }
+  for (uint8_t x = 0; x < byteSize; x++) {
+    byte next = 0;
+    if (sizeof(value) > x) {
+      next = static_cast<byte>((value >> (x * 8)) & 0xFF);
+    }
+    data[cursor] = next;
+    ++cursor;
+  }
+}
+
+void LoRa_intToBytes(int64_t value, uint8_t byteSize, byte *data, uint8_t& cursor) {
+  // Clip values to lower limit
+  const int64_t lowerlimit = (1 << ((8*byteSize) - 1)) * -1;
+  if (value < lowerlimit) { value = lowerlimit; }
+  if (value < 0) {
+    value += (1 << (8*byteSize));
+  }
+  LoRa_uintToBytes(value, byteSize, data, cursor);
+}
+
+String LoRa_base16Encode(byte *data, size_t size) {
+  String output;
+  output.reserve(size * 2);
+  char buffer[3];
+  for (unsigned i=0; i<size; i++)
+  {
+    sprintf(buffer, "%02X", data[i]);
+    output += buffer[0];
+    output += buffer[1];
+  }
+  return output;
+}
+
+String LoRa_addInt(uint64_t value, PackedData_enum datatype) {
+  float factor, offset;
+  uint8_t byteSize = getPackedDataTypeSize(datatype, factor, offset);
+  byte data[4] = {0};
+  uint8_t cursor = 0;
+  LoRa_uintToBytes((value + offset) * factor, byteSize, &data[0], cursor);
+  return LoRa_base16Encode(data, cursor);
+}
+
+
+static String LoRa_addFloat(float value, PackedData_enum datatype) {
+  float factor, offset;
+  uint8_t byteSize = getPackedDataTypeSize(datatype, factor, offset);
+  byte data[4] = {0};
+  uint8_t cursor = 0;
+  LoRa_intToBytes((value + offset) * factor, byteSize, &data[0], cursor);
+  return LoRa_base16Encode(data, cursor);
+}
+
+
 // Forward declarations PackedData related functions
-String LoRa_addInt(uint64_t value, PackedData_enum datatype);
-String LoRa_addFloat(float value, PackedData_enum datatype);
+String getPackedFromPlugin(struct EventStruct *event, uint8_t sampleSetCount);
+
+#endif // USES_PACKED_RAW_DATA
 
 
 // These wifi event functions must be in a .h-file because otherwise the preprocessor
@@ -2570,5 +2570,7 @@ String LoRa_addFloat(float value, PackedData_enum datatype);
 #include "ESPEasyWiFiEvent.h"
 #define SPIFFS_CHECK(result, fname) if (!(result)) { return(FileError(__LINE__, fname)); }
 #include "WebServer_Rules.h"
+
+
 
 #endif /* ESPEASY_GLOBALS_H_ */
