@@ -1,3 +1,5 @@
+#include "src/Globals/ESPEasyWiFiEvent.h"
+
 bool unprocessedWifiEvents() {
   if (processedConnect && processedDisconnect && processedGotIP && processedDHCPTimeout)
   {
@@ -57,6 +59,7 @@ void handle_unprocessedWiFiEvents()
 
     if ((wifiStatus & ESPEASY_WIFI_GOT_IP) && (wifiStatus & ESPEASY_WIFI_CONNECTED) && WiFi.isConnected()) {
       wifiStatus = ESPEASY_WIFI_SERVICES_INITIALIZED;
+      wifiConnectInProgress = false;
       resetAPdisableTimer();
     }
   } else if (!WiFiConnected()) {
@@ -159,6 +162,11 @@ void processConnect() {
 
   if (Settings.UseRules && bssid_changed) {
     String event = F("WiFi#ChangedAccesspoint");
+    rulesProcessing(event);
+  }
+
+  if (Settings.UseRules && channel_changed) {
+    String event = F("WiFi#ChangedWiFichannel");
     rulesProcessing(event);
   }
 

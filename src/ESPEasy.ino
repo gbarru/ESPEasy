@@ -82,27 +82,70 @@
 //   SHT1X temperature/humidity sensors
 //   Ser2Net server
 
+
 // Define globals before plugin sets to allow a personal override of the selected plugins
 #include "ESPEasy-Globals.h"
 // Must be included after all the defines, since it is using TASKS_MAX
 #include "_Plugin_Helper.h"
 // Plugin helper needs the defined controller sets, thus include after 'define_plugin_sets.h'
 #include "_CPlugin_Helper.h"
+#include "src/ControllerQueue/DelayQueueElements.h"
 
+#include "src/DataStructs/ControllerSettingsStruct.h"
+#include "src/DataStructs/DeviceModel.h"
+#include "src/DataStructs/ESPEasy_EventStruct.h"
+#include "src/DataStructs/PortStatusStruct.h"
+#include "src/DataStructs/ProtocolStruct.h"
+#include "src/DataStructs/RTCStruct.h"
+#include "src/DataStructs/SchedulerTimers.h"
+#include "src/DataStructs/SettingsType.h"
+#include "src/DataStructs/SystemTimerStruct.h"
+#include "src/DataStructs/TimingStats.h"
+
+#include "src/Globals/Device.h"
+#include "src/Globals/ESPEasyWiFiEvent.h"
+#include "src/Globals/ExtraTaskSettings.h"
+#include "src/Globals/GlobalMapPortStatus.h"
+#include "src/Globals/MQTT.h"
+#include "src/Globals/Plugins.h"
+#include "src/Globals/RTC.h"
+#include "src/Globals/SecuritySettings.h"
+#include "src/Globals/Services.h"
+#include "src/Globals/Settings.h"
+#include "src/Globals/Statistics.h"
+
+#if FEATURE_ADC_VCC
+ADC_MODE(ADC_VCC);
+#endif
+
+
+// FIXME TD-er: This must be moves to src/Globals/Services
+// But right now, it seems hard to define WevServer in a .h/.cpp file
+// error: 'WebServer' does not name a type
+#ifdef ESP32
+  #include <WiFi.h>
+  #include <WebServer.h>
+  WebServer WebServer(80);
+#endif
+
+// Get functions to give access to global defined variables.
+// These are needed to get direct access to global defined variables, since they cannot be defined in .h files and included more than once.
+
+float& getUserVar(unsigned int varIndex) {return UserVar[varIndex]; }
+
+
+#ifdef USES_BLYNK
 // Blynk_get prototype
 boolean Blynk_get(const String& command, byte controllerIndex,float *data = NULL );
 
-int firstEnabledBlynkController() {
-  for (byte i = 0; i < CONTROLLER_MAX; ++i) {
-    byte ProtocolIndex = getProtocolIndex(Settings.Protocol[i]);
-    if (Protocol[ProtocolIndex].Number == 12 && Settings.ControllerEnabled[i]) {
-      return i;
-    }
-  }
-  return -1;
-}
+int firstEnabledBlynkController();
+#endif
 
 //void checkRAM( const __FlashStringHelper* flashString);
+
+#ifdef CORE_POST_2_5_0
+void preinit();
+#endif
 
 #ifdef CORE_POST_2_5_0
 /*********************************************************************************************\
@@ -125,6 +168,9 @@ void sw_watchdog_callback(void *arg)
   yield(); // feed the WD
   ++sw_watchdog_callback_count;
 }
+
+
+
 
 /*********************************************************************************************\
  * SETUP
@@ -342,7 +388,9 @@ void setup()
     initTime();
 
 #if FEATURE_ADC_VCC
-  vcc = ESP.getVcc() / 1000.0;
+  if (!wifiConnectInProgress) {
+    vcc = ESP.getVcc() / 1000.0;
+  }
 #endif
 
   if (Settings.UseRules)
@@ -582,29 +630,8 @@ void flushAndDisconnectAllClients() {
   process_serialWriteBuffer();
 }
 
+
 #ifdef USES_MQTT
-void runPeriodicalMQTT() {
-  // MQTT_KEEPALIVE = 15 seconds.
-  if (!WiFiConnected(10)) {
-    updateMQTTclient_connected();
-    return;
-  }
-  //dont do this in backgroundtasks(), otherwise causes crashes. (https://github.com/letscontrolit/ESPEasy/issues/683)
-  int enabledMqttController = firstEnabledMQTTController();
-  if (enabledMqttController >= 0) {
-    if (!MQTTclient.loop()) {
-      updateMQTTclient_connected();
-      if (MQTTCheck(enabledMqttController)) {
-        updateMQTTclient_connected();
-      }
-    }
-  } else {
-    if (MQTTclient.connected()) {
-      MQTTclient.disconnect();
-      updateMQTTclient_connected();
-    }
-  }
-}
 
 void updateMQTTclient_connected() {
   if (MQTTclient_connected != MQTTclient.connected()) {
@@ -634,6 +661,29 @@ void updateMQTTclient_connected() {
   setIntervalTimer(TIMER_MQTT);
 }
 
+void runPeriodicalMQTT() {
+  // MQTT_KEEPALIVE = 15 seconds.
+  if (!WiFiConnected(10)) {
+    updateMQTTclient_connected();
+    return;
+  }
+  //dont do this in backgroundtasks(), otherwise causes crashes. (https://github.com/letscontrolit/ESPEasy/issues/683)
+  int enabledMqttController = firstEnabledMQTTController();
+  if (enabledMqttController >= 0) {
+    if (!MQTTclient.loop()) {
+      updateMQTTclient_connected();
+      if (MQTTCheck(enabledMqttController)) {
+        updateMQTTclient_connected();
+      }
+    }
+  } else {
+    if (MQTTclient.connected()) {
+      MQTTclient.disconnect();
+      updateMQTTclient_connected();
+    }
+  }
+}
+
 int firstEnabledMQTTController() {
   for (byte i = 0; i < CONTROLLER_MAX; ++i) {
     byte ProtocolIndex = getProtocolIndex(Settings.Protocol[i]);
@@ -643,7 +693,23 @@ int firstEnabledMQTTController() {
   }
   return -1;
 }
+
 #endif //USES_MQTT
+
+#ifdef USES_BLYNK
+// Blynk_get prototype
+//boolean Blynk_get(const String& command, byte controllerIndex,float *data = NULL );
+
+int firstEnabledBlynkController() {
+  for (byte i = 0; i < CONTROLLER_MAX; ++i) {
+    byte ProtocolIndex = getProtocolIndex(Settings.Protocol[i]);
+    if (Protocol[ProtocolIndex].Number == 12 && Settings.ControllerEnabled[i]) {
+      return i;
+    }
+  }
+  return -1;
+}
+#endif
 
 
 /*********************************************************************************************\
@@ -754,23 +820,6 @@ void runOncePerSecond()
     Wire.endTransmission();
   }
 
-/*
-  if (Settings.SerialLogLevel == LOG_LEVEL_DEBUG_DEV)
-  {
-    serialPrint(F("Plugin calls: 50 ps:"));
-    serialPrint(elapsed50ps);
-    serialPrint(F(" uS, 10 ps:"));
-    serialPrint(elapsed10ps);
-    serialPrint(F(" uS, 10 psU:"));
-    serialPrint(elapsed10psU);
-    serialPrint(F(" uS, 1 ps:"));
-    serialPrint(elapsed);
-    serialPrintln(F(" uS"));
-    elapsed50ps=0;
-    elapsed10ps=0;
-    elapsed10psU=0;
-  }
-  */
   checkResetFactoryPin();
   STOP_TIMER(PLUGIN_CALL_1PS);
 }
@@ -822,7 +871,9 @@ void runEach30Seconds()
     SSDP_update();
   #endif
 #if FEATURE_ADC_VCC
-  vcc = ESP.getVcc() / 1000.0;
+  if (!wifiConnectInProgress) {
+    vcc = ESP.getVcc() / 1000.0;
+  }
 #endif
 
   #ifdef FEATURE_REPORTING

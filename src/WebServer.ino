@@ -3,6 +3,9 @@
 #define CHUNKED_BUFFER_SIZE          400
 
 
+#include "src/Globals/Device.h"
+#include "src/Static/WebStaticData.h"
+
 // ********************************************************************************
 // Core part of WebServer, the chunked streaming buffer
 // This must remain in the WebServer.ino file at the top.
@@ -310,6 +313,14 @@ void sendHeaderBlocking(bool json, const String& origin) {
 }
 
 void sendHeadandTail(const String& tmplName, boolean Tail = false, boolean rebooting = false) {
+  // This function is called twice per serving a web page.
+  // So it must keep track of the timer longer than the scope of this function.
+  // Therefore use a local static variable.
+  static unsigned statisticsTimerStart = 0;
+  if (!Tail) {
+    statisticsTimerStart = micros();
+  }
+
   String pageTemplate = "";
   String fileName     = tmplName;
 
@@ -380,6 +391,7 @@ void sendHeadandTail(const String& tmplName, boolean Tail = false, boolean reboo
     TXBuffer += DATA_REBOOT_JS;
     html_add_script_end();
   }
+  STOP_TIMER(HANDLE_SERVING_WEBPAGE);
 }
 
 void sendHeadandTail_stdtemplate(boolean Tail = false, boolean rebooting = false) {
@@ -402,12 +414,7 @@ void sendHeadandTail_stdtemplate(boolean Tail = false, boolean rebooting = false
 #define HTML_SYMBOL_I_O     "&#8660;"
 
 
-#if defined(ESP8266)
-  # define TASKS_PER_PAGE 12
-#endif // if defined(ESP8266)
-#if defined(ESP32)
-  # define TASKS_PER_PAGE 32
-#endif // if defined(ESP32)
+# define TASKS_PER_PAGE TASKS_MAX
 
 #define strncpy_webserver_arg(D, N) safe_strncpy(D, WebServer.arg(N).c_str(), sizeof(D));
 #define update_whenset_FormItemInt(K, V) { int tmpVal; \
@@ -490,12 +497,13 @@ void WebServerInit()
 
   #if defined(ESP8266)
   {
+    #ifndef NO_HTTP_UPDATER
     uint32_t maxSketchSize;
     bool     use2step;
-
     if (OTA_possible(maxSketchSize, use2step)) {
       httpUpdater.setup(&WebServer);
     }
+    #endif
   }
   #endif // if defined(ESP8266)
 

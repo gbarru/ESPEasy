@@ -1,3 +1,5 @@
+#include "ESPEasy_common.h"
+
 /*
 #################################################
  This is the place where plugins are registered
@@ -21,50 +23,34 @@ To create/register a plugin, you have to :
 
 
 
-/******************************************************************************\
- * Detect core versions *******************************************************
-\******************************************************************************/
 
-#ifndef ESP32
-  #if defined(ARDUINO_ESP8266_RELEASE_2_4_0) || defined(ARDUINO_ESP8266_RELEASE_2_4_1)  || defined(ARDUINO_ESP8266_RELEASE_2_4_2)
-    #ifndef CORE_2_4_X
-      #define CORE_2_4_X
-    #endif
+
+
+#ifdef MEMORY_ANALYSIS
+  #ifdef MQTT_ONLY
+    #define USES_C002   // Domoticz MQTT
+    #define USES_C005   // Home Assistant (openHAB) MQTT
+    #define USES_C006   // PiDome MQTT
+    #define USES_C014   // homie 3 & 4dev MQTT
+    #define USES_P037   // MQTTImport
   #endif
-
-  #if defined(ARDUINO_ESP8266_RELEASE_2_3_0) || defined(ARDUINO_ESP8266_RELEASE_2_4_0) || defined(ARDUINO_ESP8266_RELEASE_2_4_1)
-    #ifndef CORE_PRE_2_4_2
-      #define CORE_PRE_2_4_2
-    #endif
-  #endif
-
-  #if defined(ARDUINO_ESP8266_RELEASE_2_3_0) || defined(CORE_2_4_X)
-    #ifndef CORE_PRE_2_5_0
-      #define CORE_PRE_2_5_0
-    #endif
-  #else
-    #ifndef CORE_POST_2_5_0
-      #define CORE_POST_2_5_0
-    #endif
-  #endif
-
-
-  #ifdef FORCE_PRE_2_5_0
-    #ifdef CORE_POST_2_5_0
-      #undef CORE_POST_2_5_0
-    #endif
-  #endif
-#endif // ESP32
+#endif
 
 
 /******************************************************************************\
  * Available options **********************************************************
 \******************************************************************************/
-#ifdef CORE_POST_2_5_0
+#if defined(CORE_POST_2_5_0) && !defined(MEMORY_ANALYSIS) && !defined(USE_CUSTOM_H)
     #ifndef USE_SETTINGS_ARCHIVE
-        #define USE_SETTINGS_ARCHIVE
+    // FIXME TD-er: Disabled for now, to reduce binary size
+//        #define USE_SETTINGS_ARCHIVE
     #endif // USE_SETTINGS_ARCHIVE
 #endif
+
+#if defined(USE_SETTINGS_ARCHIVE) && defined(FORCE_PRE_2_5_0)
+  #undef USE_SETTINGS_ARCHIVE
+#endif
+
 
 /******************************************************************************\
  * BUILD Configs **************************************************************
@@ -133,10 +119,6 @@ To create/register a plugin, you have to :
     #ifndef BUILD_NO_DEBUG
       #define BUILD_NO_DEBUG
     #endif
-    #ifdef WEBSERVER_RULES_DEBUG
-      #undef WEBSERVER_RULES_DEBUG
-    #endif
-    #define WEBSERVER_RULES_DEBUG 0
 #endif
 
 #ifdef PLUGIN_BUILD_MINIMAL_OTA
@@ -150,10 +132,6 @@ To create/register a plugin, you have to :
     #ifndef BUILD_NO_DEBUG
       #define BUILD_NO_DEBUG
     #endif
-    #ifdef WEBSERVER_RULES_DEBUG
-      #undef WEBSERVER_RULES_DEBUG
-    #endif
-    #define WEBSERVER_RULES_DEBUG 0
 
     #define USES_C001   // Domoticz HTTP
     #define USES_C002   // Domoticz MQTT
@@ -200,7 +178,7 @@ To create/register a plugin, you have to :
 #endif
 
 
-#ifndef BUILD_MINIMAL_OTA
+#if !defined(BUILD_MINIMAL_OTA) && !defined(MEMORY_ANALYSIS)
   #ifndef WEBSERVER_TIMINGSTATS
     #define WEBSERVER_TIMINGSTATS
   #endif
@@ -208,10 +186,17 @@ To create/register a plugin, you have to :
     #define WEBSERVER_SYSVARS
   #endif
   #ifndef WEBSERVER_NEW_UI
-    #define WEBSERVER_NEW_UI
+//    #define WEBSERVER_NEW_UI
   #endif
 #endif
 
+
+
+#ifdef BUILD_NO_DEBUG
+    #ifdef WEBSERVER_RULES_DEBUG
+        #undef WEBSERVER_RULES_DEBUG
+    #endif
+#endif
 
 
 /******************************************************************************\
@@ -225,16 +210,32 @@ To create/register a plugin, you have to :
     #define PLUGIN_DESCR  "IR"
     #define USES_P016      // IR
     #define USES_P035      // IRTX
+    #define P016_P035_USE_RAW_RAW2 //Use the RAW and RAW2 encodings, disabling it saves 3.7Kb
 #endif
 
 #ifdef PLUGIN_BUILD_IR_EXTENDED
     #ifndef PLUGIN_DESCR
-        #define PLUGIN_DESCR  "IR_Extended"
+        #define PLUGIN_DESCR  "IR Extended"
     #endif // PLUGIN_DESCR
     #define USES_P016      // IR
     #define USES_P035      // IRTX
     // The following define is needed for extended decoding of A/C Messages and or using standardised common arguments for controlling all deeply supported A/C units
     #define P016_P035_Extended_AC
+    #define P016_P035_USE_RAW_RAW2 //Use the RAW and RAW2 encodings, disabling it saves 3.7Kb
+    #define USES_P088      // ToniA IR plugin
+    #define PLUGIN_SET_ONLY_SWITCH
+    #define USES_P029      // Output - Domoticz MQTT Helper
+    #define PLUGIN_SET_ONLY_TEMP_HUM
+#endif
+
+#ifdef PLUGIN_BUILD_IR_EXTENDED_NO_RX
+    #ifndef PLUGIN_DESCR
+        #define PLUGIN_DESCR  "IR Extended, no IR RX"
+    #endif // PLUGIN_DESCR
+    #define USES_P035      // IRTX
+    // The following define is needed for extended decoding of A/C Messages and or using standardised common arguments for controlling all deeply supported A/C units
+    #define P016_P035_Extended_AC
+    #define P016_P035_USE_RAW_RAW2 //Use the RAW and RAW2 encodings, disabling it saves 3.7Kb
     #define USES_P088      //ToniA IR plugin
 #endif
 
@@ -425,8 +426,14 @@ To create/register a plugin, you have to :
     #ifndef USES_P005
         #define USES_P005   // DHT
     #endif
+    #ifndef USES_P014
+        #define USES_P014   // SI7021
+    #endif
     #ifndef USES_P028
         #define USES_P028   // BME280
+    #endif
+    #ifndef USES_P034
+        #define USES_P034   // DHT12
     #endif
 #endif
 
@@ -580,8 +587,9 @@ To create/register a plugin, you have to :
     #define USES_P039   // Environment - Thermocouple
 
     #define USES_P040   // RFID - ID12LA/RDM6300
-    #define USES_P041   // NeoClock
-    #define USES_P042   // Candle
+    // FIXME TD-er: Disabled NeoClock and Candle plugin to make builds fit in max bin size.
+//    #define USES_P041   // NeoClock
+//    #define USES_P042   // Candle
     #define USES_P043   // ClkOutput
     #define USES_P044   // P1WifiGateway
 
@@ -665,14 +673,18 @@ To create/register a plugin, you have to :
     #define USES_P085   // AcuDC24x
     #define USES_P086   // Receiving values according Homie convention. Works together with C014 Homie controller
     //#define USES_P087   // Serial Proxy
+<<<<<<< HEAD
     #define USES_P222   //Display HCMS_2915
+=======
+    #define USES_P089   // Serial Proxy
+>>>>>>> upstream/mega
 #endif
 
 #ifdef CONTROLLER_SET_TESTING
     #define USES_C011   // Generic HTTP Advanced
     #define USES_C012   // Blynk HTTP
     #define USES_C014   // homie 3 & 4dev MQTT
-    #define USES_C015   // Blynk
+    //#define USES_C015   // Blynk
     #define USES_C017   // Zabbix
     // #define USES_C018 // TTN RN2483
 #endif
@@ -759,7 +771,7 @@ To create/register a plugin, you have to :
 
 
 #ifdef CONTROLLER_SET_EXPERIMENTAL
-  #define USES_C016   // Cache controller
+  //#define USES_C016   // Cache controller
   //#define USES_C018   // TTN/RN2483
 #endif
 
@@ -840,6 +852,7 @@ To create/register a plugin, you have to :
 #endif
 
 
+
 #ifdef USES_MQTT
 // MQTT_MAX_PACKET_SIZE : Maximum packet size
 #ifndef MQTT_MAX_PACKET_SIZE
@@ -851,4 +864,12 @@ To create/register a plugin, you have to :
 // Disable Homie plugin for now in the dev build to make it fit.
 #if defined(PLUGIN_BUILD_DEV) && defined(USES_C014)
   #undef USES_C014
+#endif
+
+
+// Due to size restrictions, disable a few plugins/controllers for 1M builds
+#ifdef SIZE_1M
+  #ifdef USES_C003
+    #undef USES_C003
+  #endif
 #endif
