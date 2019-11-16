@@ -1,7 +1,6 @@
 #ifndef ESPEASY_DEFAULTS_H_
 #define ESPEASY_DEFAULTS_H_
 
-#include "../../ESPEasy_common.h"
 
 // ********************************************************************************
 //   User specific configuration
@@ -126,7 +125,7 @@
 #endif
 
 #ifndef DEFAULT_PIN_STATUS_LED
-#define DEFAULT_PIN_STATUS_LED           -1
+#define DEFAULT_PIN_STATUS_LED           (-1)
 #endif
 #ifndef DEFAULT_PIN_STATUS_LED_INVERSED
 #define DEFAULT_PIN_STATUS_LED_INVERSED  true
@@ -210,11 +209,14 @@
 #define DEFAULT_SYSLOG_FACILITY               	0 	    // kern
 #endif
 
+#ifndef DEFAULT_SYNC_UDP_PORT
+#define DEFAULT_SYNC_UDP_PORT                   0                       // Used for ESPEasy p2p. (IANA registered port: 8266)
+#endif
+
 /*
 // --- Experimental Advanced Settings (NOT ACTIVES at this time) ------------------------------------
 
 #define DEFAULT_USE_GLOBAL_SYNC                 false           // (true|false)
-#define DEFAULT_SYNC_UDP_PORT                   0                       //
 
 #define DEFAULT_IP_OCTET                        0                       //
 #define DEFAULT_WD_IC2_ADDRESS                  0                       //

@@ -87,7 +87,7 @@
 #define DEFAULT_PIN_I2C_SDA                     4
 #define DEFAULT_PIN_I2C_SCL                     5
 
-#define DEFAULT_PIN_STATUS_LED                  -1
+#define DEFAULT_PIN_STATUS_LED                  (-1)
 #define DEFAULT_PIN_STATUS_LED_INVERSED         true
 
 
@@ -117,8 +117,14 @@
 #define DEFAULT_SERIAL_BAUD                     115200            // Serial Port Baud Rate
 #define DEFAULT_SYSLOG_FACILITY                 0                 // kern
 
+#define DEFAULT_SYNC_UDP_PORT                   0                 // Used for ESPEasy p2p. (IANA registered port: 8266)
+
 
 #define BUILD_NO_DEBUG
+
+
+#define USES_SSDP
+
 
 // #define USE_SETTINGS_ARCHIVE
 
@@ -249,7 +255,7 @@
 // #define USES_P035   // IRTX
 // #define P016_P035_Extended_AC // The following define is needed for extended decoding of A/C Messages and or using standardised 
                                  //common arguments for controlling all deeply supported A/C units
-//#define P016_P035_USE_RAW_RAW2 //Use the RAW and RAW2 encodings, disabling it saves 3.7Kb
+// #define P016_P035_USE_RAW_RAW2 //Use the RAW and RAW2 encodings, disabling it saves 3.7Kb
 // #define USES_P088   // Heatpump IR
 
 

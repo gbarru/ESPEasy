@@ -6,6 +6,7 @@
 #include "src/Globals/CRCValues.h"
 #include "src/Globals/Cache.h"
 #include "src/Globals/Device.h"
+#include "src/Globals/Plugins.h"
 #include "src/Globals/RTC.h"
 #include "src/Globals/ResetFactoryDefaultPref.h"
 #include "src/Globals/Services.h"
@@ -361,7 +362,7 @@ int getDeepSleepMax()
 
 bool isDeepSleepEnabled()
 {
-  if (!Settings.deepSleep) {
+  if (!Settings.deepSleep_wakeTime) {
     return false;
   }
 
@@ -388,12 +389,12 @@ bool readyForSleep()
     // Allow 12 seconds to establish connections
     return timeOutReached(timerAwakeFromDeepSleep + 12000);
   }
-  return timeOutReached(timerAwakeFromDeepSleep + 1000 * Settings.deepSleep);
+  return timeOutReached(timerAwakeFromDeepSleep + 1000 * Settings.deepSleep_wakeTime);
 }
 
-void deepSleep(int dsdelay)
+void prepare_deepSleep(int dsdelay)
 {
-  checkRAM(F("deepSleep"));
+  checkRAM(F("prepare_deepSleep"));
 
   if (!isDeepSleepEnabled())
   {
@@ -425,7 +426,7 @@ void deepSleep(int dsdelay)
 
 void deepSleepStart(int dsdelay)
 {
-  // separate function that is called from above function or directly from rules, usign deepSleep as a one-shot
+  // separate function that is called from above function or directly from rules, usign deepSleep_wakeTime as a one-shot
   if (Settings.UseRules)
   {
     String event = F("System#Sleep");
@@ -476,9 +477,9 @@ bool remoteConfig(struct EventStruct *event, const String& string)
       if ((configTaskName.length() == 0) || (configCommand.length() == 0)) {
         return success; // TD-er: Should this be return false?
       }
-      byte index = findTaskIndexByName(configTaskName);
+      taskIndex_t index = findTaskIndexByName(configTaskName);
 
-      if (index != TASKS_MAX)
+      if (validTaskIndex(index))
       {
         event->TaskIndex = index;
         success          = PluginCall(PLUGIN_SET_CONFIG, event, configCommand);
@@ -788,31 +789,55 @@ void delayBackground(unsigned long dsdelay)
 
 
 /********************************************************************************************\
+  Check to see if a given argument is a valid taskIndex (argc = 0 => command)
+  \*********************************************************************************************/
+taskIndex_t parseCommandArgumentTaskIndex(const String& string, unsigned int argc)
+{
+  taskIndex_t taskIndex = INVALID_TASK_INDEX;
+  const int ti = parseCommandArgumentInt(string, argc);
+  if (ti > 0) {
+    // Task Index used as argument in commands start at 1.
+    taskIndex = static_cast<taskIndex_t>(ti - 1);
+  }
+  return taskIndex;
+}
+
+
+/********************************************************************************************\
+  Get int from command argument (argc = 0 => command)
+  \*********************************************************************************************/
+int parseCommandArgumentInt(const String& string, unsigned int argc)
+{
+  int value = 0;
+  if (argc > 0) {
+    // No need to check for the command (argc == 0)
+    String TmpStr;
+    if (GetArgv(string.c_str(), TmpStr, argc + 1)) { 
+      value = CalculateParam(TmpStr.c_str()); 
+    }
+  }
+  return value;
+}
+
+/********************************************************************************************\
   Parse a command string to event struct
   \*********************************************************************************************/
 void parseCommandString(struct EventStruct *event, const String& string)
 {
   checkRAM(F("parseCommandString"));
-  String TmpStr1;
-  event->Par1 = 0;
-  event->Par2 = 0;
-  event->Par3 = 0;
-  event->Par4 = 0;
-  event->Par5 = 0;
-
-  if (GetArgv(string.c_str(), TmpStr1, 2)) { event->Par1 = CalculateParam(TmpStr1.c_str()); }
-  if (GetArgv(string.c_str(), TmpStr1, 3)) { event->Par2 = CalculateParam(TmpStr1.c_str()); }
-  if (GetArgv(string.c_str(), TmpStr1, 4)) { event->Par3 = CalculateParam(TmpStr1.c_str()); }
-  if (GetArgv(string.c_str(), TmpStr1, 5)) { event->Par4 = CalculateParam(TmpStr1.c_str()); }
-  if (GetArgv(string.c_str(), TmpStr1, 6)) { event->Par5 = CalculateParam(TmpStr1.c_str()); }
+  event->Par1 = parseCommandArgumentInt(string, 1);
+  event->Par2 = parseCommandArgumentInt(string, 2);
+  event->Par3 = parseCommandArgumentInt(string, 3);
+  event->Par4 = parseCommandArgumentInt(string, 4);
+  event->Par5 = parseCommandArgumentInt(string, 5);
 }
 
 /********************************************************************************************\
   Clear task settings for given task
   \*********************************************************************************************/
-void taskClear(byte taskIndex, bool save)
+void taskClear(taskIndex_t taskIndex, bool save)
 {
-  if (taskIndex >= TASKS_MAX) return;
+  if (!validTaskIndex(taskIndex)) return;
   checkRAM(F("taskClear"));
   Settings.clearTask(taskIndex);
   ExtraTaskSettings.clear(); // Invalidate any cached values.
@@ -823,7 +848,7 @@ void taskClear(byte taskIndex, bool save)
   }
 }
 
-String checkTaskSettings(byte taskIndex) {
+String checkTaskSettings(taskIndex_t taskIndex) {
   String err = LoadTaskSettings(taskIndex);
   if (err.length() > 0) return err;
   if (!ExtraTaskSettings.checkUniqueValueNames()) {
@@ -840,7 +865,7 @@ String checkTaskSettings(byte taskIndex) {
     }
   }
   // Do not use the cached function findTaskIndexByName since that one does rely on the fact names should be unique.
-  for (int i = 0; i < TASKS_MAX; ++i) {
+  for (taskIndex_t i = 0; i < TASKS_MAX; ++i) {
     if (i != taskIndex && Settings.TaskDeviceEnabled[i]) {
       LoadTaskSettings(i);
       if (ExtraTaskSettings.TaskDeviceName[0] != 0) {
@@ -857,18 +882,6 @@ String checkTaskSettings(byte taskIndex) {
   return err;
 }
 
-/********************************************************************************************\
-   Find device index corresponding to task number setting
- \*********************************************************************************************/
-byte getDeviceIndex(byte Number)
-{
-  for (byte x = 0; x <= deviceCount; x++) {
-    if (Device[x].Number == Number) {
-      return x;
-    }
-  }
-  return 0;
-}
 
 /********************************************************************************************\
    Find protocol index corresponding to protocol setting
@@ -901,21 +914,24 @@ byte getNotificationProtocolIndex(byte Number)
   \*********************************************************************************************/
 
 bool HasArgv(const char *string, unsigned int argc) {
-  int pos_begin, pos_end;
-  return GetArgvBeginEnd(string, argc, pos_begin, pos_end);
+  String argvString;
+  return GetArgv(string, argvString, argc);
 }
 
 bool GetArgv(const char *string, String& argvString, unsigned int argc) {
   int pos_begin, pos_end;
   bool hasArgument = GetArgvBeginEnd(string, argc, pos_begin, pos_end);
   argvString = "";
-  if (pos_begin >= 0 && pos_end >= 0) {
+  if (!hasArgument) return false;
+  if (pos_begin >= 0 && pos_end >= 0 && pos_end > pos_begin) {
     argvString.reserve(pos_end - pos_begin);
-    for (int i = pos_begin; i < pos_end && i >= 0; ++i) {
+    for (int i = pos_begin; i < pos_end; ++i) {
       argvString += string[i];
     }
   }
-  return hasArgument;
+  argvString.trim();
+  argvString = stripQuotes(argvString);
+  return argvString.length() > 0;
 }
 
 bool GetArgvBeginEnd(const char *string, const unsigned int argc, int& pos_begin, int& pos_end) {
@@ -924,7 +940,7 @@ bool GetArgvBeginEnd(const char *string, const unsigned int argc, int& pos_begin
   size_t string_len = strlen(string);
   unsigned int string_pos = 0, argc_pos = 0;
   bool parenthesis          = false;
-  char    matching_parenthesis = '"';
+  char matching_parenthesis = '"';
 
   while (string_pos < string_len)
   {
@@ -941,27 +957,27 @@ bool GetArgvBeginEnd(const char *string, const unsigned int argc, int& pos_begin
     else if  (!parenthesis && (c == ',') && (d == ' ')) {}
     else if  (!parenthesis && (c == ' ') && (d >= 33) && (d <= 126)) {}
     else if  (!parenthesis && (c == ',') && (d >= 33) && (d <= 126)) {}
-    else if  ((c == '"') || (c == '\'') || (c == '[')) {
-      parenthesis          = true;
-      matching_parenthesis = c;
-
-      if (c == '[') {
-        matching_parenthesis = ']';
-      }
-    }
     else
     {
+      if (!parenthesis && (isQuoteChar(c) || (c == '['))) {
+        parenthesis          = true;
+        matching_parenthesis = c;
+
+        if (c == '[') {
+          matching_parenthesis = ']';
+        }
+      } else if (parenthesis && (c == matching_parenthesis)) {
+        parenthesis = false;
+      }
+
       if (pos_begin == -1) {
         pos_begin = string_pos;
         pos_end   = string_pos;
       }
       ++pos_end;
 
-      if ((!parenthesis && ((d == ' ') || (d == ',') || (d == 0))) || (parenthesis && (d == matching_parenthesis))) // end of word
+      if (!parenthesis && (isParameterSeparatorChar(d) || (d == 0))) // end of word
       {
-        if (d == matching_parenthesis) {
-          parenthesis = false;
-        }
         argc_pos++;
 
         if (argc_pos == argc)
@@ -1045,7 +1061,7 @@ uint32_t progMemMD5check(){
 /********************************************************************************************\
   Handler for keeping ExtraTaskSettings up to date using cache
   \*********************************************************************************************/
-String getTaskDeviceName(byte TaskIndex) {
+String getTaskDeviceName(taskIndex_t TaskIndex) {
   LoadTaskSettings(TaskIndex);
   return ExtraTaskSettings.TaskDeviceName;
 }
@@ -1154,7 +1170,7 @@ void ResetFactory()
     Settings.clearUnitNameSettings();
     Settings.Unit           = UNIT;
     strcpy_P(Settings.Name, PSTR(DEFAULT_NAME));
-    Settings.UDPPort				= 0; //DEFAULT_SYNC_UDP_PORT;
+    Settings.UDPPort				= DEFAULT_SYNC_UDP_PORT;
   }
   if (!ResetFactoryDefaultPreference.keepWiFi()) {
     strcpy_P(SecuritySettings.WifiSSID, PSTR(DEFAULT_SSID));
@@ -1182,10 +1198,10 @@ void ResetFactory()
   Settings.Pin_sd_cs       = -1;
   Settings.Pin_Reset       = -1;
   Settings.Protocol[0]     = DEFAULT_PROTOCOL;
-  Settings.deepSleep       = false;
+  Settings.deepSleep_wakeTime       = false;
   Settings.CustomCSS       = false;
   Settings.InitSPI         = false;
-  for (byte x = 0; x < TASKS_MAX; x++)
+  for (taskIndex_t x = 0; x < TASKS_MAX; x++)
   {
     Settings.TaskDevicePin1[x] = -1;
     Settings.TaskDevicePin2[x] = -1;
@@ -1394,23 +1410,43 @@ bool isNumerical(const String& tBuf, bool mustBeInteger) {
 }
 
 // convert old and new time string to nr of seconds
-float timeStringToSeconds(String tBuf) {
-	float sec = 0;
-	int split = tBuf.indexOf(':');
-	if (split < 0) { // assume only hours
-		sec += tBuf.toFloat() * 60 * 60;
-	} else {
-		sec += tBuf.substring(0, split).toFloat() * 60 * 60;
-		tBuf = tBuf.substring(split +1);
-		split = tBuf.indexOf(':');
-		if (split < 0) { //old format
-			sec += tBuf.toFloat() * 60;
-		} else { //new format
-			sec += tBuf.substring(0, split).toFloat() * 60;
-			sec += tBuf.substring(split +1).toFloat();
-		}
-	}
-	return sec;
+// return whether it should be considered a time string.
+bool timeStringToSeconds(String tBuf, int& time_seconds) {
+  time_seconds = -1;
+  int hours = 0;
+  int minutes = 0;
+  int seconds = 0;
+  const int hour_sep_pos = tBuf.indexOf(':');
+  if (hour_sep_pos < 0) {
+    // Only hours, separator not found.
+    if (validIntFromString(tBuf, hours)) {
+      time_seconds = hours * 60 * 60;
+    }
+    // It is a valid time string, but could also be just a numerical.    
+    return false;
+  }
+  if (!validIntFromString(tBuf.substring(0, hour_sep_pos), hours)) {
+    return false;    
+  }
+  const int min_sep_pos = tBuf.indexOf(':', hour_sep_pos);
+  if (min_sep_pos < 0) {
+    // Old format, only HH:MM
+    if (!validIntFromString(tBuf.substring(hour_sep_pos + 1), minutes)) {
+      return false;    
+    }
+  } else {
+    // New format, only HH:MM:SS
+    if (!validIntFromString(tBuf.substring(hour_sep_pos + 1, min_sep_pos), minutes)) {
+      return false;
+    }
+    if (!validIntFromString(tBuf.substring(min_sep_pos+ 1), seconds)) {
+      return false;
+    }
+  }
+  if (minutes < 0 || minutes > 59) return false;
+  if (seconds < 0 || seconds > 59) return false;
+  time_seconds = hours * 60 * 60 + minutes * 60 + seconds;
+	return true;
 }
 
 
@@ -1519,6 +1555,7 @@ String parseTemplate(String& tmpString, byte lineSize)
             nr_decimals = 6;
           }
           String value = String(customFloatVar[varNum - 1], nr_decimals);
+          value.trim();
           transformValue(newString, lineSize, value, format, tmpString);
         }
       }
@@ -1529,9 +1566,9 @@ String parseTemplate(String& tmpString, byte lineSize)
       // For example: "[bme#temp]"
       // If value name is unknown, run a PLUGIN_GET_CONFIG command.
       // For example: "[<taskname>#getLevel]"
-      byte taskIndex = findTaskIndexByName(deviceName);
+      taskIndex_t taskIndex = findTaskIndexByName(deviceName);
 
-      if (taskIndex != TASKS_MAX && Settings.TaskDeviceEnabled[taskIndex]) {
+      if (validTaskIndex(taskIndex) && Settings.TaskDeviceEnabled[taskIndex]) {
         byte valueNr = findDeviceValueIndexByName(valueName, taskIndex);
 
         if (valueNr != VARS_PER_TASK) {
@@ -1590,15 +1627,15 @@ String parseTemplate(String& tmpString, byte lineSize)
 }
 
 // Find the first (enabled) task with given name
-// Return TASKS_MAX when not found, else return taskIndex
-byte findTaskIndexByName(const String& deviceName)
+// Return INVALID_TASK_INDEX when not found, else return taskIndex
+taskIndex_t findTaskIndexByName(const String& deviceName)
 {
   // cache this, since LoadTaskSettings does take some time.
   auto result = Cache.taskIndexName.find(deviceName);
   if (result != Cache.taskIndexName.end()) {
     return result->second;
   }
-  for (byte taskIndex = 0; taskIndex < TASKS_MAX; taskIndex++)
+  for (taskIndex_t taskIndex = 0; taskIndex < TASKS_MAX; taskIndex++)
   {
     if (Settings.TaskDeviceEnabled[taskIndex]) {
       String taskDeviceName = getTaskDeviceName(taskIndex);
@@ -1613,13 +1650,16 @@ byte findTaskIndexByName(const String& deviceName)
       }
     }
   }
-  return TASKS_MAX;
+  return INVALID_TASK_INDEX;
 }
 
 // Find the first device value index of a taskIndex.
 // Return VARS_PER_TASK if none found.
-byte findDeviceValueIndexByName(const String& valueName, byte taskIndex) 
+byte findDeviceValueIndexByName(const String& valueName, taskIndex_t taskIndex) 
 {
+  const deviceIndex_t deviceIndex = getDeviceIndex_from_TaskIndex(taskIndex);
+  if (!validDeviceIndex(deviceIndex)) return VARS_PER_TASK;
+
   // cache this, since LoadTaskSettings does take some time.
   // We need to use a cache search key including the taskIndex,
   // to allow several tasks to have the same value names.
@@ -1628,6 +1668,7 @@ byte findDeviceValueIndexByName(const String& valueName, byte taskIndex)
   cache_valueName = valueName;
   cache_valueName += '#'; // The '#' cannot exist in a value name, use it in the cache key.
   cache_valueName += taskIndex;
+  cache_valueName.toLowerCase(); // No need to store multiple versions of the same entry with only different case.
 
   auto result = Cache.taskIndexValueName.find(cache_valueName);
   if (result != Cache.taskIndexValueName.end()) {
@@ -1635,9 +1676,7 @@ byte findDeviceValueIndexByName(const String& valueName, byte taskIndex)
   }
   LoadTaskSettings(taskIndex); // Probably already loaded, but just to be sure
 
-  const byte pluginID = getDeviceIndex(Settings.TaskDeviceNumber[taskIndex]);
-  const byte valCount = Device[pluginID].ValueCount;
-
+  const byte valCount = Device[deviceIndex].ValueCount;
   for (byte valueNr = 0; valueNr < valCount; valueNr++)
   {
     // Check case insensitive, since the user entered value name can have any case.
@@ -2324,35 +2363,37 @@ int CalculateParam(const char *TmpStr) {
   return returnValue;
 }
 
-void SendValueLogger(byte TaskIndex)
+void SendValueLogger(taskIndex_t TaskIndex)
 {
 #if !defined(BUILD_NO_DEBUG) || defined(FEATURE_SD)
   bool featureSD = false;
+  String logger;
   #ifdef FEATURE_SD
     featureSD = true;
   #endif
   
   if (featureSD || loglevelActiveFor(LOG_LEVEL_DEBUG)) {
-    String logger;
-    LoadTaskSettings(TaskIndex);
-    byte DeviceIndex = getDeviceIndex(Settings.TaskDeviceNumber[TaskIndex]);
-    for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
-    {
-      logger += getDateString('-');
-      logger += ' ';
-      logger += getTimeString(':');
-      logger += ',';
-      logger += Settings.Unit;
-      logger += ',';
-      logger += getTaskDeviceName(TaskIndex);
-      logger += ',';
-      logger += ExtraTaskSettings.TaskDeviceValueNames[varNr];
-      logger += ',';
-      logger += formatUserVarNoCheck(TaskIndex, varNr);
-      logger += "\r\n";
+    const deviceIndex_t DeviceIndex = getDeviceIndex_from_TaskIndex(TaskIndex);
+    if (validDeviceIndex(DeviceIndex)) {
+      LoadTaskSettings(TaskIndex);
+      for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
+      {
+        logger += getDateString('-');
+        logger += ' ';
+        logger += getTimeString(':');
+        logger += ',';
+        logger += Settings.Unit;
+        logger += ',';
+        logger += getTaskDeviceName(TaskIndex);
+        logger += ',';
+        logger += ExtraTaskSettings.TaskDeviceValueNames[varNr];
+        logger += ',';
+        logger += formatUserVarNoCheck(TaskIndex, varNr);
+        logger += "\r\n";
+      }
+      addLog(LOG_LEVEL_DEBUG, logger);
     }
 
-    addLog(LOG_LEVEL_DEBUG, logger);
   }
 #endif
 
@@ -2448,27 +2489,16 @@ void checkRAMtoLog(void){
   myRamTracker.getTraceBuffer();
 }
 
-void checkRAM(const __FlashStringHelper* flashString, int a ) {
- String s=String(a);
- checkRAM(flashString,s);
-}
-
-void checkRAM(const __FlashStringHelper* flashString, const String &a ) {
-  String s = flashString;
-  checkRAM(s,a);
+void checkRAM(const String &flashString, int a ) {
+  checkRAM(flashString, String(a));
 }
 
 void checkRAM(const String &flashString, const String &a ) {
   String s = flashString;
-  s+=" (";
-  s+=a;
-  s+=")";
+  s += " (";
+  s += a;
+  s += ')';
   checkRAM(s);
-}
-
-void checkRAM( const __FlashStringHelper* flashString)
-{
-  checkRAM(String(flashString));
 }
 
 void checkRAM( const String &descr ) {
@@ -2670,13 +2700,20 @@ void play_rtttl(uint8_t _pin, const char *p )
 
 bool OTA_possible(uint32_t& maxSketchSize, bool& use2step) {
 #if defined(ESP8266)
-  maxSketchSize = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
-  const bool otaPossible = maxSketchSize > SMALLEST_OTA_IMAGE;
-  use2step = maxSketchSize < ESP.getSketchSize();
+  // Compute the current free space and sketch size, rounded to 4k blocks.
+  // These block bounaries are needed for erasing a full block on flash.
+  const uint32_t freeSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+  const uint32_t currentSketchSize = (ESP.getSketchSize() + 0x1000) & 0xFFFFF000;
+  const uint32_t smallestOtaImageSizeNeeded = (((SMALLEST_OTA_IMAGE + 16) + 0x1000) & 0xFFFFF000);
+  const bool otaPossible = freeSketchSpace >= smallestOtaImageSizeNeeded;
+  use2step = freeSketchSpace < currentSketchSize; // Assume the new image has the same size.
   if (use2step) {
-    const uint32_t totalSketchSpace = ESP.getFreeSketchSpace() + ESP.getSketchSize();
-    maxSketchSize = totalSketchSpace - SMALLEST_OTA_IMAGE;
+    const uint32_t totalSketchSpace = freeSketchSpace + currentSketchSize;
+    maxSketchSize = totalSketchSpace - smallestOtaImageSizeNeeded;
+  } else {
+    maxSketchSize = freeSketchSpace;
   }
+  maxSketchSize -= 16; // Must leave 16 bytes at the end.
   if (maxSketchSize > MAX_SKETCH_SIZE) maxSketchSize = MAX_SKETCH_SIZE;
   return otaPossible;
 #else
@@ -2709,8 +2746,8 @@ void ArduinoOTAInit()
       //"dangerous": if you reset during flash you have to reflash via serial
       //so dont touch device until restart is complete
       serialPrintln(F("\nOTA  : DO NOT RESET OR POWER OFF UNTIL BOOT+FLASH IS COMPLETE."));
-      delay(100);
-      reboot();
+      //delay(100);
+      //reboot(); //Not needed, node reboots automaticall after calling onEnd and succesfully flashing
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     if (Settings.UseSerial)
@@ -2846,12 +2883,12 @@ uint32_t createKey(uint16_t pluginNumber, uint16_t portNumber) {
   return (uint32_t) pluginNumber << 16 | portNumber;
 }
 
-uint16_t getPluginFromKey(uint32_t key) {
-  return (uint16_t)(key >> 16);
+pluginID_t getPluginFromKey(uint32_t key) {
+  return static_cast<pluginID_t>((key >> 16) & 0xFFFF);
 }
 
 uint16_t getPortFromKey(uint32_t key) {
-  return (uint16_t)(key);
+  return static_cast<uint16_t>(key & 0xFFFF);
 }
 
 //#######################################################################################################
