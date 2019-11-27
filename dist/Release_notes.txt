@@ -1,4 +1,110 @@
 -------------------------------------------------
+Changes in release mega-20191127 (since mega-20191126)
+-------------------------------------------------
+
+Release date: Wed Nov 27 09:17:00 CET 2019
+
+Gijs Noorlander (1):
+      Disable 16M and some custom builds from Travis
+
+
+-------------------------------------------------
+Changes in release mega-20191126 (since mega-20191123)
+-------------------------------------------------
+
+Release date: Tue Nov 26 21:38:44 CET 2019
+
+Gijs Noorlander (3):
+      [Nextion] Fix parsing rules for Nextion plugin (#2772)
+      [Commands] Adapt all plugins to use parseString for parsing commands
+      [Travis] Fix build error String.toDouble() is core 2.5.0 or newer.
+
+uwekaditz (4):
+      P[036] chars per line changed to 64, fixed overlapping while page scrolling
+      [P036] chars per line changed to 64, fixed overlapping while page scrolling
+      Update _P036_FrameOLED.ino
+      Update _P036_FrameOLED.ino
+
+
+-------------------------------------------------
+Changes in release mega-20191123 (since mega-20191122)
+-------------------------------------------------
+
+Release date: Sat Nov 23 04:00:15 CET 2019
+
+Bartlomiej Zimon (1):
+      [switch] add support for pwm frequency change for ESP8266 #2653
+
+Gijs Noorlander (3):
+      [Defaults] Add Hostname option for default controller (#2758)
+      [Build] Add normal_sdk3_ESP8266_1M
+      [Build] Change to SDK 20190703 to improve WiFi
+
+
+-------------------------------------------------
+Changes in release mega-20191122 (since mega-20191119)
+-------------------------------------------------
+
+Release date: Fri Nov 22 04:00:11 CET 2019
+
+Florent Kilchoer (1):
+      Add options in custom.h to enable first controller at startup
+
+Florin (1):
+      Clean Warning messages inside external libraries: AS_BH1750 & Adafruit
+
+Gijs Noorlander (14):
+      [PIO] Cleanup platformio.ini and move to core 2.6.1 as default (#2742)
+      [PIO] Update .travis.yml with new env names
+      [Cleanup] Make timing stats optional to reduce size
+      [PIO] Fix using wrong name for regular_platform
+      [PIO] Cleanup ESP32 environments by using extends
+      [PIO] Fix building hardware specific builds
+      [PIO] Fix empty build_flags
+      [PIO] Only build needed environments
+      [PIO] Split platformio.ini into separate files + cleanup.
+      [PIO] Add core 2.6.1 SDK3 builds and PIO env list for Vagrant
+      [New UI] Add /buildinfo JSON to give list of included plugins/controllers
+      [PIO] Use same build_flags def for _debug_ envs
+      [PIO] Update .travis.yml to include core 2.6.1 SDK3 builds
+      [Vagrant] Sample pio_envlist.txt file
+
+TD-er (2):
+      [PIO] Reduce platformio.ini complexity by using extends
+      [PIO] Disable build cache dir (Windows/Unix slash in path)
+
+
+-------------------------------------------------
+Changes in release mega-20191119 (since mega-20191116)
+-------------------------------------------------
+
+Release date: Tue Nov 19 22:32:52 CET 2019
+
+Bartlomiej Zimon (3):
+      [p2p] small optimization
+      [DHT] add extra ms
+      [DHT] reoreder interrupt handling
+
+Florin (5):
+      Adding the subscribe command to allow for subscribing to other topics in the rules
+      mqtt subscribe command
+      moved declaration to ESPEasy_fwdecl.h
+      cleanup and formatting
+      add documentation for subscribe command.
+
+Gijs Noorlander (3):
+      [Rules] Fix comparing time (#2732)
+      [WiFi] Retry setting WiFi mode if it fails to do so (#2721)
+      [WiFi] Only allow automatic AP mode in first 5 minutes from boot
+
+uwekaditz (4):
+      [P036] CHG: Header content only changed once within display interval
+      [P036] Value 128 change to P36_MaxDisplayWidth
+      [P036] Commands (PLUGIN_WRITE) reviewed completely
+      [P036] Commands (PLUGIN_WRITE) reviewed completely
+
+
+-------------------------------------------------
 Changes in release mega-20191116 (since mega-20191113)
 -------------------------------------------------
 

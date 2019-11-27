@@ -110,7 +110,12 @@ To create/register a plugin, you have to :
     #ifndef USES_SSDP
         #define USES_SSDP
     #endif
+    #ifndef USES_TIMING_STATS
+        #define USES_TIMING_STATS
+    #endif
 #endif
+
+
 
 #ifdef MEMORY_ANALYSIS
   #ifdef MQTT_ONLY
@@ -237,6 +242,9 @@ To create/register a plugin, you have to :
         #undef USE_SETTINGS_ARCHIVE
     #endif // USE_SETTINGS_ARCHIVE
 
+    #ifdef USES_TIMING_STATS
+        #undef USES_TIMING_STATS
+    #endif
 
     #ifndef USES_P001
         #define USES_P001   // switch
@@ -319,6 +327,7 @@ To create/register a plugin, you have to :
 #ifdef PLUGIN_BUILD_IR
     #define PLUGIN_DESCR  "IR"
     #define USES_P016      // IR
+    #define P016_SEND_IR_TO_CONTROLLER false //IF true then the JSON replay solution is transmited back to the condroller.
     #define USES_P035      // IRTX
     #define P016_P035_USE_RAW_RAW2 //Use the RAW and RAW2 encodings, disabling it saves 3.7Kb
 #endif
@@ -328,6 +337,7 @@ To create/register a plugin, you have to :
         #define PLUGIN_DESCR  "IR Extended"
     #endif // PLUGIN_DESCR
     #define USES_P016      // IR
+    #define P016_SEND_IR_TO_CONTROLLER false //IF true then the JSON replay solution is transmited back to the condroller.
     #define USES_P035      // IRTX
     // The following define is needed for extended decoding of A/C Messages and or using standardised common arguments for controlling all deeply supported A/C units
     #define P016_P035_Extended_AC
@@ -370,6 +380,7 @@ To create/register a plugin, you have to :
 #ifdef PLUGIN_SET_SONOFF_POW
     #define PLUGIN_DESCR  "Sonoff POW R1/R2"
 
+    #define CONTROLLER_SET_STABLE
     #define PLUGIN_SET_ONLY_SWITCH
     #define USES_P076   // HWL8012   in POW r1
     // Needs CSE7766 Energy sensor, via Serial RXD 4800 baud 8E1 (GPIO1), TXD (GPIO3)
@@ -983,5 +994,18 @@ To create/register a plugin, you have to :
     #undef USES_C003
   #endif
 #endif
+
+
+
+// Timing stats page needs timing stats
+#if defined(WEBSERVER_TIMINGSTATS) && !defined(USES_TIMING_STATS)
+  #define USES_TIMING_STATS
+#endif
+
+// If timing stats page is not included, there is no need in collecting the stats
+#if !defined(WEBSERVER_TIMINGSTATS) && defined(USES_TIMING_STATS)
+  #undef USES_TIMING_STATS
+#endif
+
 
 #endif // DEFINE_PLUGIN_SETS_H

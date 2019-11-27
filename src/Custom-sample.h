@@ -65,11 +65,15 @@
 // --- Default Controller ------------------------------------------------------------------------------
 #define DEFAULT_CONTROLLER   false                                          // true or false enabled or disabled, set 1st controller
                                                                             // defaults
+#define DEFAULT_CONTROLLER_ENABLED true                                     // Enable default controller by default
 
 // using a default template, you also need to set a DEFAULT PROTOCOL to a suitable MQTT protocol !
 #define DEFAULT_PUB         "sensors/espeasy/%sysname%/%tskname%/%valname%" // Enter your pub
 #define DEFAULT_SUB         "sensors/espeasy/%sysname%/#"                   // Enter your sub
 #define DEFAULT_SERVER      "192.168.0.8"                                   // Enter your Server IP address
+#define DEFAULT_SERVER_HOST ""                                              // Server hostname
+#define DEFAULT_SERVER_USEDNS false                                         // true: Use hostname.  false: use IP
+
 #define DEFAULT_PORT        8080                                            // Enter your Server port value
 
 #define DEFAULT_PROTOCOL    0                                               // Protocol used for controller communications
@@ -252,6 +256,7 @@
 
 // Special plugins needing IR library
 // #define USES_P016   // IR
+// #define P016_SEND_IR_TO_CONTROLLER false //IF true then the JSON replay solution is transmited back to the condroller.
 // #define USES_P035   // IRTX
 // #define P016_P035_Extended_AC // The following define is needed for extended decoding of A/C Messages and or using standardised 
                                  //common arguments for controlling all deeply supported A/C units

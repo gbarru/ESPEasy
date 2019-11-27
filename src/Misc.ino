@@ -884,32 +884,6 @@ String checkTaskSettings(taskIndex_t taskIndex) {
 
 
 /********************************************************************************************\
-   Find protocol index corresponding to protocol setting
- \*********************************************************************************************/
-byte getProtocolIndex(byte Number)
-{
-  for (byte x = 0; x <= protocolCount; x++) {
-    if (Protocol[x].Number == Number) {
-      return x;
-    }
-  }
-  return 0;
-}
-
-/********************************************************************************************\
-  Get notificatoin protocol index (plugin index), by NPlugin_id
-  \*********************************************************************************************/
-byte getNotificationProtocolIndex(byte Number)
-{
-  for (byte x = 0; x <= notificationCount ; x++) {
-    if (Notification[x].Number == Number) {
-      return(x);
-    }
-  }
-  return(NPLUGIN_NOT_FOUND);
-}
-
-/********************************************************************************************\
   Find positional parameter in a char string
   \*********************************************************************************************/
 
@@ -1215,7 +1189,7 @@ void ResetFactory()
 
   // advanced Settings
   Settings.UseRules 		= DEFAULT_USE_RULES;
-
+  Settings.ControllerEnabled[0] = DEFAULT_CONTROLLER_ENABLED;
   Settings.MQTTRetainFlag	= DEFAULT_MQTT_RETAIN;
   Settings.MessageDelay	= DEFAULT_MQTT_DELAY;
   Settings.MQTTUseUnitNameAsClientId = DEFAULT_MQTT_USE_UNITNAME_AS_CLIENTID;
@@ -1245,13 +1219,14 @@ void ResetFactory()
 
 #if DEFAULT_CONTROLLER
   MakeControllerSettings(ControllerSettings);
-  strcpy_P(ControllerSettings.Subscribe, PSTR(DEFAULT_SUB));
-  strcpy_P(ControllerSettings.Publish, PSTR(DEFAULT_PUB));
-  strcpy_P(ControllerSettings.MQTTLwtTopic, PSTR(DEFAULT_MQTT_LWT_TOPIC));
-  strcpy_P(ControllerSettings.LWTMessageConnect, PSTR(DEFAULT_MQTT_LWT_CONNECT_MESSAGE));
-  strcpy_P(ControllerSettings.LWTMessageDisconnect, PSTR(DEFAULT_MQTT_LWT_DISCONNECT_MESSAGE));
+  safe_strncpy(ControllerSettings.Subscribe, F(DEFAULT_SUB), sizeof(ControllerSettings.Subscribe));
+  safe_strncpy(ControllerSettings.Publish, F(DEFAULT_PUB), sizeof(ControllerSettings.Publish));
+  safe_strncpy(ControllerSettings.MQTTLwtTopic, F(DEFAULT_MQTT_LWT_TOPIC), sizeof(ControllerSettings.MQTTLwtTopic));
+  safe_strncpy(ControllerSettings.LWTMessageConnect, F(DEFAULT_MQTT_LWT_CONNECT_MESSAGE), sizeof(ControllerSettings.LWTMessageConnect));
+  safe_strncpy(ControllerSettings.LWTMessageDisconnect, F(DEFAULT_MQTT_LWT_DISCONNECT_MESSAGE), sizeof(ControllerSettings.LWTMessageDisconnect));
   str2ip((char*)DEFAULT_SERVER, ControllerSettings.IP);
-  ControllerSettings.HostName[0]=0;
+  ControllerSettings.setHostname(F(DEFAULT_SERVER_HOST));
+  ControllerSettings.UseDNS = DEFAULT_SERVER_USEDNS;
   ControllerSettings.Port = DEFAULT_PORT;
   SaveControllerSettings(0, ControllerSettings);
 #endif
@@ -1345,13 +1320,42 @@ bool validIntFromString(const String& tBuf, int& result) {
   return isvalid;
 }
 
+bool validUIntFromString(const String& tBuf, unsigned int& result) {
+  int tmp;
+  if (!validIntFromString(tBuf, tmp)) return false;
+  if (tmp < 0) return false;
+  result = static_cast<unsigned int>(tmp);
+  return true;
+}
+
+
 bool validFloatFromString(const String& tBuf, float& result) {
+  // DO not call validDoubleFromString and then cast to float.
+  // Working with double values is quite CPU intensive as it must be done in software 
+  // since the ESP does not have large enough registers for handling double values in hardware.
   const String numerical = getNumerical(tBuf, false);
   const bool isvalid = numerical.length() > 0;
   if (isvalid) {
     result = numerical.toFloat();
   }
   return isvalid;
+}
+
+bool validDoubleFromString(const String& tBuf, double& result) {
+  #ifdef CORE_POST_2_5_0
+  // String.toDouble() is introduced in core 2.5.0
+  const String numerical = getNumerical(tBuf, false);
+  const bool isvalid = numerical.length() > 0;
+  if (isvalid) {
+    result = numerical.toDouble();
+  }
+  return isvalid;
+  #else
+  float tmp = static_cast<float>(result);
+  bool res = validFloatFromString(tBuf, tmp);
+  result = static_cast<double>(tmp);
+  return res;
+  #endif
 }
 
 
@@ -1409,56 +1413,86 @@ bool isNumerical(const String& tBuf, bool mustBeInteger) {
   return true;
 }
 
+void logtimeStringToSeconds(const String& tBuf, int hours, int minutes, int seconds)
+{
+  #ifndef BUILD_NO_DEBUG
+  if (loglevelActiveFor(LOG_LEVEL_DEBUG)) {
+    String log;
+    log = F("timeStringToSeconds: ");
+    log += tBuf;
+    log += F(" -> ");
+    log += hours;
+    log += ':';
+    log += minutes;
+    log += ':';
+    log += seconds;
+    addLog(LOG_LEVEL_DEBUG, log);
+  }
+
+  #endif // ifndef BUILD_NO_DEBUG
+}
+
 // convert old and new time string to nr of seconds
 // return whether it should be considered a time string.
-bool timeStringToSeconds(String tBuf, int& time_seconds) {
+bool timeStringToSeconds(const String& tBuf, int& time_seconds) {
   time_seconds = -1;
-  int hours = 0;
-  int minutes = 0;
-  int seconds = 0;
+  int hours              = 0;
+  int minutes            = 0;
+  int seconds            = 0;
   const int hour_sep_pos = tBuf.indexOf(':');
+
   if (hour_sep_pos < 0) {
     // Only hours, separator not found.
     if (validIntFromString(tBuf, hours)) {
       time_seconds = hours * 60 * 60;
     }
-    // It is a valid time string, but could also be just a numerical.    
+
+    // It is a valid time string, but could also be just a numerical.
+    logtimeStringToSeconds(tBuf, hours, minutes, seconds);
     return false;
   }
+
   if (!validIntFromString(tBuf.substring(0, hour_sep_pos), hours)) {
-    return false;    
+    logtimeStringToSeconds(tBuf, hours, minutes, seconds);
+    return false;
   }
-  const int min_sep_pos = tBuf.indexOf(':', hour_sep_pos);
+  const int min_sep_pos = tBuf.indexOf(':', hour_sep_pos + 1);
+
   if (min_sep_pos < 0) {
     // Old format, only HH:MM
     if (!validIntFromString(tBuf.substring(hour_sep_pos + 1), minutes)) {
+      logtimeStringToSeconds(tBuf, hours, minutes, seconds);
       return false;    
     }
   } else {
     // New format, only HH:MM:SS
     if (!validIntFromString(tBuf.substring(hour_sep_pos + 1, min_sep_pos), minutes)) {
+      logtimeStringToSeconds(tBuf, hours, minutes, seconds);
       return false;
     }
-    if (!validIntFromString(tBuf.substring(min_sep_pos+ 1), seconds)) {
+
+    if (!validIntFromString(tBuf.substring(min_sep_pos + 1), seconds)) {
+      logtimeStringToSeconds(tBuf, hours, minutes, seconds);
       return false;
     }
   }
-  if (minutes < 0 || minutes > 59) return false;
-  if (seconds < 0 || seconds > 59) return false;
+
+  if ((minutes < 0) || (minutes > 59)) { return false; }
+
+  if ((seconds < 0) || (seconds > 59)) { return false; }
   time_seconds = hours * 60 * 60 + minutes * 60 + seconds;
-	return true;
+  logtimeStringToSeconds(tBuf, hours, minutes, seconds);
+  return true;
 }
 
-
-
 /********************************************************************************************\
-  Clean up all before going to sleep or reboot.
-  \*********************************************************************************************/
+   Clean up all before going to sleep or reboot.
+ \*********************************************************************************************/
 void prepareShutdown()
 {
 #ifdef USES_MQTT
-  runPeriodicalMQTT();  // Flush outstanding MQTT messages
-#endif //USES_MQTT
+  runPeriodicalMQTT(); // Flush outstanding MQTT messages
+#endif // USES_MQTT
   process_serialWriteBuffer();
   flushAndDisconnectAllClients();
   saveUserVarToRTC();
@@ -1467,14 +1501,13 @@ void prepareShutdown()
   delay(100); // give the node time to flush all before reboot or sleep
 }
 
-
 /********************************************************************************************\
-  Delayed reboot, in case of issues, do not reboot with high frequency as it might not help...
-  \*********************************************************************************************/
+   Delayed reboot, in case of issues, do not reboot with high frequency as it might not help...
+ \*********************************************************************************************/
 void delayedReboot(int rebootDelay)
 {
   // Direct Serial is allowed here, since this is only an emergency task.
-  while (rebootDelay != 0 )
+  while (rebootDelay != 0)
   {
     serialPrint(F("Delayed Reset "));
     serialPrintln(String(rebootDelay));
