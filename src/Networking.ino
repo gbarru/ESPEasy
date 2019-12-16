@@ -138,17 +138,8 @@ void checkUDP()
         if (packetBuffer[0] != 255)
         {
           packetBuffer[len] = 0;
-          String request = &packetBuffer[0];
-#ifndef BUILD_NO_DEBUG
-          addLog(LOG_LEVEL_DEBUG, request);
-#endif // ifndef BUILD_NO_DEBUG
-          struct EventStruct TempEvent;
-          parseCommandString(&TempEvent, request);
-          TempEvent.Source = VALUE_SOURCE_SYSTEM;
-
-          if (!PluginCall(PLUGIN_WRITE, &TempEvent, request)) {
-            ExecuteCommand(VALUE_SOURCE_SYSTEM, &packetBuffer[0]);
-          }
+          addLog(LOG_LEVEL_DEBUG, &packetBuffer[0]);
+          ExecuteCommand_all(VALUE_SOURCE_SYSTEM, &packetBuffer[0]);
         }
         else
         {
@@ -750,7 +741,7 @@ void SSDP_update() {
 }
 
 # endif // ifdef USES_SSDP
-#endif // if defined(ESP8266)
+#endif  // if defined(ESP8266)
 
 
 // ********************************************************************************
@@ -787,20 +778,23 @@ bool getSubnetRange(IPAddress& low, IPAddress& high)
 
 bool hasIPaddr() {
 #ifdef CORE_POST_2_5_0
-  bool configured = false;
 
-  for (auto addr : addrList) {
-    if ((configured = !addr.isLocal() && (addr.ifnumber() == STATION_IF))) {
-      /*
-         Serial.printf("STA: IF='%s' hostname='%s' addr= %s\n",
-                    addr.ifname().c_str(),
-                    addr.ifhostname(),
-                    addr.toString().c_str());
-       */
-      break;
+  for (netif *interface = netif_list; interface != nullptr; interface = interface->next) {
+    if (
+      (interface->flags & NETIF_FLAG_LINK_UP)
+      && (interface->flags & NETIF_FLAG_UP)
+# if LWIP_VERSION_MAJOR == 1
+      && interface == eagle_lwip_getif(STATION_IF) /* lwip1 does not set if->num properly */
+      && (!ip_addr_isany(&interface->ip_addr))
+# else // if LWIP_VERSION_MAJOR == 1
+      && interface->num == STATION_IF
+      && (!ip4_addr_isany_val(*netif_ip4_addr(interface)))
+# endif // if LWIP_VERSION_MAJOR == 1
+      ) {
+      return true;
     }
   }
-  return configured;
+  return false;
 #else // ifdef CORE_POST_2_5_0
   return WiFi.isConnected();
 #endif // ifdef CORE_POST_2_5_0
@@ -945,9 +939,6 @@ bool beginWiFiUDP_randomPort(WiFiUDP& udp) {
 }
 
 void sendGratuitousARP() {
-  if (!WiFiConnected()) {
-    return;
-  }
 #ifdef SUPPORT_ARP
 
   // See https://github.com/letscontrolit/ESPEasy/issues/2374
@@ -963,6 +954,7 @@ void sendGratuitousARP() {
       # else // ifdef ESP32
       etharp_gratuitous(n);
       # endif // ifdef ESP32
+      addLog(LOG_LEVEL_INFO, F("Send Gratuitous ARP"));
     }
     n = n->next;
   }
