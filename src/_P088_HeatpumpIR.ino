@@ -43,27 +43,29 @@
  *
  */
 
- #include <FujitsuHeatpumpIR.h>
- #include <PanasonicCKPHeatpumpIR.h>
- #include <PanasonicHeatpumpIR.h>
- #include <CarrierHeatpumpIR.h>
- #include <MideaHeatpumpIR.h>
- #include <MitsubishiHeatpumpIR.h>
- #include <SamsungHeatpumpIR.h>
- #include <SharpHeatpumpIR.h>
- #include <DaikinHeatpumpIR.h>
- #include <MitsubishiHeavyHeatpumpIR.h>
- #include <MitsubishiSEZKDXXHeatpumpIR.h>
- #include <HyundaiHeatpumpIR.h>
- #include <HisenseHeatpumpIR.h>
- #include <GreeHeatpumpIR.h>
- #include <FuegoHeatpumpIR.h>
- #include <ToshibaHeatpumpIR.h>
- #include <ToshibaDaiseikaiHeatpumpIR.h>
- #include <IVTHeatpumpIR.h>
- #include <HitachiHeatpumpIR.h>
- #include <BalluHeatpumpIR.h>
- #include <AUXHeatpumpIR.h>
+#include <AUXHeatpumpIR.h>
+#include <BalluHeatpumpIR.h>
+#include <CarrierHeatpumpIR.h>
+#include <DaikinHeatpumpIR.h>
+#include <FuegoHeatpumpIR.h>
+#include <FujitsuHeatpumpIR.h>
+#include <GreeHeatpumpIR.h>
+#include <HisenseHeatpumpIR.h>
+#include <HitachiHeatpumpIR.h>
+#include <HyundaiHeatpumpIR.h>
+#include <IVTHeatpumpIR.h>
+#include <MideaHeatpumpIR.h>
+#include <MitsubishiHeatpumpIR.h>
+#include <MitsubishiHeavyFDTCHeatpumpIR.h>
+#include <MitsubishiHeavyHeatpumpIR.h>
+#include <MitsubishiMSCHeatpumpIR.h>
+#include <MitsubishiSEZKDXXHeatpumpIR.h>
+#include <PanasonicCKPHeatpumpIR.h>
+#include <PanasonicHeatpumpIR.h>
+#include <SamsungHeatpumpIR.h>
+#include <SharpHeatpumpIR.h>
+#include <ToshibaDaiseikaiHeatpumpIR.h>
+#include <ToshibaHeatpumpIR.h>
 
 // Array with all supported heatpumps
 HeatpumpIR *heatpumpIR[] = {new PanasonicCKPHeatpumpIR(), new PanasonicDKEHeatpumpIR(), new PanasonicJKEHeatpumpIR(),
@@ -71,10 +73,10 @@ HeatpumpIR *heatpumpIR[] = {new PanasonicCKPHeatpumpIR(), new PanasonicDKEHeatpu
                             new CarrierNQVHeatpumpIR(), new CarrierMCAHeatpumpIR(),
                             new MideaHeatpumpIR(), new FujitsuHeatpumpIR(),
                             new MitsubishiFDHeatpumpIR(), new MitsubishiFEHeatpumpIR(), new MitsubishiMSYHeatpumpIR(), new MitsubishiFAHeatpumpIR(),
-							new MitsubishiKJHeatpumpIR(),
+                            new MitsubishiKJHeatpumpIR(), new MitsubishiHeavyFDTCHeatpumpIR(),
                             new SamsungAQVHeatpumpIR(), new SamsungFJMHeatpumpIR(),new SharpHeatpumpIR(), new DaikinHeatpumpIR(),
                             new MitsubishiHeavyZJHeatpumpIR(), new MitsubishiHeavyZMHeatpumpIR(),
-                            new MitsubishiSEZKDXXHeatpumpIR(),
+                            new MitsubishiSEZKDXXHeatpumpIR(), new MitsubishiMSCHeatpumpIR(),
                             new HyundaiHeatpumpIR(), new HisenseHeatpumpIR(),
                             new GreeGenericHeatpumpIR(), new GreeYANHeatpumpIR(), new GreeYAAHeatpumpIR(),
                             new FuegoHeatpumpIR(), new ToshibaHeatpumpIR(), new ToshibaDaiseikaiHeatpumpIR(),
@@ -125,8 +127,9 @@ boolean Plugin_088(byte function, struct EventStruct *event, String& string)
     case PLUGIN_WEBFORM_LOAD:
       {
         // We need the index of the controller we are: 0-CONTROLLER_MAX
-        byte controllerNr = 0;
-          for (byte i=0; i < CONTROLLER_MAX; i++)
+        // FIXME TD-er: Why looking for Domoticz MQTT? Other plugins also support IDX values.
+        controllerIndex_t controllerNr = 0;
+          for (controllerIndex_t i=0; i < CONTROLLER_MAX; i++)
           {
             if (Settings.Protocol[i] == 2) { controllerNr = i; }
           }
@@ -209,15 +212,9 @@ boolean Plugin_088(byte function, struct EventStruct *event, String& string)
 
             if (strcmp_P(heatpumpModel.c_str(), shortName) == 0)
             {
-              #ifdef PLUGIN_016
-              if (irReceiver != 0)
-              irReceiver->disableIRIn(); // Stop the receiver
-              #endif
+              enableIR_RX(false);
               heatpumpIR[i]->send(*Plugin_088_irSender, powerMode, operatingMode, fanSpeed, temperature, vDir, hDir);
-              #ifdef PLUGIN_016
-              if (irReceiver != 0)
-              irReceiver->enableIRIn(); // Start the receiver
-              #endif
+              enableIR_RX(true);
               addLog(LOG_LEVEL_INFO, F("P088: Heatpump IR code transmitted"));
 #ifdef IR_DEBUG_PACKET
               addLog(LOG_LEVEL_DEBUG, IRPacket);
@@ -228,7 +225,7 @@ boolean Plugin_088(byte function, struct EventStruct *event, String& string)
 #ifdef IR_DEBUG_PACKET
                 printWebString += F(" <BR>\n"); // do both <BR> and \n to break line both in browser and curl -s
                 printWebString += IRPacket;
-                printWebString += F("\n"); 
+                printWebString += F("\n");
 #endif
               }
 
@@ -269,15 +266,9 @@ boolean Plugin_088(byte function, struct EventStruct *event, String& string)
           {
             PanasonicCKPHeatpumpIR *panasonicHeatpumpIR = new PanasonicCKPHeatpumpIR();
 
-            #ifdef PLUGIN_016
-            if (irReceiver != 0)
-            irReceiver->disableIRIn(); // Stop the receiver
-            #endif
+            enableIR_RX(false);
             panasonicHeatpumpIR->sendPanasonicCKPCancelTimer(*Plugin_088_irSender);
-             #ifdef PLUGIN_016
-            if (irReceiver != 0)
-            irReceiver->enableIRIn(); // Start the receiver
-            #endif
+            enableIR_RX(true);
             addLog(LOG_LEVEL_INFO, F("P088: The TIMER led on Panasonic CKP should now be OFF"));
           }
         }
@@ -294,5 +285,4 @@ boolean Plugin_088(byte function, struct EventStruct *event, String& string)
 
   return success;
 }
-
 #endif // USES_P088
