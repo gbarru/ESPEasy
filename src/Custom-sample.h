@@ -52,6 +52,7 @@
 #define DEFAULT_IP_BLOCK_LEVEL               1                       // 0: ALL_ALLOWED  1: LOCAL_SUBNET_ALLOWED  2:
 // ONLY_IP_RANGE_ALLOWED
 #define DEFAULT_ADMIN_USERNAME               "admin"
+#define DEFAULT_ADMIN_PASS                   ""
 
 #define DEFAULT_WIFI_CONNECTION_TIMEOUT      10000 // minimum timeout in ms for WiFi to be connected.
 #define DEFAULT_WIFI_FORCE_BG_MODE           false // when set, only allow to connect in 802.11B or G mode (not N)
@@ -69,6 +70,8 @@
 #define DEFAULT_CONTROLLER   false                                          // true or false enabled or disabled, set 1st controller
                                                                             // defaults
 #define DEFAULT_CONTROLLER_ENABLED true                                     // Enable default controller by default
+#define DEFAULT_CONTROLLER_USER    ""                                       // Default controller user
+#define DEFAULT_CONTROLLER_PASS    ""                                       // Default controller Password
 
 // using a default template, you also need to set a DEFAULT PROTOCOL to a suitable MQTT protocol !
 #define DEFAULT_PUB         "sensors/espeasy/%sysname%/%tskname%/%valname%" // Enter your pub
@@ -93,6 +96,7 @@
 
 #define DEFAULT_PIN_I2C_SDA                     4
 #define DEFAULT_PIN_I2C_SCL                     5
+#define DEFAULT_I2C_CLOCK_SPEED                 400000            // Use 100 kHz if working with old I2C chips
 
 #define DEFAULT_PIN_STATUS_LED                  (-1)
 #define DEFAULT_PIN_STATUS_LED_INVERSED         true

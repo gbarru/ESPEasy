@@ -10,6 +10,9 @@ namespace std
 
 #include <stdint.h>
 #include <Arduino.h>
+#include <string.h>
+
+#include "src/Globals/RamTracker.h"
 
 // User configuration
 // Include Custom.h before ESPEasyDefaults.h. 

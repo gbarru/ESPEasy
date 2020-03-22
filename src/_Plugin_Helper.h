@@ -1,9 +1,18 @@
 #ifndef PLUGIN_HELPER_H
 #define PLUGIN_HELPER_H
 
+#include <Arduino.h>
+
 #include "ESPEasy_common.h"
+#include "ESPEasy_Log.h"
+#include "ESPEasy_fdwdecl.h"
+#include "ESPEasy_plugindefs.h"
 #include "src/DataStructs/ESPEasyLimits.h"
+#include "src/DataStructs/ESPEasy_EventStruct.h"
+#include "src/Globals/Device.h"
+#include "src/Globals/ExtraTaskSettings.h"
 #include "src/Globals/Plugins.h"
+#include "src/Helpers/ESPEasy_time_calc.h"
 
 // Defines to make plugins more readable.
 
@@ -50,7 +59,7 @@ struct PluginTaskData_base {
   // perform checks on the casting.
   // This is also a check to only use these functions and not to insert pointers
   // at random in the Plugin_task_data array.
-  deviceIndex_t _taskdata_deviceIndex = INVALID_DEVICE_INDEX;
+  pluginID_t _taskdata_pluginID = INVALID_PLUGIN_ID;
 };
 
 

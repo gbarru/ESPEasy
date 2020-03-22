@@ -6,6 +6,7 @@
 #include "../DataStructs/SchedulerTimers.h"
 #include "../DataStructs/TimingStats.h"
 #include "../Globals/CPlugins.h"
+#include "../Helpers/ESPEasy_time_calc.h"
 
 
 /*********************************************************************************************\
@@ -158,6 +159,9 @@ struct ControllerDelayHandlerStruct {
 };
 
 // Uncrustify must not be used on macros, so turn it off.
+// Also make sure to wrap the forward declaration of this function in the same wrappers 
+// as it may not split the forward declaration into multiple lines.
+//
 // *INDENT-OFF*
 
 

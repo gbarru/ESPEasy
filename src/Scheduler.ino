@@ -3,7 +3,11 @@
 #include "src/DataStructs/EventValueSource.h"
 #include "src/Globals/Device.h"
 #include "src/Globals/CPlugins.h"
+#include "src/Globals/NPlugins.h"
 #include "src/Globals/Plugins.h"
+#include "src/Helpers/ESPEasy_time_calc.h"
+
+#include "ESPEasy_plugindefs.h"
 
 #define TIMER_ID_SHIFT    28
 
@@ -143,6 +147,25 @@ void handle_schedule() {
 * These timers set a new scheduled timer, based on the old value.
 * This will make their interval as constant as possible.
 \*********************************************************************************************/
+void setNextTimeInterval(unsigned long& timer, const unsigned long step) {
+  timer += step;
+  const long passed = timePassedSince(timer);
+
+  if (passed < 0) {
+    // Event has not yet happened, which is fine.
+    return;
+  }
+
+  if (static_cast<unsigned long>(passed) > step) {
+    // No need to keep running behind, start again.
+    timer = millis() + step;
+    return;
+  }
+
+  // Try to get in sync again.
+  timer = millis() + (step - passed);
+}
+
 void setIntervalTimer(unsigned long id) {
   setIntervalTimer(id, millis());
 }
@@ -555,9 +578,9 @@ void schedule_all_task_device_timers() {
 
 #ifdef USES_MQTT
 void schedule_all_tasks_using_MQTT_controller() {
-  int ControllerIndex = firstEnabledMQTTController();
+  controllerIndex_t ControllerIndex = firstEnabledMQTT_ControllerIndex();
 
-  if (ControllerIndex < 0) { return; }
+  if (!validControllerIndex(ControllerIndex)) { return; }
 
   for (taskIndex_t task = 0; task < TASKS_MAX; task++) {
     if (Settings.TaskDeviceSendData[ControllerIndex][task] &&
@@ -674,10 +697,10 @@ void process_system_event_queue() {
       Plugin_ptr[Index](Function, &EventQueue.front().event, tmpString);
       break;
     case ControllerPluginEnum:
-      CPluginCall(Index, Function, &EventQueue.front().event, tmpString);
+      CPluginCall(Index, static_cast<CPlugin::Function>(Function), &EventQueue.front().event, tmpString);
       break;
     case NotificationPluginEnum:
-      NPlugin_ptr[Index](Function, &EventQueue.front().event, tmpString);
+      NPlugin_ptr[Index](static_cast<NPlugin::Function>(Function), &EventQueue.front().event, tmpString);
       break;
   }
   EventQueue.pop_front();

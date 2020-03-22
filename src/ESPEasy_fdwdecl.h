@@ -28,6 +28,8 @@
 
 #include <FS.h>
 
+#include <WiFiUdp.h>
+
 
 // Forward declaration to give access to global member variables
 float         & getUserVar(unsigned int varIndex);
@@ -37,18 +39,13 @@ struct ControllerSettingsStruct;
 String   getUnknownString();
 void     scheduleNextDelayQueue(unsigned long id,
                                 unsigned long nextTime);
-String   LoadControllerSettings(int                       ControllerIndex,
+String   LoadControllerSettings(controllerIndex_t ControllerIndex,
                                 ControllerSettingsStruct& controller_settings);
 void     statusLED(bool traffic);
 void     backgroundtasks();
 uint32_t getCurrentFreeStack();
 uint32_t getFreeStackWatermark();
 bool     canYield();
-
-
-boolean  timeOutReached(unsigned long timer);
-long     timePassedSince(unsigned long timestamp);
-long     usecPassedSince(unsigned long timestamp);
 
 void     serialHelper_getGpioNames(struct EventStruct *event,
                                    bool                rxOptional = false,
@@ -108,14 +105,13 @@ bool safe_strncpy(char       *dest,
 
 void rulesProcessing(String& event);
 void setIntervalTimer(unsigned long id);
-byte getNotificationProtocolIndex(byte Number);
 void schedule_notification_event_timer(byte NotificationProtocolIndex, byte Function, struct EventStruct *event);
 
 #ifdef USES_MQTT
 
 // void runPeriodicalMQTT();
 // void updateMQTTclient_connected();
-int firstEnabledMQTTController();
+controllerIndex_t firstEnabledMQTT_ControllerIndex();
 // String getMQTT_state();
 void callback(char        *c_topic,
               byte        *b_payload,
@@ -124,7 +120,7 @@ void MQTTDisconnect();
 bool MQTTConnect(controllerIndex_t controller_idx);
 bool MQTTCheck(controllerIndex_t controller_idx);
 void schedule_all_tasks_using_MQTT_controller();
-bool MQTTpublish(controllerIndex_t controller_idx, const char *topic, const char *payload, boolean retained);
+bool MQTTpublish(controllerIndex_t controller_idx, const char *topic, const char *payload, bool retained);
 #endif // ifdef USES_MQTT
 
 
@@ -138,8 +134,13 @@ String formatIP(const IPAddress& ip);
 String toString(float value, byte decimals);
 String boolToString(bool value);
 bool isInt(const String& tBuf);
+unsigned long hexToUL(const String& input_c);
+unsigned long hexToUL(const String& input_c, size_t nrHexDecimals);
+unsigned long hexToUL(const String& input_c, size_t startpos, size_t nrHexDecimals);
 String formatToHex(unsigned long value, const String& prefix);
 String formatToHex(unsigned long value);
+String formatToHex_decimal(unsigned long value);
+String getNumerical(const String& tBuf, bool mustBeInteger);
 
 float getCPUload();
 int getLoopCountPerSec();
@@ -149,6 +150,8 @@ uint16_t getPortFromKey(uint32_t key);
 
 void initRTC();
 void deepSleepStart(int dsdelay);
+bool setControllerEnableStatus(controllerIndex_t controllerIndex, bool enabled);
+bool setTaskEnableStatus(taskIndex_t taskIndex, bool enabled);
 void taskClear(taskIndex_t taskIndex, bool save);
 void SensorSendTask(taskIndex_t TaskIndex);
 bool remoteConfig(struct EventStruct *event, const String& string);
@@ -192,5 +195,10 @@ void printDirectory(File dir, int numTabs);
 void delayBackground(unsigned long dsdelay);
 
 void setIntervalTimerOverride(unsigned long id, unsigned long msecFromNow); //implemented in Scheduler.ino
+
+
+byte PluginCall(byte Function, struct EventStruct *event, String& str);
+bool beginWiFiUDP_randomPort(WiFiUDP& udp);
+String toString(float value, byte decimals);
 
 #endif // ESPEASY_FWD_DECL_H

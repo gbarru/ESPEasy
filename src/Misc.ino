@@ -6,7 +6,9 @@
 #include "src/Globals/CRCValues.h"
 #include "src/Globals/Cache.h"
 #include "src/Globals/Device.h"
+#include "src/Globals/CPlugins.h"
 #include "src/Globals/Plugins.h"
+#include "src/Globals/Plugins_other.h"
 #include "src/Globals/RTC.h"
 #include "src/Globals/ResetFactoryDefaultPref.h"
 #include "src/Globals/Services.h"
@@ -160,6 +162,7 @@ String getPluginDescriptionString() {
   #ifdef USE_NON_STANDARD_24_TASKS
   result += F(" 24tasks");
   #endif
+  result.trim();
   return result;
 }
 
@@ -235,31 +238,6 @@ bool flashChipVendorPuya() {
 /*********************************************************************************************\
  Memory management
 \*********************************************************************************************/
-
-// clean up tcp connections that are in TIME_WAIT status, to conserve memory
-// In future versions of WiFiClient it should be possible to call abort(), but
-// this feature is not in all upstream versions yet.
-// See https://github.com/esp8266/Arduino/issues/1923
-// and https://github.com/letscontrolit/ESPEasy/issues/253
-#if defined(ESP8266)
-  #include <md5.h>
-#endif
-#if defined(ESP8266)
-
-struct tcp_pcb;
-extern struct tcp_pcb* tcp_tw_pcbs;
-extern "C" void tcp_abort (struct tcp_pcb* pcb);
-
-void tcpCleanup()
-{
-
-     while(tcp_tw_pcbs!=NULL)
-    {
-      tcp_abort(tcp_tw_pcbs);
-    }
-
- }
-#endif
 
 
 // For keeping track of 'cont' stack
@@ -778,7 +756,10 @@ void statusLED(bool traffic)
 
     #if defined(ESP8266)
       analogWrite(Settings.Pin_status_led, pwm);
-    #endif
+    #endif // if defined(ESP8266)
+    #if defined(ESP32)
+       analogWriteESP32(Settings.Pin_status_led, pwm);
+    #endif // if defined(ESP32)
   }
 }
 
@@ -837,6 +818,42 @@ void parseCommandString(struct EventStruct *event, const String& string)
   event->Par4 = parseCommandArgumentInt(string, 4);
   event->Par5 = parseCommandArgumentInt(string, 5);
 }
+
+
+
+/********************************************************************************************\
+  Toggle controller enabled state
+  \*********************************************************************************************/
+bool setControllerEnableStatus(controllerIndex_t controllerIndex, bool enabled)
+{
+  if (!validControllerIndex(controllerIndex)) return false;
+  checkRAM(F("setControllerEnableStatus"));
+  // Only enable controller if it has a protocol configured
+  if (Settings.Protocol[controllerIndex] != 0 || !enabled) {
+    Settings.ControllerEnabled[controllerIndex] = enabled;
+    return true;
+  }
+  return false;
+}
+
+/********************************************************************************************\
+  Toggle task enabled state
+  \*********************************************************************************************/
+bool setTaskEnableStatus(taskIndex_t taskIndex, bool enabled)
+{
+  if (!validTaskIndex(taskIndex)) return false;
+  checkRAM(F("setTaskEnableStatus"));
+  // Only enable task if it has a Plugin configured
+  if (validPluginID(Settings.TaskDeviceNumber[taskIndex]) || !enabled) {
+    Settings.TaskDeviceEnabled[taskIndex] = enabled;
+    if (enabled) {
+      schedule_task_device_timer(taskIndex, millis() + 10);
+    }
+    return true;
+  }
+  return false;
+}
+
 
 /********************************************************************************************\
   Clear task settings for given task
@@ -1159,7 +1176,7 @@ void ResetFactory()
     SecuritySettings.WifiSSID2[0] = 0;
     SecuritySettings.WifiKey2[0] = 0;
   }
-  SecuritySettings.Password[0] = 0;
+  strcpy_P(SecuritySettings.Password, PSTR(DEFAULT_ADMIN_PASS));
 
   Settings.ResetFactoryDefaultPreference = ResetFactoryDefaultPreference.getPreference();
 
@@ -1213,6 +1230,7 @@ void ResetFactory()
 	Settings.ConnectionFailuresThreshold	= DEFAULT_CON_FAIL_THRES;
 	Settings.WireClockStretchLimit			= DEFAULT_I2C_CLOCK_LIMIT;
 */
+  Settings.I2C_clockSpeed     = DEFAULT_I2C_CLOCK_SPEED;
 
 #ifdef PLUGIN_DESCR
   strcpy_P(Settings.Name, PSTR(PLUGIN_DESCR));
@@ -1220,8 +1238,6 @@ void ResetFactory()
 
   addPredefinedPlugins(gpio_settings);
   addPredefinedRules(gpio_settings);
-
-  SaveSettings();
 
 #if DEFAULT_CONTROLLER
   MakeControllerSettings(ControllerSettings);
@@ -1235,7 +1251,12 @@ void ResetFactory()
   ControllerSettings.UseDNS = DEFAULT_SERVER_USEDNS;
   ControllerSettings.Port = DEFAULT_PORT;
   SaveControllerSettings(0, ControllerSettings);
+  strcpy_P(SecuritySettings.ControllerUser[0], PSTR(DEFAULT_CONTROLLER_USER));
+  strcpy_P(SecuritySettings.ControllerPassword[0], PSTR(DEFAULT_CONTROLLER_PASS));
 #endif
+
+  SaveSettings();
+
   checkRAM(F("ResetFactory2"));
   serialPrintln(F("RESET: Succesful, rebooting. (you might need to press the reset button if you've justed flashed the firmware)"));
   //NOTE: this is a known ESP8266 bug, not our fault. :)
@@ -1502,9 +1523,10 @@ void prepareShutdown()
   process_serialWriteBuffer();
   flushAndDisconnectAllClients();
   saveUserVarToRTC();
-  saveToRTC();
   SPIFFS.end();
   delay(100); // give the node time to flush all before reboot or sleep
+  node_time.now();
+  saveToRTC();
 }
 
 /********************************************************************************************\
@@ -1537,10 +1559,20 @@ void reboot() {
  \*********************************************************************************************/
 String parseTemplate(String& tmpString)
 {
-  return parseTemplate_padded(tmpString, 0);
+  return parseTemplate(tmpString, false);
+}
+
+String parseTemplate(String& tmpString, bool useURLencode)
+{
+  return parseTemplate_padded(tmpString, 0, useURLencode);
 }
 
 String parseTemplate_padded(String& tmpString, byte minimal_lineSize)
+{
+  return parseTemplate_padded(tmpString, minimal_lineSize, false);
+}
+
+String parseTemplate_padded(String& tmpString, byte minimal_lineSize, bool useURLencode)
 {
   checkRAM(F("parseTemplate_padded"));
   START_TIMER
@@ -1550,7 +1582,10 @@ String parseTemplate_padded(String& tmpString, byte minimal_lineSize)
   String newString;
   newString.reserve(minimal_lineSize); // Our best guess of the new size.
 
-  parseSystemVariables(tmpString, false);
+
+  if (parseTemplate_CallBack_ptr != nullptr)
+     parseTemplate_CallBack_ptr(tmpString, useURLencode);
+  parseSystemVariables(tmpString, useURLencode);
   
 
   int startpos = 0;
@@ -1647,9 +1682,10 @@ String parseTemplate_padded(String& tmpString, byte minimal_lineSize)
     // This may have taken some time, so call delay()
     delay(0);
   }
-
+  
   // Copy the rest of the string (or all if no replacements were done)
   newString += tmpString.substring(lastStartpos);
+
   checkRAM(F("parseTemplate2"));
 
   // Restore previous loaded taskSettings
@@ -1658,10 +1694,12 @@ String parseTemplate_padded(String& tmpString, byte minimal_lineSize)
     LoadTaskSettings(currentTaskIndex);
   }
 
-  // parseSystemVariables(newString, false);
-  parseStandardConversions(newString, false);
+  parseStandardConversions(newString, useURLencode);
 
-    // padding spaces
+  // process other markups as well
+  parse_string_commands(newString); 
+
+  // padding spaces
   while (newString.length() < minimal_lineSize) {
     newString += ' ';
   }
@@ -1744,6 +1782,13 @@ bool findNextValMarkInString(const String& input, int& startpos, int& hashpos, i
   int tmpHashpos = input.indexOf('#', tmpStartpos);
 
   if (tmpHashpos == -1) { return false; }
+  // We found a hash position, check if there is another '[' inbetween.
+  for (int i = tmpStartpos; i < tmpHashpos; ++i) {
+    if (input[i] == '[') {
+      tmpStartpos = i;
+    }
+  }
+
   int tmpEndpos = input.indexOf(']', tmpStartpos);
 
   if (tmpEndpos == -1) { return false; }
@@ -1888,6 +1933,7 @@ void transformValue(
             value = logicVal == 0 ? "0" : "1";
             break;
           case 'D' ://Dx.y min 'x' digits zero filled & 'y' decimal fixed digits
+          case 'd' ://like above but with spaces padding
             {
               int x;
               int y;
@@ -1925,7 +1971,7 @@ void transformValue(
                 indexDot = value.length();
               }              
               for (byte f = 0; f < (x - indexDot); f++) {
-                value = "0" + value;
+                value = (tempValueFormat[0]=='d'? ' ' : '0') + value;
               }
               break;
             }
@@ -2423,9 +2469,9 @@ void SendValueLogger(taskIndex_t TaskIndex)
       LoadTaskSettings(TaskIndex);
       for (byte varNr = 0; varNr < Device[DeviceIndex].ValueCount; varNr++)
       {
-        logger += getDateString('-');
+        logger += node_time.getDateString('-');
         logger += ' ';
-        logger += getTimeString(':');
+        logger += node_time.getTimeString(':');
         logger += ',';
         logger += Settings.Unit;
         logger += ',';
@@ -2452,115 +2498,6 @@ void SendValueLogger(taskIndex_t TaskIndex)
 }
 
 
-#define TRACES 3                                            // number of memory traces
-#define TRACEENTRIES 15                                      // entries per trace
-
-class RamTracker{
-  private:
-    String        traces[TRACES]  ;                         // trace of latest memory checks
-    unsigned int  tracesMemory[TRACES] ;                    // lowest memory for that  trace
-    unsigned int  readPtr, writePtr;                        // pointer to cyclic buffer
-    String        nextAction[TRACEENTRIES];                 // buffer to record the names of functions before they are transfered to a trace
-    unsigned int  nextActionStartMemory[TRACEENTRIES];      // memory levels for the functions.
-
-    unsigned int  bestCaseTrace (void){                     // find highest the trace with the largest minimum memory (gets replaced by worse one)
-       unsigned int lowestMemoryInTrace = 0;
-       unsigned int lowestMemoryInTraceIndex=0;
-       for (int i = 0; i<TRACES; i++) {
-          if (tracesMemory[i] > lowestMemoryInTrace){
-            lowestMemoryInTrace= tracesMemory[i];
-            lowestMemoryInTraceIndex=i;
-            }
-          }
-      //serialPrintln(lowestMemoryInTraceIndex);
-      return lowestMemoryInTraceIndex;
-      }
-
-  public:
-    RamTracker(void){                                       // constructor
-        readPtr=0;
-        writePtr=0;
-        for (int i = 0; i< TRACES; i++) {
-          traces[i]="";
-          tracesMemory[i]=0xffffffff;                           // init with best case memory values, so they get replaced if memory goes lower
-          }
-        for (int i = 0; i< TRACEENTRIES; i++) {
-          nextAction[i]="startup";
-          nextActionStartMemory[i] = ESP.getFreeHeap();     // init with best case memory values, so they get replaced if memory goes lower
-          }
-        };
-
-    void registerRamState(const String &s){    // store function
-       nextAction[writePtr]=s;                              // name and mem
-       nextActionStartMemory[writePtr]=ESP.getFreeHeap();   // in cyclic buffer.
-       int bestCase = bestCaseTrace();                      // find best case memory trace
-       if ( ESP.getFreeHeap() < tracesMemory[bestCase]){    // compare to current memory value
-            traces[bestCase]="";
-            readPtr = writePtr+1;                           // read out buffer, oldest value first
-            if (readPtr>=TRACEENTRIES) readPtr=0;           // read pointer wrap around
-            tracesMemory[bestCase] = ESP.getFreeHeap();     // store new lowest value of that trace
-
-            for (int i = 0; i<TRACEENTRIES; i++) {          // tranfer cyclic buffer strings and mem values to this trace
-              traces[bestCase]+= nextAction[readPtr];
-              traces[bestCase]+= "-> ";
-              traces[bestCase]+= String(nextActionStartMemory[readPtr]);
-              traces[bestCase]+= ' ';
-              readPtr++;
-              if (readPtr >=TRACEENTRIES) readPtr=0;      // wrap around read pointer
-            }
-       }
-       writePtr++;
-       if (writePtr >= TRACEENTRIES) writePtr=0;          // inc write pointer and wrap around too.
-    };
-   void getTraceBuffer(){                                // return giant strings, one line per trace. Add stremToWeb method to avoid large strings.
-#ifndef BUILD_NO_DEBUG
-      if (loglevelActiveFor(LOG_LEVEL_DEBUG_DEV)) {
-        String retval="Memtrace\n";
-        for (int i = 0; i< TRACES; i++){
-          retval += String(i);
-          retval += ": lowest: ";
-          retval += String(tracesMemory[i]);
-          retval += "  ";
-          retval += traces[i];
-          addLog(LOG_LEVEL_DEBUG_DEV, retval);
-          retval="";
-        }
-      }
-#endif
-    }
-}myRamTracker;                                              // instantiate class. (is global now)
-
-void checkRAMtoLog(void){
-  myRamTracker.getTraceBuffer();
-}
-
-void checkRAM(const String &flashString, int a ) {
-  checkRAM(flashString, String(a));
-}
-
-void checkRAM(const String &flashString, const String &a ) {
-  String s = flashString;
-  s += " (";
-  s += a;
-  s += ')';
-  checkRAM(s);
-}
-
-void checkRAM( const String &descr ) {
-  myRamTracker.registerRamState(descr);
-  
-  uint32_t freeRAM = FreeMem();
-  if (freeRAM <= lowestRAM)
-  {
-    lowestRAM = freeRAM;
-    lowestRAMfunction = descr;
-  }
-  uint32_t freeStack = getFreeStackWatermark();
-  if (freeStack <= lowestFreeStack) {
-    lowestFreeStack = freeStack;
-    lowestFreeStackfunction = descr;
-  }
-}
 
 
 //#ifdef PLUGIN_BUILD_TESTING
@@ -2776,7 +2713,7 @@ void ArduinoOTAInit()
   checkRAM(F("ArduinoOTAInit"));
 
   ArduinoOTA.setPort(ARDUINO_OTA_PORT);
-  ArduinoOTA.setHostname(Settings.Name);
+  ArduinoOTA.setHostname(Settings.getHostname().c_str());
   if (SecuritySettings.Password[0]!=0)
     ArduinoOTA.setPassword(SecuritySettings.Password);
 

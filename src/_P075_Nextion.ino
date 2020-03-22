@@ -14,6 +14,7 @@
 
 #ifdef USES_P075
 #include <ESPeasySerial.h>
+#include "_Plugin_Helper.h"
 
 // *****************************************************************************************************
 // Defines start here
@@ -106,7 +107,7 @@ boolean Plugin_075(byte function, struct EventStruct *event, String& string)
 
     case PLUGIN_DEVICE_ADD: {
       Device[++deviceCount].Number = PLUGIN_ID_075;
-      Device[deviceCount].Type = DEVICE_TYPE_DUAL;
+      Device[deviceCount].Type = DEVICE_TYPE_SERIAL;
       Device[deviceCount].VType = SENSOR_TYPE_DUAL;
       Device[deviceCount].Ports = 0;
       Device[deviceCount].PullUpOption = false;         // Pullup is not used.
@@ -204,7 +205,7 @@ boolean Plugin_075(byte function, struct EventStruct *event, String& string)
         String error;
         for (byte varNr = 0; varNr < P75_Nlines; varNr++)
         {
-          if (!safe_strncpy(deviceTemplate[varNr], WebServer.arg(getPluginCustomArgName(varNr)), P75_Nchars)) {
+          if (!safe_strncpy(deviceTemplate[varNr], web_server.arg(getPluginCustomArgName(varNr)), P75_Nchars)) {
             error += getCustomTaskSettingsError(varNr);
           }
         }

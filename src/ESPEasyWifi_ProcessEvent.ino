@@ -128,7 +128,6 @@ void processDisconnect() {
   if (processedDisconnect) { return; }
   processedDisconnect = true;
   wifiStatus          = ESPEASY_WIFI_DISCONNECTED;
-  setWebserverRunning(false);
   delay(100); // FIXME TD-er: See https://github.com/letscontrolit/ESPEasy/issues/1987#issuecomment-451644424
 
   if (Settings.UseRules) {
@@ -256,8 +255,8 @@ void processGotIP() {
   }
 
   // First try to get the time, since that may be used in logs
-  if (systemTimePresent()) {
-    initTime();
+  if (node_time.systemTimePresent()) {
+    node_time.initTime();
   }
 #ifdef USES_MQTT
   mqtt_reconnect_count        = 0;
@@ -312,7 +311,6 @@ void processConnectAPmode() {
     log += WiFi.softAPgetStationNum();
     addLog(LOG_LEVEL_INFO, log);
   }
-  setWebserverRunning(true);
 
   // Start DNS, only used if the ESP has no valid WiFi config
   // It will reply with it's own address on all DNS requests
@@ -420,5 +418,4 @@ void processScanDone() {
 void markWiFi_services_initialized() {
   wifiStatus            = ESPEASY_WIFI_SERVICES_INITIALIZED;
   wifiConnectInProgress = false;
-  setWebserverRunning(true);
 }

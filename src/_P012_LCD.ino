@@ -3,6 +3,8 @@
 //#################################### Plugin 012: LCD ##################################################
 //#######################################################################################################
 
+#include "_Plugin_Helper.h"
+
 // Sample templates
 //  Temp: [DHT11#Temperature]   Hum:[DHT11#humidity]
 //  DS Temp:[Dallas1#Temperature#R]
@@ -119,7 +121,7 @@ boolean Plugin_012(byte function, struct EventStruct *event, String& string)
         String error;
         for (byte varNr = 0; varNr < P12_Nlines; varNr++)
         {
-          if (!safe_strncpy(deviceTemplate[varNr], WebServer.arg(getPluginCustomArgName(varNr)), P12_Nchars)) {
+          if (!safe_strncpy(deviceTemplate[varNr], web_server.arg(getPluginCustomArgName(varNr)), P12_Nchars)) {
             error += getCustomTaskSettingsError(varNr);
           }
         }
