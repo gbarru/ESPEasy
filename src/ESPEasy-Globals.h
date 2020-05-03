@@ -190,6 +190,7 @@ extern NotificationStruct Notification[NPLUGIN_MAX];
   #endif
   #define PIN_D_MAX        39
   extern int8_t ledChannelPin[16];
+  #define MAX_SKETCH_SIZE 1900544   // 0x1d0000 look at partitions in csv file
 #endif
 
 #include <WiFiUdp.h>
@@ -310,6 +311,9 @@ extern unsigned long last_system_event_run;
 
 #if FEATURE_ADC_VCC
 extern float vcc;
+#endif
+#ifdef ESP8266
+extern int lastADCvalue; // Keep track of last ADC value as it cannot be read while WiFi is connecting
 #endif
 
 extern boolean WebLoggedIn;
